@@ -1,0 +1,17 @@
+node_modules
+.next
+out
+.env
+.env.local
+.DS_Store
+*.log
+*.tsbuildinfo
+
+# App data
+data/wardrobe.db
+data/wardrobe.db-journal
+data/uploads/
+
+# IDE
+.vscode
+.idea

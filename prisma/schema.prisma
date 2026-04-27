@@ -1,0 +1,65 @@
+// Wardrobe DB schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  items   Item[]
+  outfits Outfit[]
+}
+
+model Item {
+  id                 String   @id @default(cuid())
+  ownerId            String
+  owner              User     @relation(fields: [ownerId], references: [id])
+  imagePath          String
+  imageBgRemovedPath String?
+  category           String
+  subType            String?
+  color              String?
+  brand              String?
+  size               String?
+  // Comma-separated lists (SQLite has no array type)
+  seasons            String   @default("")
+  activities         String   @default("")
+  notes              String?
+  isFavorite         Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  outfitItems OutfitItem[]
+}
+
+model Outfit {
+  id         String   @id @default(cuid())
+  ownerId    String
+  owner      User     @relation(fields: [ownerId], references: [id])
+  name       String
+  activity   String?
+  season     String?
+  isFavorite Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  items OutfitItem[]
+}
+
+model OutfitItem {
+  id       String @id @default(cuid())
+  outfitId String
+  outfit   Outfit @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  itemId   String
+  item     Item   @relation(fields: [itemId], references: [id])
+  slot     String
+}
