@@ -1,7 +1,8 @@
 # Wardrobe
 
-A self-hosted virtual wardrobe — snap photos of clothing items from your phone,
-tag them, mark favorites, and mix and match outfits by activity and season.
+A self-hosted virtual wardrobe — snap photos of clothing items from your
+phone, tag them, mark favorites, and mix and match outfits by activity and
+season. Two seeded accounts share a single closet.
 
 ## Stack
 
@@ -9,22 +10,26 @@ tag them, mark favorites, and mix and match outfits by activity and season.
 - Tailwind CSS
 - Prisma + SQLite (single file at `data/wardrobe.db`)
 - Auth.js v5 (credentials, JWT sessions, bcrypt)
-- `@imgly/background-removal` (runs entirely in the browser)
-- Photos saved to `data/uploads/{userId}/`
+- `@imgly/background-removal` loaded on demand from a CDN, runs in the browser
+- Photos saved to `data/uploads/<userId>/`
 
-## Setup
+## Local quick start
 
 ```bash
 npm install
-cp .env.example .env       # then edit the values
-npx prisma migrate dev     # creates the SQLite DB
+cp .env.example .env       # then edit values
+npx prisma migrate deploy  # creates the SQLite DB
 npm run seed               # creates the two user accounts
-npm run dev                # http://localhost:3000
+npm run build && npm run start    # http://localhost:3000
 ```
 
-The dev server binds to `0.0.0.0`, so on the same Wi-Fi you can open
-`http://<your-laptop-ip>:3000` from a phone. On the phone, "Add to Home
-Screen" to get an app-like experience.
+For development with hot reload, use `npm run dev` instead of build+start.
+
+## Hosting on Proxmox
+
+See [`docs/DEPLOY_PROXMOX.md`](docs/DEPLOY_PROXMOX.md) for a step-by-step
+walkthrough — Debian LXC, Node 20, systemd service, and bookmarking on her
+phone.
 
 ## Scripts
 
@@ -32,13 +37,24 @@ Screen" to get an app-like experience.
 - `npm run build` / `npm run start` — production build + serve
 - `npm run typecheck` — `tsc --noEmit`
 - `npm run lint` — Next ESLint
-- `npm run db:migrate` — apply migrations
+- `npm run db:migrate` — apply migrations (use `prisma migrate deploy` in prod)
 - `npm run db:studio` — open Prisma Studio
 - `npm run seed` — upsert users from env
 
 ## Notes
 
+- Background removal loads on first use (~50 MB) and caches in the browser.
+  Subsequent uploads work offline. If it fails (e.g. no internet), the form
+  falls back to the original photo.
 - Both seeded accounts share the same closet and outfits.
 - Photos and the SQLite DB live under `data/` and are gitignored.
-- The first time you remove a background, the model weights download
-  (~50MB) — subsequent removals are fast and entirely offline.
+
+## Environment
+
+```
+DATABASE_URL="file:../data/wardrobe.db"      # required
+AUTH_SECRET="..."                            # required, 32+ random bytes
+HER_NAME / HER_EMAIL / HER_PASSWORD          # required for seed
+HIS_NAME / HIS_EMAIL / HIS_PASSWORD          # required for seed
+USE_SECURE_COOKIES="true"                    # optional, only when behind HTTPS
+```

@@ -11,10 +11,9 @@
     "seed": "tsx prisma/seed.ts",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "postinstall": "prisma generate --no-engine=false || true"
+    "postinstall": "prisma generate || true"
   },
   "dependencies": {
-    "@imgly/background-removal": "^1.6.0",
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^2.4.3",
     "clsx": "^2.1.1",
