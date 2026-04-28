@@ -12,10 +12,12 @@ import {
 import TagChips from "@/components/TagChips";
 import ColorSwatch from "@/components/ColorSwatch";
 import { removeBackground } from "@/lib/bgRemoval";
+import { heicToJpeg, isHeic } from "@/lib/heic";
 
 export default function AddItemForm() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
 
   const [original, setOriginal] = useState<File | null>(null);
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
@@ -44,15 +46,35 @@ export default function AddItemForm() {
   }, [originalUrl, bgUrl]);
 
   async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setOriginal(file);
+    const picked = e.target.files?.[0];
+    if (!picked) return;
+
+    // Reset preview state immediately so the user sees something is happening.
     if (originalUrl) URL.revokeObjectURL(originalUrl);
-    setOriginalUrl(URL.createObjectURL(file));
+    setOriginalUrl(null);
     setBgRemoved(null);
     if (bgUrl) URL.revokeObjectURL(bgUrl);
     setBgUrl(null);
     setUseOriginal(false);
+    setError(null);
+
+    // HEIC from iPhones can't be rendered or processed by browsers. Convert
+    // to JPEG up front so previews, bg removal, and the saved file all work.
+    let file = picked;
+    if (isHeic(picked)) {
+      setBgState("running");
+      try {
+        file = await heicToJpeg(picked);
+      } catch (err) {
+        console.error("HEIC conversion failed", err);
+        setError("Couldn't read that HEIC photo. Try saving it as JPEG first.");
+        setBgState("error");
+        return;
+      }
+    }
+
+    setOriginal(file);
+    setOriginalUrl(URL.createObjectURL(file));
 
     setBgState("running");
     try {
@@ -121,6 +143,13 @@ export default function AddItemForm() {
         <input
           ref={fileRef}
           type="file"
+          accept="image/*,.heic,.heif"
+          onChange={onPickFile}
+          className="hidden"
+        />
+        <input
+          ref={cameraRef}
+          type="file"
           accept="image/*"
           capture="environment"
           onChange={onPickFile}
@@ -128,7 +157,10 @@ export default function AddItemForm() {
         />
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" className="btn-primary" onClick={() => fileRef.current?.click()}>
-            {original ? "Change photo" : "Take / choose photo"}
+            {original ? "Change photo" : "Choose photo"}
+          </button>
+          <button type="button" className="btn-secondary" onClick={() => cameraRef.current?.click()}>
+            Take photo
           </button>
           {bgState === "running" && (
             <span className="text-sm text-stone-500">Removing background…</span>
