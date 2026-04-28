@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
-import { ACTIVITIES, SEASONS, SLOTS, getFirstName } from "@/lib/constants";
+import { ACTIVITIES, SEASONS, SLOTS } from "@/lib/constants";
 import OutfitCard from "@/components/OutfitCard";
+import { firstNameFromUser, possessiveTitle } from "@/lib/userName";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export default async function OutfitsPage({
   searchParams: Promise<{ activity?: string; season?: string; fav?: string }>;
 }) {
   const [sp, session] = await Promise.all([searchParams, auth()]);
-  const firstName = getFirstName(session?.user?.name, session?.user?.email);
+  const firstName = firstNameFromUser(session?.user);
 
   const outfits = await prisma.outfit.findMany({
     where: {
@@ -24,7 +25,7 @@ export default async function OutfitsPage({
     include: { items: { include: { item: true } } },
   });
 
-  const title = firstName ? `${firstName}'s Outfits` : "Outfits";
+  const title = possessiveTitle("Outfits", firstName);
 
   return (
     <div className="space-y-5">

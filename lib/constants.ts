@@ -121,8 +121,3 @@ export function listToCsv(values: string[] | undefined): string {
   return values.filter(Boolean).join(",");
 }
 
-export function getFirstName(name?: string | null, email?: string | null): string {
-  if (name) return name.split(" ")[0];
-  if (email) return email.split("@")[0].split(".")[0];
-  return "";
-}

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
-import { getFirstName } from "@/lib/constants";
+import { firstNameFromUser, possessiveTitle } from "@/lib/userName";
 import WishlistCard from "./WishlistCard";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function WishlistPage() {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
-  const firstName = getFirstName(session?.user?.name, session?.user?.email);
+  const firstName = firstNameFromUser(session?.user);
 
   const items = await prisma.wishlistItem.findMany({
     where: { ownerId: userId },
@@ -19,7 +19,7 @@ export default async function WishlistPage() {
   const active = items.filter((i) => !i.purchased);
   const purchased = items.filter((i) => i.purchased);
 
-  const title = firstName ? `${firstName}'s Wishlist` : "Wishlist";
+  const title = possessiveTitle("Wishlist", firstName);
 
   const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
   const sortedActive = [...active].sort(

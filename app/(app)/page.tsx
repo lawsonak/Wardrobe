@@ -1,20 +1,20 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
-import { getFirstName } from "@/lib/constants";
+import { firstNameFromUser } from "@/lib/userName";
 import ItemCard from "@/components/ItemCard";
 import GiftBanner from "@/components/GiftBanner";
-import OnboardingCard from "@/components/OnboardingCard";
+import OnboardingChecklist from "@/components/OnboardingChecklist";
 
 export const dynamic = "force-dynamic";
 
 export default async function Dashboard() {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
-  const firstName = getFirstName(session?.user?.name, session?.user?.email);
-  const name = firstName || "there";
+  const firstName = firstNameFromUser(session?.user);
+  const name = firstName ?? "there";
 
-  const [recent, favorites, outfitCount, itemCount, needsReviewCount, wishlistCount] = await Promise.all([
+  const [recent, favorites, outfitCount, itemCount, favoriteCount, needsReviewCount, wishlistCount] = await Promise.all([
     prisma.item.findMany({
       where: { ownerId: userId, status: "active" },
       orderBy: { createdAt: "desc" },
@@ -27,11 +27,17 @@ export default async function Dashboard() {
     }),
     prisma.outfit.count({ where: { ownerId: userId } }),
     prisma.item.count({ where: { ownerId: userId } }),
+    prisma.item.count({ where: { ownerId: userId, isFavorite: true } }),
     prisma.item.count({ where: { ownerId: userId, status: "needs_review" } }),
     prisma.wishlistItem.count({ where: { ownerId: userId, purchased: false } }),
   ]);
 
-  const isFirstTime = itemCount === 0 && outfitCount === 0;
+  const progress = {
+    hasItem: itemCount > 0,
+    hasFavorite: favoriteCount > 0,
+    hasOutfit: outfitCount > 0,
+    hasWishlist: wishlistCount > 0,
+  };
 
   return (
     <div className="space-y-8">
@@ -91,8 +97,8 @@ export default async function Dashboard() {
         )}
       </div>
 
-      {/* Onboarding card for new users */}
-      {isFirstTime && <OnboardingCard />}
+      {/* Onboarding checklist tracks real progress and auto-hides when done */}
+      <OnboardingChecklist progress={progress} />
 
       {/* Favorites */}
       {favorites.length > 0 && (

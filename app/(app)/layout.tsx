@@ -1,18 +1,18 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth, signOut } from "@/auth";
-import { getFirstName } from "@/lib/constants";
+import { firstNameFromUser, possessiveTitle } from "@/lib/userName";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const firstName = getFirstName(session.user.name, session.user.email);
-  const wardrobeLabel = firstName ? `${firstName}'s Wardrobe` : "Wardrobe";
+  const firstName = firstNameFromUser(session.user);
+  const wardrobeLabel = possessiveTitle("Wardrobe", firstName);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col">
-      <header className="sticky top-0 z-20 border-b border-stone-100 bg-cream-50/90 px-4 py-3 backdrop-blur">
+    <div className="mx-auto flex min-h-[100dvh] max-w-3xl flex-col">
+      <header className="sticky top-0 z-20 border-b border-stone-100 bg-cream-50/90 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
         <div className="flex items-center justify-between gap-3">
           <Link href="/" className="font-display text-xl text-blush-700 leading-tight">
             {wardrobeLabel}
@@ -48,11 +48,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       </header>
 
-      <main className="flex-1 px-4 py-6 pb-28">{children}</main>
+      <main className="flex-1 px-4 py-6 pb-[max(7rem,calc(6rem+env(safe-area-inset-bottom)))]">{children}</main>
 
       {/* Mobile bottom nav */}
       <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-stone-100 bg-white/95 backdrop-blur sm:hidden">
-        <div className="mx-auto flex max-w-3xl items-center justify-around px-1 py-1 text-[10px]">
+        <div className="mx-auto flex max-w-3xl items-center justify-around px-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] pt-1 text-[10px]">
           <Link href="/" className="flex flex-col items-center gap-0.5 px-2 py-2 text-stone-500 active:text-blush-600">
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />

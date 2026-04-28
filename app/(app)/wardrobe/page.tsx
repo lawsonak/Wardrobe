@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
-import { CATEGORIES, type Category, getFirstName } from "@/lib/constants";
+import { CATEGORIES, type Category } from "@/lib/constants";
 import ItemCard from "@/components/ItemCard";
+import { firstNameFromUser, possessiveTitle } from "@/lib/userName";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export default async function WardrobePage({
   searchParams: Promise<{ category?: string; fav?: string; q?: string; status?: string }>;
 }) {
   const [sp, session] = await Promise.all([searchParams, auth()]);
-  const firstName = getFirstName(session?.user?.name, session?.user?.email);
+  const firstName = firstNameFromUser(session?.user);
   const category = sp.category && CATEGORIES.includes(sp.category as Category) ? sp.category : undefined;
   const favOnly = sp.fav === "1";
   const q = sp.q?.trim();
@@ -37,7 +38,7 @@ export default async function WardrobePage({
     orderBy: { createdAt: "desc" },
   });
 
-  const title = firstName ? `${firstName}'s Closet` : "Closet";
+  const title = possessiveTitle("Closet", firstName);
 
   return (
     <div className="space-y-5">

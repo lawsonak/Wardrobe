@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
-import { getFirstName, csvToList } from "@/lib/constants";
+import { csvToList } from "@/lib/constants";
+import { firstNameFromUser } from "@/lib/userName";
 import NeedsReviewItem from "./NeedsReviewItem";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function NeedsReviewPage() {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
-  const firstName = getFirstName(session?.user?.name, session?.user?.email);
+  const firstName = firstNameFromUser(session?.user);
 
   const items = await prisma.item.findMany({
     where: {

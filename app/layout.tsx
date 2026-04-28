@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "My Wardrobe",
-  description: "Your personal virtual wardrobe — snap, tag, and style your closet.",
+  title: { default: "Wardrobe", template: "%s · Wardrobe" },
+  description: "A personal virtual wardrobe — snap, tag, and style your closet.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
@@ -11,8 +11,11 @@ export const metadata: Metadata = {
     title: "Wardrobe",
   },
   icons: {
-    icon: "/icons/icon.svg",
-    apple: "/icons/icon.svg",
+    icon: [
+      { url: "/icons/icon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/icons/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
   formatDetection: {
     telephone: false,
