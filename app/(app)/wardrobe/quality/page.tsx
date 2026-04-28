@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { firstNameFromUser } from "@/lib/userName";
 import { editDistance } from "@/lib/brand";
 import { csvToList } from "@/lib/constants";
+import MergeBrandsControl from "./MergeBrandsControl";
 
 export const dynamic = "force-dynamic";
 
@@ -106,23 +107,20 @@ export default async function MetadataQualityPage() {
           {brandPairs.length > 0 && (
             <section className="card p-4">
               <h2 className="font-display text-lg text-stone-800">Possible duplicate brands</h2>
-              <p className="text-xs text-stone-500">Names that look like the same brand spelled differently.</p>
+              <p className="text-xs text-stone-500">Names that look like the same brand spelled differently. Pick a canonical and we&apos;ll re-tag every item that uses the other.</p>
               <ul className="mt-3 divide-y divide-stone-100">
                 {brandPairs.map((p) => (
-                  <li key={`${p.a.id}-${p.b.id}`} className="flex items-center justify-between gap-3 py-2 text-sm">
-                    <span className="truncate">
+                  <li key={`${p.a.id}-${p.b.id}`} className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm">
+                    <span className="min-w-0 flex-1 truncate">
                       <span className="font-medium">{p.a.name}</span>
                       <span className="text-stone-400"> · </span>
                       <span className="font-medium">{p.b.name}</span>
+                      <span className="ml-2 text-xs text-stone-400">distance {p.distance}</span>
                     </span>
-                    <span className="text-xs text-stone-500">distance {p.distance}</span>
+                    <MergeBrandsControl a={p.a} b={p.b} />
                   </li>
                 ))}
               </ul>
-              <p className="mt-3 text-xs text-stone-500">
-                Open an item that uses one of these brands and re-pick the canonical name from the
-                autocomplete to consolidate. Aliases coming soon.
-              </p>
             </section>
           )}
 
