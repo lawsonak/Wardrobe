@@ -42,6 +42,23 @@ export default function BgDiagnostic() {
     setSteps([]);
     resetBackgroundRemover();
 
+    // 0. Import map present — without it, imgly's bare imports of
+    // onnxruntime-web fail with "does not resolve to a valid URL".
+    setStep("Import map for onnxruntime-web", "pending");
+    if (typeof document !== "undefined") {
+      const map = document.querySelector('script[type="importmap"]');
+      const text = map?.textContent ?? "";
+      if (map && text.includes("onnxruntime-web")) {
+        setStep("Import map for onnxruntime-web", "ok", "present in document");
+      } else {
+        setStep(
+          "Import map for onnxruntime-web",
+          "error",
+          "missing — bg removal will fail with 'Module name onnxruntime-web does not resolve to a valid URL'. Restart the service after the latest deploy.",
+        );
+      }
+    }
+
     // 1. Module load
     setStep("Load /vendor/imgly/index.mjs", "pending");
     try {
