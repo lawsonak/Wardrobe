@@ -70,6 +70,34 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ item: updated });
   }
 
+  // Just replace the bg-removed variant — keeps the original photo.
+  // Used by the "Re-run background removal" button on item detail.
+  if (which === "bg") {
+    const bg = form.get("imageBgRemoved");
+    if (!bg || !(bg instanceof File) || bg.size === 0) {
+      return NextResponse.json({ error: "Missing imageBgRemoved" }, { status: 400 });
+    }
+    const newBg = await saveUpload(userId, id, bg, "bg");
+    const oldBg = item.imageBgRemovedPath;
+    const updated = await prisma.item.update({
+      where: { id },
+      data: { imageBgRemovedPath: newBg },
+    });
+    await unlink(oldBg);
+    return NextResponse.json({ item: updated });
+  }
+
+  // Drop the bg-removed variant entirely (revert to original photo).
+  if (which === "bg-clear") {
+    const oldBg = item.imageBgRemovedPath;
+    const updated = await prisma.item.update({
+      where: { id },
+      data: { imageBgRemovedPath: null },
+    });
+    await unlink(oldBg);
+    return NextResponse.json({ item: updated });
+  }
+
   if (which === "label") {
     const label = form.get("label");
     if (!label || !(label instanceof File) || label.size === 0) {

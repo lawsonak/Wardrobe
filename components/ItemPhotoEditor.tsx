@@ -12,9 +12,13 @@ import { heicToJpeg, isHeic } from "@/lib/heic";
 
 export default function ItemPhotoEditor({
   itemId,
+  imagePath,
+  hasBgRemoved,
   hasLabelPhoto,
 }: {
   itemId: string;
+  imagePath: string;
+  hasBgRemoved: boolean;
   hasLabelPhoto: boolean;
 }) {
   const router = useRouter();
@@ -105,6 +109,54 @@ export default function ItemPhotoEditor({
     }
   }
 
+  // Re-run bg removal on the existing main photo (no re-upload). Fetches
+  // the current image bytes from /api/uploads/, runs them through the
+  // same client-side bg removal pipeline, then PATCHes only the bg
+  // variant — original photo is untouched.
+  async function rerunBgRemoval() {
+    setError(null);
+    setBusy(true);
+    try {
+      setStage("Loading photo…");
+      const r = await fetch(`/api/uploads/${imagePath}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status} loading photo`);
+      const blob = await r.blob();
+      setStage("Removing background…");
+      const out = await removeBackground(blob);
+      setStage("Saving…");
+      const fd = new FormData();
+      fd.append("which", "bg");
+      fd.append("imageBgRemoved", new File([out], "bg.png", { type: "image/png" }));
+      const res = await fetch(`/api/items/${itemId}/photo`, { method: "POST", body: fd });
+      if (!res.ok) throw new Error(await res.text());
+      router.refresh();
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Background removal failed.");
+    } finally {
+      setBusy(false);
+      setStage(null);
+    }
+  }
+
+  async function clearBgRemoval() {
+    if (!confirm("Use the original photo and drop the background-removed version?")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("which", "bg-clear");
+      const res = await fetch(`/api/items/${itemId}/photo`, { method: "POST", body: fd });
+      if (!res.ok) throw new Error(await res.text());
+      router.refresh();
+    } catch (err) {
+      console.error(err);
+      setError("Couldn't drop the bg-removed photo.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-3">
       <input ref={mainFileRef} type="file" accept="image/*,.heic,.heif" className="hidden"
@@ -123,9 +175,21 @@ export default function ItemPhotoEditor({
         <button type="button" disabled={busy} onClick={() => mainFileRef.current?.click()} className="btn-ghost text-xs">
           From library
         </button>
-        <span className="grow" />
+        <button type="button" disabled={busy} onClick={rerunBgRemoval} className="btn-ghost text-xs text-blush-600">
+          ✂️ {hasBgRemoved ? "Re-run bg removal" : "Remove background"}
+        </button>
+        {hasBgRemoved && (
+          <button type="button" disabled={busy} onClick={clearBgRemoval} className="btn-ghost text-xs text-stone-400">
+            Use original
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
         <button type="button" disabled={busy} onClick={() => labelCameraRef.current?.click()} className="btn-secondary text-xs">
           🏷️ {hasLabelPhoto ? "Replace label" : "Add label / tag"}
+        </button>
+        <button type="button" disabled={busy} onClick={() => labelFileRef.current?.click()} className="btn-ghost text-xs">
+          From library
         </button>
         {hasLabelPhoto && (
           <button type="button" disabled={busy} onClick={clearLabel} className="btn-ghost text-xs text-stone-400">

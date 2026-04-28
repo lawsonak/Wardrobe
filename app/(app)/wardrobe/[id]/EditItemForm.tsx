@@ -20,6 +20,7 @@ import { parseFitDetails, serializeFitDetails } from "@/lib/fitDetails";
 
 type Item = {
   id: string;
+  imagePath: string;
   category: string;
   subType: string | null;
   color: string | null;
@@ -58,6 +59,62 @@ export default function EditItemForm({ item }: { item: Item }) {
   const [status, setStatus] = useState<ItemStatus>(item.status as ItemStatus);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [autoTagState, setAutoTagState] = useState<"idle" | "running" | "done" | "disabled" | "error">("idle");
+  const [autoTagMessage, setAutoTagMessage] = useState<string | null>(null);
+
+  async function autoTag() {
+    if (autoTagState === "running") return;
+    setAutoTagState("running");
+    setAutoTagMessage(null);
+    try {
+      const r = await fetch(`/api/uploads/${item.imagePath}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status} loading photo`);
+      const blob = await r.blob();
+      const fd = new FormData();
+      fd.append("image", new File([blob], "item.jpg", { type: blob.type || "image/jpeg" }));
+      const res = await fetch("/api/ai/tag", { method: "POST", body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (data?.enabled === false) {
+        setAutoTagState("disabled");
+        setAutoTagMessage(data.message ?? "AI tagging disabled.");
+        return;
+      }
+      const s = (data?.suggestions ?? {}) as {
+        category?: Category;
+        subType?: string;
+        color?: string;
+        brand?: string;
+        seasons?: string[];
+        activities?: string[];
+        notes?: string;
+      };
+      let applied = 0;
+      if (s.category && CATEGORIES.includes(s.category) && (!subType || category !== s.category)) {
+        if (category !== s.category) {
+          setCategory(s.category);
+          applied++;
+        }
+      }
+      if (s.subType && !subType) { setSubType(s.subType); applied++; }
+      if (s.color && !color) { setColor(s.color); applied++; }
+      if (s.brand && !brand) { setBrand(s.brand); setBrandId(null); applied++; }
+      if (s.seasons && seasons.length === 0) {
+        const valid = s.seasons.filter((x) => SEASONS.includes(x as never));
+        if (valid.length > 0) { setSeasons(valid); applied++; }
+      }
+      if (s.activities && activities.length === 0) {
+        const valid = s.activities.filter((x) => ACTIVITIES.includes(x as never));
+        if (valid.length > 0) { setActivities(valid); applied++; }
+      }
+      if (s.notes && !notes) { setNotes(s.notes); applied++; }
+      setAutoTagState("done");
+      setAutoTagMessage(applied > 0 ? `Pre-filled ${applied} field${applied === 1 ? "" : "s"} — review and save.` : "No new suggestions.");
+    } catch (err) {
+      console.error(err);
+      setAutoTagState("error");
+      setAutoTagMessage(err instanceof Error ? err.message : "Auto-tag failed.");
+    }
+  }
 
   async function save() {
     setBusy(true);
@@ -182,6 +239,23 @@ export default function EditItemForm({ item }: { item: Item }) {
             ))}
           </select>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 border-t border-stone-100 pt-3">
+        <button
+          type="button"
+          onClick={autoTag}
+          className="btn-ghost text-xs text-blush-600"
+          disabled={busy || autoTagState === "running"}
+          title="Ask AI to fill in any empty fields based on the photo"
+        >
+          {autoTagState === "running" ? "Reading photo…" : "✨ Auto-tag"}
+        </button>
+        {autoTagMessage && (
+          <span className={"text-xs " + (autoTagState === "error" ? "text-blush-700" : "text-stone-500")}>
+            {autoTagMessage}
+          </span>
+        )}
       </div>
 
       <div className="flex gap-2 pt-2">

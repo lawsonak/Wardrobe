@@ -55,7 +55,12 @@ export default async function ItemDetail({
             </div>
           )}
 
-          <ItemPhotoEditor itemId={item.id} hasLabelPhoto={!!labelSrc} />
+          <ItemPhotoEditor
+            itemId={item.id}
+            imagePath={item.imagePath}
+            hasBgRemoved={!!item.imageBgRemovedPath}
+            hasLabelPhoto={!!labelSrc}
+          />
 
           {/* Quick metadata summary below image on mobile */}
           <div className="card p-3 sm:hidden">
@@ -114,6 +119,7 @@ export default async function ItemDetail({
           <EditItemForm
             item={{
               id: item.id,
+              imagePath: item.imagePath,
               category: item.category,
               subType: item.subType,
               color: item.color,
