@@ -53,6 +53,8 @@ export default function AddItemForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedToast, setSavedToast] = useState<string | null>(null);
+  const [autoTagState, setAutoTagState] = useState<"idle" | "running" | "done" | "disabled" | "error">("idle");
+  const [autoTagMessage, setAutoTagMessage] = useState<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -96,6 +98,47 @@ export default function AddItemForm() {
     if (!original) return;
     resetBackgroundRemover();
     await runBgRemoval(original);
+  }
+
+  async function autoTag() {
+    if (!original || autoTagState === "running") return;
+    setAutoTagState("running");
+    setAutoTagMessage(null);
+    try {
+      const fd = new FormData();
+      fd.append("image", original);
+      const res = await fetch("/api/ai/tag", { method: "POST", body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (data?.enabled === false) {
+        setAutoTagState("disabled");
+        setAutoTagMessage(data.message ?? "AI tagging disabled.");
+        return;
+      }
+      const s = (data?.suggestions ?? {}) as {
+        category?: Category;
+        subType?: string;
+        color?: string;
+        brand?: string;
+        seasons?: string[];
+        activities?: string[];
+        notes?: string;
+      };
+      let applied = 0;
+      if (s.category && !category) { setCategory(s.category); applied++; }
+      else if (s.category && CATEGORIES.includes(s.category)) { setCategory(s.category); applied++; }
+      if (s.subType && !subType) { setSubType(s.subType); applied++; }
+      if (s.color && !color) { setColor(s.color); applied++; }
+      if (s.brand && !brand) { setBrand(s.brand); setBrandId(null); applied++; }
+      if (s.seasons && seasons.length === 0) { setSeasons(s.seasons.filter((x) => SEASONS.includes(x as never))); applied++; }
+      if (s.activities && activities.length === 0) { setActivities(s.activities.filter((x) => ACTIVITIES.includes(x as never))); applied++; }
+      if (s.notes && !notes) { setNotes(s.notes); applied++; }
+      setAutoTagState("done");
+      setAutoTagMessage(applied > 0 ? `Pre-filled ${applied} field${applied === 1 ? "" : "s"} — review before saving.` : "No new suggestions.");
+    } catch (err) {
+      console.error(err);
+      setAutoTagState("error");
+      setAutoTagMessage("Auto-tag failed.");
+    }
   }
 
   async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -272,6 +315,24 @@ export default function AddItemForm() {
             </>
           )}
         </div>
+        {original && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-3">
+            <button
+              type="button"
+              onClick={autoTag}
+              className="btn-ghost text-xs text-blush-600"
+              disabled={autoTagState === "running"}
+              title="Ask AI to suggest tags for this photo"
+            >
+              {autoTagState === "running" ? "Reading photo…" : "✨ Auto-tag"}
+            </button>
+            {autoTagMessage && (
+              <span className={"text-xs " + (autoTagState === "error" ? "text-blush-700" : "text-stone-500")}>
+                {autoTagMessage}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Metadata */}
