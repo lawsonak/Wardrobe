@@ -2,10 +2,21 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Wardrobe",
-  description: "A personal virtual wardrobe.",
+  title: "My Wardrobe",
+  description: "Your personal virtual wardrobe — snap, tag, and style your closet.",
   manifest: "/manifest.webmanifest",
-  icons: { icon: "/icons/icon.svg" },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Wardrobe",
+  },
+  icons: {
+    icon: "/icons/icon.svg",
+    apple: "/icons/icon.svg",
+  },
+  formatDetection: {
+    telephone: false,
+  },
 };
 
 export const viewport: Viewport = {
@@ -13,6 +24,8 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

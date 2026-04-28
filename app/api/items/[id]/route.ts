@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
-import { CATEGORIES, listToCsv } from "@/lib/constants";
+import { CATEGORIES, ITEM_STATUSES, listToCsv } from "@/lib/constants";
 
 export const runtime = "nodejs";
 
@@ -34,10 +34,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (Array.isArray(body.seasons)) data.seasons = listToCsv(body.seasons.map(String));
   if (Array.isArray(body.activities)) data.activities = listToCsv(body.activities.map(String));
   if (typeof body.category === "string") {
-    if (!CATEGORIES.includes(body.category)) {
+    if (!CATEGORIES.includes(body.category as (typeof CATEGORIES)[number])) {
       return NextResponse.json({ error: "Invalid category" }, { status: 400 });
     }
     data.category = body.category;
+  }
+  if (typeof body.status === "string") {
+    if (!ITEM_STATUSES.includes(body.status as (typeof ITEM_STATUSES)[number])) {
+      return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+    }
+    data.status = body.status;
   }
 
   const updated = await prisma.item.update({ where: { id }, data });
@@ -51,12 +57,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const item = await prisma.item.findUnique({ where: { id } });
   if (!item) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Remove from any saved outfits
   await prisma.outfitItem.deleteMany({ where: { itemId: id } });
   await prisma.item.delete({ where: { id } });
 
-  // Best-effort: delete files
-  for (const p of [item.imagePath, item.imageBgRemovedPath].filter(Boolean) as string[]) {
+  for (const p of [item.imagePath, item.imageBgRemovedPath, item.labelImagePath].filter(Boolean) as string[]) {
     try {
       await fs.unlink(path.join(UPLOAD_ROOT, p));
     } catch {

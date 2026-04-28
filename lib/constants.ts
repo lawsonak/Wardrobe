@@ -8,6 +8,7 @@ export const CATEGORIES = [
   "Activewear",
   "Loungewear",
   "Bags",
+  "Jewelry",
 ] as const;
 
 export type Category = (typeof CATEGORIES)[number];
@@ -18,10 +19,22 @@ export const SUBTYPES_BY_CATEGORY: Record<Category, string[]> = {
   Dresses: ["Casual dress", "Maxi dress", "Cocktail dress", "Sundress", "Wrap dress"],
   Outerwear: ["Jacket", "Coat", "Blazer", "Vest", "Trench"],
   Shoes: ["Sneakers", "Heels", "Boots", "Sandals", "Flats", "Loafers"],
-  Accessories: ["Belt", "Scarf", "Hat", "Sunglasses", "Jewelry", "Watch"],
+  Accessories: ["Belt", "Scarf", "Hat", "Sunglasses", "Gloves", "Hair accessory"],
   Activewear: ["Sports bra", "Athletic top", "Athletic bottoms", "Athletic dress"],
   Loungewear: ["Pajama top", "Pajama bottoms", "Robe", "Loungeset"],
   Bags: ["Tote", "Crossbody", "Clutch", "Backpack", "Handbag"],
+  Jewelry: [
+    "Rings",
+    "Earrings",
+    "Necklaces",
+    "Bracelets",
+    "Watches",
+    "Charms",
+    "Brooches",
+    "Anklets",
+    "Formal jewelry",
+    "Everyday jewelry",
+  ],
 };
 
 export const SEASONS = ["spring", "summer", "fall", "winter"] as const;
@@ -50,7 +63,6 @@ export const SLOTS = [
 ] as const;
 export type Slot = (typeof SLOTS)[number];
 
-// Map from a category to the most natural outfit slot
 export const CATEGORY_TO_SLOT: Record<Category, Slot> = {
   Tops: "top",
   Bottoms: "bottom",
@@ -61,6 +73,7 @@ export const CATEGORY_TO_SLOT: Record<Category, Slot> = {
   Activewear: "top",
   Loungewear: "top",
   Bags: "bag",
+  Jewelry: "accessory",
 };
 
 export const COLOR_PALETTE = [
@@ -84,8 +97,16 @@ export const COLOR_PALETTE = [
   { name: "blush", hex: "#f7d6df" },
   { name: "purple", hex: "#7d5cb5" },
   { name: "lavender", hex: "#c8b6e0" },
+  { name: "gold", hex: "#d4a843" },
+  { name: "silver", hex: "#b0b8c1" },
   { name: "multi", hex: "linear-gradient(135deg,#f4a8c0,#c8b6e0,#4a7bc8)" },
 ] as const;
+
+export const ITEM_STATUSES = ["active", "needs_review", "draft"] as const;
+export type ItemStatus = (typeof ITEM_STATUSES)[number];
+
+export const WISHLIST_PRIORITIES = ["low", "medium", "high"] as const;
+export type WishlistPriority = (typeof WISHLIST_PRIORITIES)[number];
 
 export function csvToList(csv: string | null | undefined): string[] {
   if (!csv) return [];
@@ -98,4 +119,10 @@ export function csvToList(csv: string | null | undefined): string[] {
 export function listToCsv(values: string[] | undefined): string {
   if (!values) return "";
   return values.filter(Boolean).join(",");
+}
+
+export function getFirstName(name?: string | null, email?: string | null): string {
+  if (name) return name.split(" ")[0];
+  if (email) return email.split("@")[0].split(".")[0];
+  return "";
 }

@@ -14,6 +14,7 @@ public/vendor/
 data/wardrobe.db
 data/wardrobe.db-journal
 data/uploads/
+prisma/data/
 
 # IDE
 .vscode

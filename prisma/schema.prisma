@@ -15,8 +15,9 @@ model User {
   passwordHash String
   createdAt    DateTime @default(now())
 
-  items   Item[]
-  outfits Outfit[]
+  items         Item[]
+  outfits       Outfit[]
+  wishlistItems WishlistItem[]
 }
 
 model Item {
@@ -25,6 +26,9 @@ model Item {
   owner              User     @relation(fields: [ownerId], references: [id])
   imagePath          String
   imageBgRemovedPath String?
+  labelImagePath     String?
+  // active | needs_review | draft
+  status             String   @default("active")
   category           String
   subType            String?
   color              String?
@@ -62,4 +66,25 @@ model OutfitItem {
   itemId   String
   item     Item   @relation(fields: [itemId], references: [id])
   slot     String
+}
+
+model WishlistItem {
+  id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id])
+  name      String
+  category  String?
+  brand     String?
+  link      String?
+  price     String?
+  imagePath String?
+  // low | medium | high
+  priority  String   @default("medium")
+  occasion  String?
+  notes     String?
+  fillsGap  Boolean  @default(false)
+  giftIdea  Boolean  @default(false)
+  purchased Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
