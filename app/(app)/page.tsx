@@ -137,7 +137,10 @@ export default async function Dashboard() {
         <section className="card p-4">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-display text-lg text-stone-800">Closet stats</h2>
-            <Link href="/wardrobe/quality" className="text-xs text-blush-600 hover:underline">Closet quality</Link>
+            <div className="flex items-center gap-3 text-xs">
+              <Link href="/wardrobe/quality" className="text-blush-600 hover:underline">Closet quality</Link>
+              <Link href="/settings" className="text-blush-600 hover:underline">Settings</Link>
+            </div>
           </div>
           <div className="grid grid-cols-3 gap-3 text-center">
             <div>
