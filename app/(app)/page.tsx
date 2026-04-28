@@ -135,7 +135,10 @@ export default async function Dashboard() {
       {/* Closet stats */}
       {itemCount > 0 && (
         <section className="card p-4">
-          <h2 className="font-display text-lg text-stone-800 mb-3">Closet stats</h2>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="font-display text-lg text-stone-800">Closet stats</h2>
+            <Link href="/wardrobe/quality" className="text-xs text-blush-600 hover:underline">Closet quality</Link>
+          </div>
           <div className="grid grid-cols-3 gap-3 text-center">
             <div>
               <p className="font-display text-2xl text-blush-700">{itemCount}</p>
@@ -146,7 +149,7 @@ export default async function Dashboard() {
               <p className="text-xs text-stone-500">Outfits</p>
             </div>
             <div>
-              <p className="font-display text-2xl text-blush-700">{favorites.length}</p>
+              <p className="font-display text-2xl text-blush-700">{favoriteCount}</p>
               <p className="text-xs text-stone-500">Favorites</p>
             </div>
           </div>
