@@ -19,6 +19,7 @@ model User {
   outfits       Outfit[]
   wishlistItems WishlistItem[]
   brands        Brand[]
+  capsules      Capsule[]
 }
 
 model Item {
@@ -53,7 +54,8 @@ model Item {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  outfitItems OutfitItem[]
+  outfitItems  OutfitItem[]
+  capsuleItems CapsuleItem[]
 }
 
 model Outfit {
@@ -101,6 +103,32 @@ model BrandAlias {
   aliasKey String
 
   @@unique([brandId, aliasKey])
+}
+
+// A user-curated subset of items. "Paris trip", "Summer vacation",
+// "Date-night capsule" — anything. Items can belong to many capsules.
+model Capsule {
+  id          String   @id @default(cuid())
+  ownerId     String
+  owner       User     @relation(fields: [ownerId], references: [id])
+  name        String
+  description String?
+  occasion    String?
+  season      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items CapsuleItem[]
+}
+
+model CapsuleItem {
+  id        String  @id @default(cuid())
+  capsuleId String
+  capsule   Capsule @relation(fields: [capsuleId], references: [id], onDelete: Cascade)
+  itemId    String
+  item      Item    @relation(fields: [itemId], references: [id])
+
+  @@unique([capsuleId, itemId])
 }
 
 model OutfitItem {

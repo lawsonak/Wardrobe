@@ -65,6 +65,12 @@ export default async function SettingsPage() {
             </Link>
             <span className="text-stone-500"> — rapid-fire add many items in a row.</span>
           </li>
+          <li>
+            <Link href="/capsules" className="text-blush-600 hover:underline">
+              Capsules
+            </Link>
+            <span className="text-stone-500"> — group items into pack lists, capsule wardrobes, themes.</span>
+          </li>
         </ul>
       </section>
     </div>
