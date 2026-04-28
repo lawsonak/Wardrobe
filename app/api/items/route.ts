@@ -28,11 +28,13 @@ export async function GET(req: NextRequest) {
   const category = searchParams.get("category") || undefined;
   const fav = searchParams.get("fav") === "1";
   const search = searchParams.get("q")?.trim();
+  const status = searchParams.get("status") || undefined;
 
   const items = await prisma.item.findMany({
     where: {
       ...(category ? { category } : {}),
       ...(fav ? { isFavorite: true } : {}),
+      ...(status ? { status } : {}),
       ...(search
         ? {
             OR: [
@@ -59,6 +61,7 @@ export async function POST(req: NextRequest) {
   const form = await req.formData();
   const original = form.get("image");
   const bgRemoved = form.get("imageBgRemoved");
+  const labelImage = form.get("labelImage");
   const category = String(form.get("category") || "");
   if (!original || !(original instanceof File) || !category) {
     return NextResponse.json({ error: "Missing image or category" }, { status: 400 });
@@ -75,6 +78,7 @@ export async function POST(req: NextRequest) {
   const seasons = listToCsv(form.getAll("seasons").map(String));
   const activities = listToCsv(form.getAll("activities").map(String));
   const isFavorite = form.get("isFavorite") === "1";
+  const statusVal = (form.get("status") as string | null) || "active";
 
   const created = await prisma.item.create({
     data: {
@@ -89,6 +93,7 @@ export async function POST(req: NextRequest) {
       activities,
       notes,
       isFavorite,
+      status: statusVal,
     },
   });
 
@@ -97,10 +102,14 @@ export async function POST(req: NextRequest) {
   if (bgRemoved && bgRemoved instanceof File && bgRemoved.size > 0) {
     imageBgRemovedPath = await saveUpload(userId, created.id, bgRemoved, "bg");
   }
+  let labelImagePath: string | null = null;
+  if (labelImage && labelImage instanceof File && labelImage.size > 0) {
+    labelImagePath = await saveUpload(userId, created.id, labelImage, "label");
+  }
 
   const updated = await prisma.item.update({
     where: { id: created.id },
-    data: { imagePath, imageBgRemovedPath },
+    data: { imagePath, imageBgRemovedPath, labelImagePath },
   });
 
   return NextResponse.json({ item: updated });

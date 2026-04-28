@@ -1,6 +1,7 @@
 import Link from "next/link";
+import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
-import { ACTIVITIES, SEASONS, SLOTS } from "@/lib/constants";
+import { ACTIVITIES, SEASONS, SLOTS, getFirstName } from "@/lib/constants";
 import OutfitCard from "@/components/OutfitCard";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +11,8 @@ export default async function OutfitsPage({
 }: {
   searchParams: Promise<{ activity?: string; season?: string; fav?: string }>;
 }) {
-  const sp = await searchParams;
+  const [sp, session] = await Promise.all([searchParams, auth()]);
+  const firstName = getFirstName(session?.user?.name, session?.user?.email);
 
   const outfits = await prisma.outfit.findMany({
     where: {
@@ -22,11 +24,13 @@ export default async function OutfitsPage({
     include: { items: { include: { item: true } } },
   });
 
+  const title = firstName ? `${firstName}'s Outfits` : "Outfits";
+
   return (
     <div className="space-y-5">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="font-display text-3xl text-blush-700">Outfits</h1>
+          <h1 className="font-display text-3xl text-blush-700">{title}</h1>
           <p className="text-sm text-stone-500">{outfits.length} saved</p>
         </div>
         <Link href="/outfits/builder" className="btn-primary">+ Build</Link>

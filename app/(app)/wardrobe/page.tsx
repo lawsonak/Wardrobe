@@ -1,6 +1,7 @@
 import Link from "next/link";
+import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
-import { CATEGORIES, type Category } from "@/lib/constants";
+import { CATEGORIES, type Category, getFirstName } from "@/lib/constants";
 import ItemCard from "@/components/ItemCard";
 
 export const dynamic = "force-dynamic";
@@ -8,17 +9,20 @@ export const dynamic = "force-dynamic";
 export default async function WardrobePage({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string; fav?: string; q?: string }>;
+  searchParams: Promise<{ category?: string; fav?: string; q?: string; status?: string }>;
 }) {
-  const sp = await searchParams;
+  const [sp, session] = await Promise.all([searchParams, auth()]);
+  const firstName = getFirstName(session?.user?.name, session?.user?.email);
   const category = sp.category && CATEGORIES.includes(sp.category as Category) ? sp.category : undefined;
   const favOnly = sp.fav === "1";
   const q = sp.q?.trim();
+  const statusFilter = sp.status;
 
   const items = await prisma.item.findMany({
     where: {
       ...(category ? { category } : {}),
       ...(favOnly ? { isFavorite: true } : {}),
+      ...(statusFilter ? { status: statusFilter } : {}),
       ...(q
         ? {
             OR: [
@@ -33,11 +37,13 @@ export default async function WardrobePage({
     orderBy: { createdAt: "desc" },
   });
 
+  const title = firstName ? `${firstName}'s Closet` : "Closet";
+
   return (
     <div className="space-y-5">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-3xl text-blush-700">Closet</h1>
+          <h1 className="font-display text-3xl text-blush-700">{title}</h1>
           <p className="text-sm text-stone-500">{items.length} item{items.length === 1 ? "" : "s"}</p>
         </div>
         <Link href="/wardrobe/new" className="btn-primary">+ Add</Link>
