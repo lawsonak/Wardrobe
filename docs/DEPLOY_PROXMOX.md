@@ -562,6 +562,19 @@ rsync -av /opt/wardrobe/data/ user@nas:/path/to/backups/wardrobe/
 
 ### Updating later
 
+One-liner:
+
+```bash
+cd /opt/wardrobe && npm run deploy:update
+```
+
+That runs `scripts/update.sh`: `git pull` → `npm install` → `prisma
+migrate deploy` → `npm run build` → `systemctl restart wardrobe`,
+exiting at the first failure so a broken build never restarts the
+service.
+
+If you'd rather do it manually:
+
 ```bash
 cd /opt/wardrobe
 git pull
