@@ -2,7 +2,7 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { firstNameFromUser } from "@/lib/userName";
-import { brandKey, editDistance } from "@/lib/brand";
+import { editDistance } from "@/lib/brand";
 import { csvToList } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";

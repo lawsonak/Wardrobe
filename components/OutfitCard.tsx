@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/cn";
 
@@ -80,6 +81,14 @@ export default function OutfitCard({
           </p>
         </div>
         <div className="flex items-center gap-1">
+          <Link
+            href={`/outfits/${outfit.id}/style`}
+            className="btn-ghost px-2 text-xs text-stone-500"
+            aria-label="Open style canvas"
+            title="Style canvas"
+          >
+            ✨ Style
+          </Link>
           <button
             type="button"
             onClick={toggleFav}
