@@ -82,6 +82,14 @@ export default function OutfitCard({
         </div>
         <div className="flex items-center gap-1">
           <Link
+            href={`/outfits/${outfit.id}/edit`}
+            className="btn-ghost px-2 text-xs text-stone-600"
+            aria-label="Edit outfit"
+            title="Edit"
+          >
+            Edit
+          </Link>
+          <Link
             href={`/outfits/${outfit.id}/style`}
             className="btn-ghost px-2 text-xs text-stone-500"
             aria-label="Open style canvas"

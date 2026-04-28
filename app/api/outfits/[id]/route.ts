@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import { SLOTS, type Slot } from "@/lib/constants";
 
 export const runtime = "nodejs";
 
@@ -19,7 +20,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (body.layoutJson === null) {
     data.layoutJson = null;
   } else if (typeof body.layoutJson === "string") {
-    // Validate it parses, but don't pretty-print or transform.
     try {
       JSON.parse(body.layoutJson);
       data.layoutJson = body.layoutJson;
@@ -28,18 +28,59 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   }
 
-  // Owner check before update.
   const existing = await prisma.outfit.findFirst({ where: { id, ownerId: userId }, select: { id: true } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const outfit = await prisma.outfit.update({ where: { id }, data });
+  // If the client sends `items`, replace the OutfitItem set in one
+  // transaction. Validates that all referenced items belong to this user.
+  let pendingItems: Array<{ slot: Slot; itemId: string }> | null = null;
+  if (Array.isArray(body.items)) {
+    const cleaned: Array<{ slot: Slot; itemId: string }> = [];
+    for (const raw of body.items) {
+      if (!raw || typeof raw !== "object") continue;
+      const slot = String(raw.slot) as Slot;
+      const itemId = String(raw.itemId);
+      if (!SLOTS.includes(slot) || !itemId) continue;
+      cleaned.push({ slot, itemId });
+    }
+    if (cleaned.length === 0) {
+      return NextResponse.json({ error: "An outfit needs at least one piece." }, { status: 400 });
+    }
+    const owned = await prisma.item.findMany({
+      where: { ownerId: userId, id: { in: cleaned.map((c) => c.itemId) } },
+      select: { id: true },
+    });
+    const ownedIds = new Set(owned.map((o) => o.id));
+    pendingItems = cleaned.filter((c) => ownedIds.has(c.itemId));
+    if (pendingItems.length === 0) {
+      return NextResponse.json({ error: "None of those items belong to you." }, { status: 400 });
+    }
+  }
+
+  const outfit = await prisma.$transaction(async (tx) => {
+    if (pendingItems) {
+      await tx.outfitItem.deleteMany({ where: { outfitId: id } });
+      await tx.outfitItem.createMany({
+        data: pendingItems.map((p) => ({ outfitId: id, slot: p.slot, itemId: p.itemId })),
+      });
+    }
+    return tx.outfit.update({
+      where: { id },
+      data,
+      include: { items: { include: { item: true } } },
+    });
+  });
+
   return NextResponse.json({ outfit });
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = (session?.user as { id?: string } | undefined)?.id;
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
+  const existing = await prisma.outfit.findFirst({ where: { id, ownerId: userId }, select: { id: true } });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
   await prisma.outfit.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

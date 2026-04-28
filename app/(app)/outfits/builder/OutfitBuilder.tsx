@@ -26,7 +26,9 @@ type BuilderItem = {
   activities: string;
 };
 
-type Picks = Partial<Record<Slot, BuilderItem>>;
+// Each slot can hold multiple items (e.g. layered tops, multiple
+// accessories, or several pieces of jewelry).
+type Picks = Record<Slot, BuilderItem[]>;
 
 const SLOT_LABELS: Record<Slot, string> = {
   top: "Top",
@@ -34,23 +36,56 @@ const SLOT_LABELS: Record<Slot, string> = {
   dress: "Dress",
   outerwear: "Outerwear",
   shoes: "Shoes",
-  accessory: "Accessory",
+  accessory: "Accessories",
   bag: "Bag",
 };
 
-export default function OutfitBuilder({ items }: { items: BuilderItem[] }) {
+// Slots where multi-select feels natural (you might layer two tops,
+// add multiple necklaces, or pair a tote and a clutch).
+const MULTI_SLOTS = new Set<Slot>(["top", "outerwear", "accessory", "bag", "shoes"]);
+
+function emptyPicks(): Picks {
+  return { top: [], bottom: [], dress: [], outerwear: [], shoes: [], accessory: [], bag: [] };
+}
+
+export type InitialOutfit = {
+  id: string;
+  name: string;
+  activity: string | null;
+  season: string | null;
+  isFavorite: boolean;
+  items: { itemId: string; slot: string }[];
+};
+
+export default function OutfitBuilder({
+  items,
+  initial,
+}: {
+  items: BuilderItem[];
+  initial?: InitialOutfit;
+}) {
   const router = useRouter();
   const search = useSearchParams();
-  const initialActivity = search.get("activity") ?? "";
-  const initialSeason = search.get("season") ?? "";
-  const shouldAutoShuffle = search.get("shuffle") === "1";
+  const initialActivity = initial?.activity ?? search.get("activity") ?? "";
+  const initialSeason = initial?.season ?? search.get("season") ?? "";
+  const shouldAutoShuffle = !initial && search.get("shuffle") === "1";
 
   const [activity, setActivity] = useState<string>(initialActivity);
   const [season, setSeason] = useState<string>(initialSeason);
   const [favOnly, setFavOnly] = useState(false);
-  const [picks, setPicks] = useState<Picks>({});
-  const [name, setName] = useState("");
-  const [isFavorite, setIsFavorite] = useState(false);
+  const [picks, setPicks] = useState<Picks>(() => {
+    if (!initial) return emptyPicks();
+    const p = emptyPicks();
+    const byId = new Map(items.map((i) => [i.id, i]));
+    for (const oi of initial.items) {
+      const it = byId.get(oi.itemId);
+      const slot = (oi.slot as Slot) || (it && CATEGORY_TO_SLOT[it.category as Category]);
+      if (it && slot && SLOTS.includes(slot)) p[slot].push(it);
+    }
+    return p;
+  });
+  const [name, setName] = useState(initial?.name ?? "");
+  const [isFavorite, setIsFavorite] = useState(initial?.isFavorite ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,9 +101,7 @@ export default function OutfitBuilder({ items }: { items: BuilderItem[] }) {
   }, [items, activity, season, favOnly]);
 
   const itemsBySlot = useMemo(() => {
-    const map: Record<Slot, BuilderItem[]> = {
-      top: [], bottom: [], dress: [], outerwear: [], shoes: [], accessory: [], bag: [],
-    };
+    const map: Picks = emptyPicks();
     for (const it of filtered) {
       const slot = CATEGORY_TO_SLOT[it.category as Category];
       if (slot) map[slot].push(it);
@@ -79,32 +112,41 @@ export default function OutfitBuilder({ items }: { items: BuilderItem[] }) {
   // If a dress is picked, hide top/bottom slots; if top/bottom picked, hide dress
   const showSlots: Slot[] = useMemo(() => {
     const all: Slot[] = ["top", "bottom", "dress", "outerwear", "shoes", "accessory", "bag"];
-    if (picks.dress) return all.filter((s) => s !== "top" && s !== "bottom");
-    if (picks.top || picks.bottom) return all.filter((s) => s !== "dress");
+    if (picks.dress.length > 0) return all.filter((s) => s !== "top" && s !== "bottom");
+    if (picks.top.length > 0 || picks.bottom.length > 0) return all.filter((s) => s !== "dress");
     return all;
   }, [picks]);
 
-  function pick(slot: Slot, item: BuilderItem) {
-    setPicks((p) => {
-      const next = { ...p };
-      if (next[slot]?.id === item.id) {
-        delete next[slot];
+  function isPicked(slot: Slot, id: string): boolean {
+    return picks[slot].some((p) => p.id === id);
+  }
+
+  function togglePick(slot: Slot, item: BuilderItem) {
+    setPicks((prev) => {
+      const next: Picks = { top: [...prev.top], bottom: [...prev.bottom], dress: [...prev.dress], outerwear: [...prev.outerwear], shoes: [...prev.shoes], accessory: [...prev.accessory], bag: [...prev.bag] };
+      const list = next[slot];
+      const idx = list.findIndex((x) => x.id === item.id);
+      if (idx >= 0) {
+        list.splice(idx, 1);
       } else {
-        next[slot] = item;
-        if (slot === "dress") { delete next.top; delete next.bottom; }
-        if (slot === "top" || slot === "bottom") { delete next.dress; }
+        if (MULTI_SLOTS.has(slot)) {
+          list.push(item);
+        } else {
+          // Single-pick slots (bottom, dress) replace.
+          next[slot] = [item];
+        }
+        if (slot === "dress") { next.top = []; next.bottom = []; }
+        if (slot === "top" || slot === "bottom") { next.dress = []; }
       }
       return next;
     });
   }
 
-  // Auto-shuffle once on mount if the URL says so. We don't want to keep
-  // re-shuffling as the user tweaks filters, so this runs exactly once.
+  // Auto-shuffle once on mount if the URL says so. Runs exactly once.
   const didAutoShuffle = useRef(false);
   useEffect(() => {
     if (shouldAutoShuffle && !didAutoShuffle.current && items.length > 0) {
       didAutoShuffle.current = true;
-      // Defer until itemsBySlot is computed.
       setTimeout(() => surprise(), 0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -112,32 +154,35 @@ export default function OutfitBuilder({ items }: { items: BuilderItem[] }) {
 
   function surprise() {
     const sample = (arr: BuilderItem[]) => arr[Math.floor(Math.random() * arr.length)];
-    const next: Picks = {};
+    const next: Picks = emptyPicks();
     if (itemsBySlot.dress.length > 0 && Math.random() < 0.4) {
-      next.dress = sample(itemsBySlot.dress);
+      next.dress = [sample(itemsBySlot.dress)];
     } else {
-      if (itemsBySlot.top.length > 0) next.top = sample(itemsBySlot.top);
-      if (itemsBySlot.bottom.length > 0) next.bottom = sample(itemsBySlot.bottom);
+      if (itemsBySlot.top.length > 0) next.top = [sample(itemsBySlot.top)];
+      if (itemsBySlot.bottom.length > 0) next.bottom = [sample(itemsBySlot.bottom)];
     }
-    if (itemsBySlot.shoes.length > 0) next.shoes = sample(itemsBySlot.shoes);
-    if (itemsBySlot.outerwear.length > 0 && Math.random() < 0.5) next.outerwear = sample(itemsBySlot.outerwear);
-    if (itemsBySlot.accessory.length > 0 && Math.random() < 0.4) next.accessory = sample(itemsBySlot.accessory);
-    if (itemsBySlot.bag.length > 0 && Math.random() < 0.4) next.bag = sample(itemsBySlot.bag);
+    if (itemsBySlot.shoes.length > 0) next.shoes = [sample(itemsBySlot.shoes)];
+    if (itemsBySlot.outerwear.length > 0 && Math.random() < 0.5) next.outerwear = [sample(itemsBySlot.outerwear)];
+    if (itemsBySlot.accessory.length > 0 && Math.random() < 0.4) next.accessory = [sample(itemsBySlot.accessory)];
+    if (itemsBySlot.bag.length > 0 && Math.random() < 0.4) next.bag = [sample(itemsBySlot.bag)];
     setPicks(next);
   }
 
   async function save() {
-    const chosen = Object.entries(picks)
-      .filter(([, it]) => it)
-      .map(([slot, it]) => ({ slot, itemId: (it as BuilderItem).id }));
+    const chosen: { slot: Slot; itemId: string }[] = [];
+    for (const slot of SLOTS) {
+      for (const it of picks[slot]) chosen.push({ slot, itemId: it.id });
+    }
     if (chosen.length === 0) {
       setError("Pick at least one piece first.");
       return;
     }
     setError(null);
     setSaving(true);
-    const res = await fetch("/api/outfits", {
-      method: "POST",
+    const url = initial ? `/api/outfits/${initial.id}` : "/api/outfits";
+    const method = initial ? "PATCH" : "POST";
+    const res = await fetch(url, {
+      method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: name.trim() || "Untitled outfit",
@@ -156,7 +201,7 @@ export default function OutfitBuilder({ items }: { items: BuilderItem[] }) {
     router.refresh();
   }
 
-  const sortedPicks = SLOTS.filter((s) => picks[s]);
+  const flatPicks = SLOTS.flatMap((s) => picks[s].map((p) => ({ slot: s, item: p })));
 
   return (
     <div className="space-y-5">
@@ -185,7 +230,7 @@ export default function OutfitBuilder({ items }: { items: BuilderItem[] }) {
             Favorites only
           </label>
           <button type="button" onClick={surprise} className="btn-primary ml-auto">✨ Surprise me</button>
-          <button type="button" onClick={() => setPicks({})} className="btn-ghost">Clear</button>
+          <button type="button" onClick={() => setPicks(emptyPicks())} className="btn-ghost">Clear</button>
         </div>
       </div>
 
@@ -193,19 +238,18 @@ export default function OutfitBuilder({ items }: { items: BuilderItem[] }) {
       <div className="card p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="font-display text-xl text-stone-800">Preview</h2>
-          <p className="text-xs text-stone-500">{sortedPicks.length} piece{sortedPicks.length === 1 ? "" : "s"}</p>
+          <p className="text-xs text-stone-500">{flatPicks.length} piece{flatPicks.length === 1 ? "" : "s"}</p>
         </div>
-        {sortedPicks.length === 0 ? (
+        {flatPicks.length === 0 ? (
           <p className="py-4 text-center text-sm text-stone-500">Nothing picked yet.</p>
         ) : (
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-            {sortedPicks.map((s) => {
-              const it = picks[s]!;
-              const src = it.imageBgRemovedPath ? `/api/uploads/${it.imageBgRemovedPath}` : `/api/uploads/${it.imagePath}`;
+            {flatPicks.map(({ slot, item }) => {
+              const src = item.imageBgRemovedPath ? `/api/uploads/${item.imageBgRemovedPath}` : `/api/uploads/${item.imagePath}`;
               return (
-                <div key={s} className="tile-bg flex aspect-square items-center justify-center rounded-2xl p-2">
+                <div key={`${slot}-${item.id}`} className="tile-bg flex aspect-square items-center justify-center rounded-2xl p-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={src} alt={SLOT_LABELS[s]} className="h-full w-full object-contain" />
+                  <img src={src} alt={item.subType ?? slot} className="h-full w-full object-contain" />
                 </div>
               );
             })}
@@ -217,20 +261,27 @@ export default function OutfitBuilder({ items }: { items: BuilderItem[] }) {
       {showSlots.map((slot) => {
         const list = itemsBySlot[slot];
         if (list.length === 0) return null;
-        const selected = picks[slot]?.id;
         return (
           <section key={slot}>
-            <h3 className="mb-2 font-display text-lg text-stone-800">{SLOT_LABELS[slot]}</h3>
+            <div className="mb-2 flex items-baseline justify-between">
+              <h3 className="font-display text-lg text-stone-800">{SLOT_LABELS[slot]}</h3>
+              {MULTI_SLOTS.has(slot) && (
+                <span className="text-[11px] text-stone-400">tap multiple</span>
+              )}
+            </div>
             <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
-              {list.map((it) => (
-                <div key={it.id} className={cn("w-28 shrink-0", selected === it.id && "ring-blush-500")}>
-                  <ItemCard
-                    item={it}
-                    selected={selected === it.id}
-                    onClick={() => pick(slot, it)}
-                  />
-                </div>
-              ))}
+              {list.map((it) => {
+                const on = isPicked(slot, it.id);
+                return (
+                  <div key={it.id} className={cn("w-28 shrink-0", on && "ring-blush-500")}>
+                    <ItemCard
+                      item={it}
+                      selected={on}
+                      onClick={() => togglePick(slot, it)}
+                    />
+                  </div>
+                );
+              })}
             </div>
           </section>
         );
@@ -252,7 +303,7 @@ export default function OutfitBuilder({ items }: { items: BuilderItem[] }) {
         </div>
         {error && <p className="text-sm text-blush-700">{error}</p>}
         <button type="button" onClick={save} className="btn-primary w-full" disabled={saving}>
-          {saving ? "Saving…" : "Save outfit"}
+          {saving ? "Saving…" : initial ? "Save changes" : "Save outfit"}
         </button>
       </div>
     </div>
