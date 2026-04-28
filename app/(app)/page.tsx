@@ -53,9 +53,12 @@ export default async function Dashboard() {
             : `${itemCount} item${itemCount === 1 ? "" : "s"} · ${outfitCount} outfit${outfitCount === 1 ? "" : "s"}`}
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
-          <Link href="/wardrobe/new" className="btn-primary">+ Add item</Link>
+          <Link href="/wardrobe/new" className="btn-primary">📸 Add item</Link>
           {itemCount > 0 && (
             <Link href="/outfits/builder" className="btn-secondary">Build an outfit</Link>
+          )}
+          {itemCount >= 3 && (
+            <Link href="/outfits/builder?shuffle=1" className="btn-secondary">✨ Shuffle</Link>
           )}
         </div>
       </section>

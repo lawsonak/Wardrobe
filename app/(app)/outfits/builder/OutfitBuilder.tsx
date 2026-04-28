@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ACTIVITIES,
   SEASONS,
@@ -40,8 +40,13 @@ const SLOT_LABELS: Record<Slot, string> = {
 
 export default function OutfitBuilder({ items }: { items: BuilderItem[] }) {
   const router = useRouter();
-  const [activity, setActivity] = useState<string>("");
-  const [season, setSeason] = useState<string>("");
+  const search = useSearchParams();
+  const initialActivity = search.get("activity") ?? "";
+  const initialSeason = search.get("season") ?? "";
+  const shouldAutoShuffle = search.get("shuffle") === "1";
+
+  const [activity, setActivity] = useState<string>(initialActivity);
+  const [season, setSeason] = useState<string>(initialSeason);
   const [favOnly, setFavOnly] = useState(false);
   const [picks, setPicks] = useState<Picks>({});
   const [name, setName] = useState("");
@@ -92,6 +97,18 @@ export default function OutfitBuilder({ items }: { items: BuilderItem[] }) {
       return next;
     });
   }
+
+  // Auto-shuffle once on mount if the URL says so. We don't want to keep
+  // re-shuffling as the user tweaks filters, so this runs exactly once.
+  const didAutoShuffle = useRef(false);
+  useEffect(() => {
+    if (shouldAutoShuffle && !didAutoShuffle.current && items.length > 0) {
+      didAutoShuffle.current = true;
+      // Defer until itemsBySlot is computed.
+      setTimeout(() => surprise(), 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldAutoShuffle, items]);
 
   function surprise() {
     const sample = (arr: BuilderItem[]) => arr[Math.floor(Math.random() * arr.length)];
