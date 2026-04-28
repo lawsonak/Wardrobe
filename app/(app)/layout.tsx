@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth, signOut } from "@/auth";
 import { firstNameFromUser, possessiveTitle } from "@/lib/userName";
+import NotificationBell from "@/components/NotificationBell";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -14,9 +15,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="mx-auto flex min-h-[100dvh] max-w-3xl flex-col">
       <header className="sticky top-0 z-20 border-b border-stone-100 bg-cream-50/90 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
         <div className="flex items-center justify-between gap-3">
-          <Link href="/" className="font-display text-xl text-blush-700 leading-tight">
+          <Link href="/" className="min-w-0 truncate font-display text-xl leading-tight text-blush-700">
             {wardrobeLabel}
           </Link>
+          <div className="flex items-center gap-1">
+            <NotificationBell />
           <nav className="hidden items-center gap-1 text-sm sm:flex">
             <Link href="/wardrobe" className="btn-ghost">Closet</Link>
             <Link href="/outfits" className="btn-ghost">Outfits</Link>
@@ -45,6 +48,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               Sign out
             </button>
           </form>
+          </div>
         </div>
       </header>
 

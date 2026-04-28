@@ -23,11 +23,14 @@ export default async function NewItemPage({
               : "Snap a photo and tag it however you like."}
           </p>
         </div>
-        {batch ? (
-          <Link href="/wardrobe/new" className="btn-ghost text-stone-500">Done</Link>
-        ) : (
-          <Link href="/wardrobe/new?batch=1" className="btn-ghost text-blush-600">Batch mode</Link>
-        )}
+        <div className="flex items-center gap-3 text-xs">
+          {batch ? (
+            <Link href="/wardrobe/new" className="text-stone-500">Done</Link>
+          ) : (
+            <Link href="/wardrobe/new?batch=1" className="text-blush-600 hover:underline">Batch mode</Link>
+          )}
+          <Link href="/wardrobe/bulk" className="text-blush-600 hover:underline">Bulk upload</Link>
+        </div>
       </div>
       <Suspense>
         <AddItemForm />

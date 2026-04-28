@@ -47,7 +47,10 @@ export default async function WardrobePage({
           <h1 className="font-display text-3xl text-blush-700">{title}</h1>
           <p className="text-sm text-stone-500">{items.length} item{items.length === 1 ? "" : "s"}</p>
         </div>
-        <Link href="/wardrobe/new" className="btn-primary">+ Add</Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/wardrobe/new" className="btn-primary">+ Add</Link>
+          <Link href="/wardrobe/bulk" className="btn-secondary text-xs">Bulk</Link>
+        </div>
       </div>
 
       <form className="flex flex-wrap items-center gap-2" action="/wardrobe">

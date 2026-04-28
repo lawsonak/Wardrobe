@@ -66,6 +66,12 @@ export default async function SettingsPage() {
             <span className="text-stone-500"> — rapid-fire add many items in a row.</span>
           </li>
           <li>
+            <Link href="/wardrobe/bulk" className="text-blush-600 hover:underline">
+              Bulk upload
+            </Link>
+            <span className="text-stone-500"> — pick a stack of photos at once, send to Needs Review.</span>
+          </li>
+          <li>
             <Link href="/capsules" className="text-blush-600 hover:underline">
               Capsules
             </Link>

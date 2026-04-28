@@ -20,6 +20,7 @@ model User {
   wishlistItems WishlistItem[]
   brands        Brand[]
   capsules      Capsule[]
+  notifications Notification[]
 }
 
 model Item {
@@ -129,6 +130,21 @@ model CapsuleItem {
   item      Item    @relation(fields: [itemId], references: [id])
 
   @@unique([capsuleId, itemId])
+}
+
+// Lightweight in-app notifications (batch upload finished, items waiting
+// for review, etc.). Read by the bell in the header.
+model Notification {
+  id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id])
+  title     String
+  body      String?
+  href      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([ownerId, read, createdAt])
 }
 
 model OutfitItem {
