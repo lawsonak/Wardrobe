@@ -3,6 +3,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { csvToList } from "@/lib/constants";
 import EditItemForm from "./EditItemForm";
+import ItemPhotoEditor from "@/components/ItemPhotoEditor";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,8 @@ export default async function ItemDetail({
               </div>
             </div>
           )}
+
+          <ItemPhotoEditor itemId={item.id} hasLabelPhoto={!!labelSrc} />
 
           {/* Quick metadata summary below image on mobile */}
           <div className="card p-3 sm:hidden">
