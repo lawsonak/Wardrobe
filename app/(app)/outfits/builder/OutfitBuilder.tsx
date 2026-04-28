@@ -69,22 +69,35 @@ export default function OutfitBuilder({
   const initialActivity = initial?.activity ?? search.get("activity") ?? "";
   const initialSeason = initial?.season ?? search.get("season") ?? "";
   const shouldAutoShuffle = !initial && search.get("shuffle") === "1";
+  // Pre-pick item IDs from `?ids=a,b,c` (used by "Build me an outfit").
+  const initialIdsParam = !initial ? search.get("ids") ?? "" : "";
+  const initialName = !initial ? search.get("name") ?? "" : "";
 
   const [activity, setActivity] = useState<string>(initialActivity);
   const [season, setSeason] = useState<string>(initialSeason);
   const [favOnly, setFavOnly] = useState(false);
   const [picks, setPicks] = useState<Picks>(() => {
-    if (!initial) return emptyPicks();
     const p = emptyPicks();
     const byId = new Map(items.map((i) => [i.id, i]));
-    for (const oi of initial.items) {
-      const it = byId.get(oi.itemId);
-      const slot = (oi.slot as Slot) || (it && CATEGORY_TO_SLOT[it.category as Category]);
-      if (it && slot && SLOTS.includes(slot)) p[slot].push(it);
+    if (initial) {
+      for (const oi of initial.items) {
+        const it = byId.get(oi.itemId);
+        const slot = (oi.slot as Slot) || (it && CATEGORY_TO_SLOT[it.category as Category]);
+        if (it && slot && SLOTS.includes(slot)) p[slot].push(it);
+      }
+      return p;
+    }
+    if (initialIdsParam) {
+      for (const id of initialIdsParam.split(",").filter(Boolean)) {
+        const it = byId.get(id);
+        if (!it) continue;
+        const slot = CATEGORY_TO_SLOT[it.category as Category];
+        if (slot) p[slot].push(it);
+      }
     }
     return p;
   });
-  const [name, setName] = useState(initial?.name ?? "");
+  const [name, setName] = useState(initial?.name ?? initialName);
   const [isFavorite, setIsFavorite] = useState(initial?.isFavorite ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

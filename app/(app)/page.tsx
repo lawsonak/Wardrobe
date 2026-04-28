@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import ItemCard from "@/components/ItemCard";
 import GiftBanner from "@/components/GiftBanner";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
+import AiOutfitPicker from "@/components/AiOutfitPicker";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,11 @@ export default async function Dashboard() {
           )}
           <Link href="/capsules" className="btn-secondary">Capsules</Link>
         </div>
+        {itemCount >= 3 && (
+          <div className="mt-3">
+            <AiOutfitPicker />
+          </div>
+        )}
       </section>
 
       {/* Alert cards */}
