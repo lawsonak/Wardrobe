@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { removeBackground, currentPublicPath, resetBackgroundRemover } from "@/lib/bgRemoval";
+import { removeBackground, currentPublicPath, currentDevice, lastDurationMs, resetBackgroundRemover } from "@/lib/bgRemoval";
 
 type Step = { name: string; status: "pending" | "ok" | "error"; detail?: string };
 
@@ -120,7 +120,12 @@ export default function BgDiagnostic() {
     try {
       const png = await makeTestPng();
       const out = await removeBackground(png);
-      setStep("Test removal", "ok", `${out.size} bytes returned · using ${currentPublicPath() ?? "unknown"}`);
+      const ms = lastDurationMs();
+      setStep(
+        "Test removal",
+        "ok",
+        `${out.size} bytes · ${currentDevice() ?? "?"} · ${ms ? `${Math.round(ms)} ms` : "?"} · ${currentPublicPath() ?? "unknown"}`,
+      );
     } catch (err) {
       setStep("Test removal", "error", err instanceof Error ? err.message : String(err));
     }
