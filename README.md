@@ -43,9 +43,12 @@ phone.
 
 ## Notes
 
-- Background removal loads on first use (~50 MB) and caches in the browser.
-  Subsequent uploads work offline. If it fails (e.g. no internet), the form
-  falls back to the original photo.
+- Background removal (`@imgly/background-removal`) and HEIC conversion
+  (`heic2any`) are self-hosted out of `public/vendor/`. `npm install` runs
+  `scripts/fetch-vendor.mjs` which copies the JS bundles in from
+  `node_modules` and downloads imgly's ~50 MB model from `staticimgly.com`.
+  After that one-time download, both work fully offline. To retry the fetch
+  later: `npm run fetch-vendor`.
 - Both seeded accounts share the same closet and outfits.
 - Photos and the SQLite DB live under `data/` and are gitignored.
 

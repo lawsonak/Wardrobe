@@ -7,6 +7,9 @@ out
 *.log
 *.tsbuildinfo
 
+# Vendor assets fetched by `npm run fetch-vendor`
+public/vendor/
+
 # App data
 data/wardrobe.db
 data/wardrobe.db-journal

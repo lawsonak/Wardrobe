@@ -291,9 +291,33 @@ and the passwords.
 npm install
 ```
 
-This downloads ~400 packages. You'll see a progress bar, then `added N
-packages` at the end. Warnings about deprecated subdependencies are normal —
-ignore them. Errors are not. If it fails, see Troubleshooting below.
+This downloads ~400 packages and then runs a postinstall step that copies
+`heic2any` + `@imgly/background-removal` into `public/vendor/` and pulls
+imgly's ~50 MB background-removal model from `staticimgly.com`. So the
+first install needs internet — once it's done, both HEIC conversion and
+background removal work fully offline.
+
+You should see lines like:
+
+```
+✓ heic2any.min.js (1320 KB)
+✓ imgly index.mjs (167 KB)
+Fetching https://staticimgly.com/...resources.json …
+  ↓ <model files>
+✓ imgly assets fetched (52.0 MB)
+Vendor assets up to date.
+```
+
+If the imgly download fails (no internet, firewall, etc.) the install still
+succeeds and the app falls back to fetching the model from the CDN at
+runtime. To retry the offline fetch later:
+
+```bash
+npm run fetch-vendor
+```
+
+Errors about deprecated subdependencies are normal — ignore them. Real
+errors are not. If it fails, see Troubleshooting below.
 
 ---
 
@@ -541,7 +565,7 @@ rsync -av /opt/wardrobe/data/ user@nas:/path/to/backups/wardrobe/
 ```bash
 cd /opt/wardrobe
 git pull
-npm install
+npm install              # also re-runs fetch-vendor automatically
 npx prisma migrate deploy
 npm run build
 systemctl restart wardrobe
@@ -612,15 +636,33 @@ camera/mic APIs are restricted to HTTPS by default).
 
 ### Background removal never finishes / spinner sticks
 
-The CDN load failed. Either:
+The local model files are missing or didn't download. Check:
 
-- Your container has no internet (uncommon — but check
-  `curl -I https://cdn.jsdelivr.net` from inside the CT).
-- Your browser blocked the cross-origin import. Open DevTools (F12) and
-  look for a CSP error.
+```bash
+ls -la /opt/wardrobe/public/vendor/imgly/
+```
+
+You should see `index.mjs`, `resources.json`, and a handful of `.onnx` /
+`.wasm` / `.bin` files totaling ~50 MB. If they're missing, your container
+couldn't reach `staticimgly.com` during install. Re-run with internet:
+
+```bash
+cd /opt/wardrobe
+npm run fetch-vendor
+systemctl restart wardrobe
+```
+
+If you can't get internet on the container at all, copy the
+`public/vendor/` folder from any other machine that ran `npm run
+fetch-vendor` successfully — those files are static and version-locked.
 
 In the meantime, the **Use original** checkbox on the add-item form lets you
 save photos without bg removal.
+
+### HEIC photos won't load
+
+Same root cause — `public/vendor/heic2any/heic2any.min.js` is missing. Run
+`npm run fetch-vendor` to copy it in from `node_modules`.
 
 ### I forgot a password
 

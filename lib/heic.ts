@@ -1,26 +1,51 @@
 "use client";
 
-// Client-side HEIC/HEIF -> JPEG conversion. Browsers can't decode HEIC
-// natively, and our background-removal pipeline + <img> previews need a
-// browser-decodable format. heic2any is loaded on demand from a CDN to
-// avoid pulling its libheif WASM into the bundle.
+// Client-side HEIC/HEIF -> JPEG. heic2any is a UMD bundle (no ESM build);
+// served from public/vendor/heic2any/ and loaded via a <script> tag once.
 
-const CDN_URL = "https://cdn.jsdelivr.net/npm/heic2any@0.0.4/+esm";
+const SCRIPT_URL = "/vendor/heic2any/heic2any.min.js";
+const SCRIPT_ID = "heic2any-vendor";
 
 type Heic2Any = (opts: { blob: Blob; toType?: string; quality?: number }) => Promise<Blob | Blob[]>;
 
-let _heic2anyPromise: Promise<Heic2Any> | null = null;
+declare global {
+  interface Window {
+    heic2any?: Heic2Any;
+  }
+}
+
+let _loadPromise: Promise<Heic2Any> | null = null;
+
+function loadScript(): Promise<Heic2Any> {
+  if (typeof window === "undefined") return Promise.reject(new Error("heic2any: window not available"));
+  if (window.heic2any) return Promise.resolve(window.heic2any);
+
+  return new Promise<Heic2Any>((resolve, reject) => {
+    const existing = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null;
+    if (existing) {
+      existing.addEventListener("load", () => {
+        if (window.heic2any) resolve(window.heic2any);
+        else reject(new Error("heic2any did not register on window"));
+      });
+      existing.addEventListener("error", () => reject(new Error("Failed to load heic2any")));
+      return;
+    }
+    const s = document.createElement("script");
+    s.id = SCRIPT_ID;
+    s.src = SCRIPT_URL;
+    s.async = true;
+    s.onload = () => {
+      if (window.heic2any) resolve(window.heic2any);
+      else reject(new Error("heic2any did not register on window"));
+    };
+    s.onerror = () => reject(new Error("Failed to load heic2any"));
+    document.head.appendChild(s);
+  });
+}
 
 async function getHeic2Any(): Promise<Heic2Any> {
-  if (!_heic2anyPromise) {
-    _heic2anyPromise = (async () => {
-      const mod = (await import(/* webpackIgnore: true */ CDN_URL)) as { default?: Heic2Any };
-      const fn = mod.default;
-      if (typeof fn !== "function") throw new Error("heic2any module has no default export");
-      return fn;
-    })();
-  }
-  return _heic2anyPromise;
+  if (!_loadPromise) _loadPromise = loadScript();
+  return _loadPromise;
 }
 
 export function isHeic(file: File): boolean {

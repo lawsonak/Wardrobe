@@ -11,7 +11,8 @@
     "seed": "tsx prisma/seed.ts",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "postinstall": "prisma generate || true"
+    "fetch-vendor": "node scripts/fetch-vendor.mjs",
+    "postinstall": "prisma generate && node scripts/fetch-vendor.mjs || true"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
@@ -25,6 +26,8 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@imgly/background-removal": "^1.6.0",
+    "heic2any": "^0.0.4",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
