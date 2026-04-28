@@ -33,6 +33,7 @@ export default function AddItemForm() {
   const [bgRemoved, setBgRemoved] = useState<Blob | null>(null);
   const [bgUrl, setBgUrl] = useState<string | null>(null);
   const [bgState, setBgState] = useState<"idle" | "running" | "done" | "error">("idle");
+  const [bgError, setBgError] = useState<string | null>(null);
   const [useOriginal, setUseOriginal] = useState(false);
 
   const [labelPhoto, setLabelPhoto] = useState<File | null>(null);
@@ -82,6 +83,7 @@ export default function AddItemForm() {
   async function runBgRemoval(file: File) {
     setBgState("running");
     setError(null);
+    setBgError(null);
     try {
       const out = await removeBackground(file);
       setBgRemoved(out);
@@ -90,6 +92,7 @@ export default function AddItemForm() {
       setBgState("done");
     } catch (err) {
       console.error("Background removal failed", err);
+      setBgError(err instanceof Error ? err.message : String(err));
       setBgState("error");
     }
   }
@@ -304,7 +307,9 @@ export default function AddItemForm() {
           )}
           {bgState === "error" && (
             <>
-              <span className="text-sm text-stone-500">Background removal failed.</span>
+              <span className="text-sm text-blush-700">
+                Background removal failed{bgError ? `: ${bgError}` : "."}
+              </span>
               <button
                 type="button"
                 onClick={retryBgRemoval}

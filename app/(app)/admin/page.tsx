@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { firstNameFromUser } from "@/lib/userName";
 import { getProvider } from "@/lib/ai/provider";
 import AdminStorage from "./AdminStorage";
+import BgDiagnostic from "./BgDiagnostic";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +56,17 @@ export default async function AdminPage() {
           files no longer referenced by any item or wishlist row — safe to delete.
         </p>
         <AdminStorage />
+      </section>
+
+      <section className="card p-4">
+        <h2 className="font-display text-lg text-stone-800">Background removal</h2>
+        <p className="mb-3 text-xs text-stone-500">
+          The model auto-falls-back to the public CDN if the local copy
+          under <code>public/vendor/imgly/</code> is missing or broken. To
+          repopulate locally run <code>npm run fetch-vendor</code> on the
+          server with internet, then restart the service.
+        </p>
+        <BgDiagnostic />
       </section>
 
       <section className="card p-4">
