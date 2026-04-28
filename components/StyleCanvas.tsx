@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import MannequinSilhouette from "@/components/MannequinSilhouette";
 import { CATEGORY_TO_SLOT, type Category, type Slot } from "@/lib/constants";
 
@@ -47,27 +47,82 @@ function srcFor(item: CanvasItem) {
     : `/api/uploads/${item.imagePath}`;
 }
 
-export default function StyleCanvas({ items }: { items: CanvasItem[] }) {
+export default function StyleCanvas({
+  outfitId,
+  items,
+  initialLayoutJson,
+}: {
+  outfitId?: string;
+  items: CanvasItem[];
+  initialLayoutJson?: string | null;
+}) {
   const canvasRef = useRef<HTMLDivElement>(null);
-  const [layers, setLayers] = useState<Layer[]>(() =>
-    items.map((it, idx) => {
+
+  // Build initial layers, restoring any saved layout for items that still
+  // belong to this outfit.
+  const initialLayers = useMemo<Layer[]>(() => {
+    let saved: Record<string, Partial<Layer>> = {};
+    if (initialLayoutJson) {
+      try {
+        const parsed = JSON.parse(initialLayoutJson) as { layers?: Layer[] };
+        if (parsed?.layers) {
+          for (const l of parsed.layers) saved[l.id] = l;
+        }
+      } catch {
+        /* ignore — fall back to defaults */
+      }
+    }
+    return items.map((it, idx) => {
       const slot = slotFor(it.category);
       const d = SLOT_DEFAULTS[slot];
+      const fromSaved = saved[it.id];
       return {
         id: it.id,
         src: srcFor(it),
-        x: d.x,
-        y: d.y,
-        w: d.w,
-        rotation: 0,
-        z: d.z + idx * 0.001, // stable ordering when many items share a slot
-        hidden: false,
+        x: fromSaved?.x ?? d.x,
+        y: fromSaved?.y ?? d.y,
+        w: fromSaved?.w ?? d.w,
+        rotation: fromSaved?.rotation ?? 0,
+        z: fromSaved?.z ?? d.z + idx * 0.001,
+        hidden: fromSaved?.hidden ?? false,
         slot,
         label: it.subType ?? it.category,
       };
-    }),
-  );
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [layers, setLayers] = useState<Layer[]>(initialLayers);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  // Debounced autosave to /api/outfits/[id]. Skips the very first run so we
+  // don't immediately re-write defaults on a fresh outfit.
+  const skipNextSave = useRef(true);
+  useEffect(() => {
+    if (!outfitId) return;
+    if (skipNextSave.current) {
+      skipNextSave.current = false;
+      return;
+    }
+    setSaveState("saving");
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/outfits/${outfitId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ layoutJson: JSON.stringify({ layers }) }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        setSaveState("saved");
+        setTimeout(() => setSaveState((s) => (s === "saved" ? "idle" : s)), 1500);
+      } catch (err) {
+        console.error("Save layout failed", err);
+        setSaveState("error");
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [layers, outfitId]);
 
   const sorted = useMemo(() => [...layers].sort((a, b) => a.z - b.z), [layers]);
 
@@ -163,9 +218,28 @@ export default function StyleCanvas({ items }: { items: CanvasItem[] }) {
     }
   }
 
+  function resetAll() {
+    if (!confirm("Reset every piece to its default position?")) return;
+    setLayers((prev) =>
+      prev.map((l) => {
+        const d = SLOT_DEFAULTS[l.slot];
+        return { ...l, x: d.x, y: d.y, w: d.w, rotation: 0, hidden: false };
+      }),
+    );
+  }
+
   // Keep the canvas square-ish on big screens, full width on mobile.
   return (
     <div className="space-y-3">
+      <div className="flex items-center justify-between text-xs text-stone-500">
+        <span>
+          {saveState === "saving" && "Saving…"}
+          {saveState === "saved" && <span className="text-sage-600">✓ Saved</span>}
+          {saveState === "error" && <span className="text-blush-700">Save failed — retry by editing again.</span>}
+          {saveState === "idle" && "Auto-saves as you edit."}
+        </span>
+        <button type="button" onClick={resetAll} className="btn-ghost text-xs">Reset all</button>
+      </div>
       <div className="card p-2">
         <div
           ref={canvasRef}

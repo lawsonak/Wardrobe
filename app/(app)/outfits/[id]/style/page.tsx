@@ -39,8 +39,7 @@ export default async function StyleCanvasPage({
         <Link href="/outfits" className="text-sm text-blush-600 hover:underline">← Back to outfits</Link>
         <h1 className="mt-1 font-display text-3xl text-blush-700">{outfit.name}</h1>
         <p className="text-sm text-stone-500">
-          Drag pieces, pinch the corner to resize, twist the top-left to rotate. Layout is local
-          to this view — saving is coming soon.
+          Drag to move, pinch the bottom-right to resize, twist the top-left to rotate. Saves automatically.
         </p>
       </div>
 
@@ -49,7 +48,7 @@ export default async function StyleCanvasPage({
           This outfit has no pieces to layout.
         </div>
       ) : (
-        <StyleCanvas items={items} />
+        <StyleCanvas outfitId={outfit.id} items={items} initialLayoutJson={outfit.layoutJson} />
       )}
     </div>
   );

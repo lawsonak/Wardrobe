@@ -58,6 +58,9 @@ model Outfit {
   activity   String?
   season     String?
   isFavorite Boolean  @default(false)
+  // Style-canvas layout, JSON-encoded. Optional — outfits without a saved
+  // layout fall back to category-driven defaults at render time.
+  layoutJson String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
