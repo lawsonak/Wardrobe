@@ -4,6 +4,7 @@ import path from "node:path";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { CATEGORIES, ITEM_STATUSES, listToCsv } from "@/lib/constants";
+import { brandKey } from "@/lib/brand";
 
 export const runtime = "nodejs";
 
@@ -20,7 +21,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = (session?.user as { id?: string } | undefined)?.id;
+  if (!session?.user || !userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
 
   const body = await req.json();
@@ -28,9 +30,33 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (typeof body.isFavorite === "boolean") data.isFavorite = body.isFavorite;
   if (typeof body.subType === "string") data.subType = body.subType || null;
   if (typeof body.color === "string") data.color = body.color || null;
-  if (typeof body.brand === "string") data.brand = body.brand || null;
   if (typeof body.size === "string") data.size = body.size || null;
   if (typeof body.notes === "string") data.notes = body.notes || null;
+
+  // Brand: accept either an explicit brandId or free-form text. Free-form
+  // text gets upserted into the Brand table for autocomplete + dedupe.
+  if (typeof body.brandId === "string" && body.brandId) {
+    const found = await prisma.brand.findFirst({ where: { id: body.brandId, ownerId: userId } });
+    if (found) {
+      data.brandId = found.id;
+      data.brand = found.name;
+    }
+  } else if (typeof body.brand === "string") {
+    const text = body.brand.trim();
+    if (!text) {
+      data.brand = null;
+      data.brandId = null;
+    } else {
+      const key = brandKey(text);
+      const upserted = await prisma.brand.upsert({
+        where: { ownerId_nameKey: { ownerId: userId, nameKey: key } },
+        update: {},
+        create: { ownerId: userId, name: text, nameKey: key },
+      });
+      data.brand = upserted.name;
+      data.brandId = upserted.id;
+    }
+  }
   if (Array.isArray(body.seasons)) data.seasons = listToCsv(body.seasons.map(String));
   if (Array.isArray(body.activities)) data.activities = listToCsv(body.activities.map(String));
   if (typeof body.category === "string") {

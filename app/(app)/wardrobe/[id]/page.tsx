@@ -115,6 +115,7 @@ export default async function ItemDetail({
               subType: item.subType,
               color: item.color,
               brand: item.brand,
+              brandId: item.brandId ?? null,
               size: item.size,
               notes: item.notes,
               seasons: csvToList(item.seasons),

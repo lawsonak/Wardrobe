@@ -4,6 +4,7 @@ import path from "node:path";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { CATEGORIES, listToCsv } from "@/lib/constants";
+import { brandKey } from "@/lib/brand";
 
 export const runtime = "nodejs";
 
@@ -72,13 +73,37 @@ export async function POST(req: NextRequest) {
 
   const subType = (form.get("subType") as string | null) || null;
   const color = (form.get("color") as string | null) || null;
-  const brand = (form.get("brand") as string | null) || null;
+  const brandText = (form.get("brand") as string | null) || null;
+  const brandIdInput = (form.get("brandId") as string | null) || null;
   const size = (form.get("size") as string | null) || null;
   const notes = (form.get("notes") as string | null) || null;
   const seasons = listToCsv(form.getAll("seasons").map(String));
   const activities = listToCsv(form.getAll("activities").map(String));
   const isFavorite = form.get("isFavorite") === "1";
   const statusVal = (form.get("status") as string | null) || "active";
+
+  // Resolve brand: use brandId if it's the current user's, else upsert by key.
+  let brandId: string | null = null;
+  let brandFinal = brandText;
+  if (brandIdInput) {
+    const found = await prisma.brand.findFirst({ where: { id: brandIdInput, ownerId: userId } });
+    if (found) {
+      brandId = found.id;
+      brandFinal = found.name;
+    }
+  }
+  if (!brandId && brandText && brandText.trim()) {
+    const key = brandKey(brandText);
+    if (key) {
+      const upserted = await prisma.brand.upsert({
+        where: { ownerId_nameKey: { ownerId: userId, nameKey: key } },
+        update: {},
+        create: { ownerId: userId, name: brandText.trim(), nameKey: key },
+      });
+      brandId = upserted.id;
+      brandFinal = upserted.name;
+    }
+  }
 
   const created = await prisma.item.create({
     data: {
@@ -87,7 +112,8 @@ export async function POST(req: NextRequest) {
       category,
       subType,
       color,
-      brand,
+      brand: brandFinal,
+      brandId,
       size,
       seasons,
       activities,

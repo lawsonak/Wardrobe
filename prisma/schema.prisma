@@ -18,6 +18,7 @@ model User {
   items         Item[]
   outfits       Outfit[]
   wishlistItems WishlistItem[]
+  brands        Brand[]
 }
 
 model Item {
@@ -32,7 +33,11 @@ model Item {
   category           String
   subType            String?
   color              String?
+  // Free-form display string. Kept for backward compatibility / quick add.
   brand              String?
+  // Optional canonical brand reference. When set, overrides `brand` for display.
+  brandId            String?
+  brandRef           Brand?  @relation(fields: [brandId], references: [id])
   size               String?
   // Comma-separated lists (SQLite has no array type)
   seasons            String   @default("")
@@ -57,6 +62,36 @@ model Outfit {
   updatedAt  DateTime @updatedAt
 
   items OutfitItem[]
+}
+
+// Canonical brand. The `nameKey` is a normalized version of `name`
+// (lowercase, alphanumeric only) so we can dedupe "J Crew" / "J.Crew" /
+// "JCREW". Aliases let the user merge variant spellings into one canonical
+// brand without losing existing data.
+model Brand {
+  id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id])
+  name      String
+  nameKey   String
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items   Item[]
+  aliases BrandAlias[]
+
+  @@unique([ownerId, nameKey])
+}
+
+model BrandAlias {
+  id      String @id @default(cuid())
+  brandId String
+  brand   Brand  @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  alias   String
+  aliasKey String
+
+  @@unique([brandId, aliasKey])
 }
 
 model OutfitItem {

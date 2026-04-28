@@ -13,6 +13,8 @@ import {
 } from "@/lib/constants";
 import TagChips from "@/components/TagChips";
 import ColorSwatch from "@/components/ColorSwatch";
+import BrandInput from "@/components/BrandInput";
+import { normalizeSize } from "@/lib/size";
 
 type Item = {
   id: string;
@@ -20,6 +22,7 @@ type Item = {
   subType: string | null;
   color: string | null;
   brand: string | null;
+  brandId: string | null;
   size: string | null;
   notes: string | null;
   seasons: string[];
@@ -40,6 +43,7 @@ export default function EditItemForm({ item }: { item: Item }) {
   const [subType, setSubType] = useState(item.subType ?? "");
   const [color, setColor] = useState<string | null>(item.color);
   const [brand, setBrand] = useState(item.brand ?? "");
+  const [brandId, setBrandId] = useState<string | null>(item.brandId);
   const [size, setSize] = useState(item.size ?? "");
   const [notes, setNotes] = useState(item.notes ?? "");
   const [seasons, setSeasons] = useState<string[]>(item.seasons);
@@ -60,7 +64,8 @@ export default function EditItemForm({ item }: { item: Item }) {
         subType,
         color: color ?? "",
         brand,
-        size,
+        brandId,
+        size: normalizeSize(size, category),
         notes,
         seasons,
         activities,
@@ -123,7 +128,14 @@ export default function EditItemForm({ item }: { item: Item }) {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="label">Brand</label>
-          <input className="input" value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="e.g. Zara" />
+          <BrandInput
+            value={brand}
+            brandId={brandId}
+            onChange={({ value, brandId: id }) => {
+              setBrand(value);
+              setBrandId(id);
+            }}
+          />
         </div>
         <div>
           <label className="label">Size</label>

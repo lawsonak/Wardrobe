@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   CATEGORIES,
   SUBTYPES_BY_CATEGORY,
@@ -11,11 +11,16 @@ import {
 } from "@/lib/constants";
 import TagChips from "@/components/TagChips";
 import ColorSwatch from "@/components/ColorSwatch";
+import BrandInput from "@/components/BrandInput";
 import { removeBackground } from "@/lib/bgRemoval";
 import { heicToJpeg, isHeic } from "@/lib/heic";
+import { normalizeSize } from "@/lib/size";
 
 export default function AddItemForm() {
   const router = useRouter();
+  const search = useSearchParams();
+  const batchMode = search.get("batch") === "1";
+
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const labelFileRef = useRef<HTMLInputElement>(null);
@@ -35,6 +40,7 @@ export default function AddItemForm() {
   const [subType, setSubType] = useState("");
   const [color, setColor] = useState<string | null>(null);
   const [brand, setBrand] = useState("");
+  const [brandId, setBrandId] = useState<string | null>(null);
   const [size, setSize] = useState("");
   const [notes, setNotes] = useState("");
   const [seasons, setSeasons] = useState<string[]>([]);
@@ -42,6 +48,7 @@ export default function AddItemForm() {
   const [isFavorite, setIsFavorite] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savedToast, setSavedToast] = useState<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -127,7 +134,8 @@ export default function AddItemForm() {
     if (subType) fd.append("subType", subType);
     if (color) fd.append("color", color);
     if (brand) fd.append("brand", brand);
-    if (size) fd.append("size", size);
+    if (brandId) fd.append("brandId", brandId);
+    if (size) fd.append("size", normalizeSize(size, category));
     if (notes) fd.append("notes", notes);
     seasons.forEach((s) => fd.append("seasons", s));
     activities.forEach((a) => fd.append("activities", a));
@@ -136,7 +144,7 @@ export default function AddItemForm() {
     try {
       const res = await fetch("/api/items", { method: "POST", body: fd });
       if (!res.ok) throw new Error(await res.text());
-      if (addAnother) {
+      if (addAnother || batchMode) {
         // Reset form for next item
         setOriginal(null);
         if (originalUrl) URL.revokeObjectURL(originalUrl);
@@ -150,14 +158,23 @@ export default function AddItemForm() {
         setBgState("idle");
         setSubType("");
         setColor(null);
+        setSize("");
+        setBrand("");
+        setBrandId(null);
         setNotes("");
         setIsFavorite(false);
         if (fileRef.current) fileRef.current.value = "";
         if (cameraRef.current) cameraRef.current.value = "";
         if (labelFileRef.current) labelFileRef.current.value = "";
         setSubmitting(false);
-        // Scroll to top for next photo
-        window.scrollTo({ top: 0, behavior: "smooth" });
+        setSavedToast(batchMode ? "Saved. Snap the next one." : "Saved.");
+        if (batchMode) {
+          setTimeout(() => cameraRef.current?.click(), 80);
+        } else {
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+        setTimeout(() => setSavedToast(null), 2200);
+        router.refresh();
       } else {
         router.push("/wardrobe");
         router.refresh();
@@ -171,7 +188,7 @@ export default function AddItemForm() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    await submit(false);
+    await submit(batchMode);
   }
 
   const previewUrl = !useOriginal && bgUrl ? bgUrl : originalUrl;
@@ -266,11 +283,24 @@ export default function AddItemForm() {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="label">Brand</label>
-            <input className="input" value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="e.g. Zara" />
+            <BrandInput
+              value={brand}
+              brandId={brandId}
+              onChange={({ value, brandId: id }) => {
+                setBrand(value);
+                setBrandId(id);
+              }}
+            />
           </div>
           <div>
             <label className="label">Size</label>
-            <input className="input" value={size} onChange={(e) => setSize(e.target.value)} placeholder="e.g. M, 8, 32x30" />
+            <input
+              className="input"
+              value={size}
+              onChange={(e) => setSize(e.target.value)}
+              onBlur={() => setSize((s) => normalizeSize(s, category))}
+              placeholder="e.g. M, 8, 32x30"
+            />
           </div>
         </div>
 
@@ -324,18 +354,28 @@ export default function AddItemForm() {
 
       <div className="flex gap-2 pb-2">
         <button type="submit" className="btn-primary flex-1" disabled={submitting}>
-          {submitting ? "Saving…" : "Save to closet"}
+          {submitting ? "Saving…" : batchMode ? "Save & next" : "Save to closet"}
         </button>
-        <button
-          type="button"
-          className="btn-secondary"
-          disabled={submitting}
-          onClick={() => submit(true)}
-          title="Save and add another item"
-        >
-          + Another
-        </button>
+        {!batchMode && (
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={submitting}
+            onClick={() => submit(true)}
+            title="Save and add another item"
+          >
+            + Another
+          </button>
+        )}
       </div>
+
+      {savedToast && (
+        <div className="fixed inset-x-0 bottom-24 z-30 flex justify-center px-4 sm:bottom-8">
+          <div className="rounded-full bg-blush-600 px-4 py-2 text-sm text-white shadow-card">
+            {savedToast}
+          </div>
+        </div>
+      )}
     </form>
   );
 }
