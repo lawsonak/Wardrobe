@@ -5,8 +5,9 @@ import { getProvider } from "@/lib/ai/provider";
 
 export const runtime = "nodejs";
 
-// POST a multipart with `image`. Returns suggestions only — never writes
-// to the DB. The client decides what to apply, with the user reviewing.
+// POST a multipart with `image`. Returns suggestions (and a debug object
+// when the call fails or returns nothing) — never writes to the DB. The
+// client decides what to apply.
 export async function POST(req: NextRequest) {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id;
@@ -15,7 +16,11 @@ export async function POST(req: NextRequest) {
   const provider = getProvider();
   if (!provider.available()) {
     return NextResponse.json(
-      { enabled: false, suggestions: {}, message: `AI tagging is disabled. Set AI_PROVIDER and the matching API key to enable.` },
+      {
+        enabled: false,
+        suggestions: {},
+        message: `AI tagging is disabled. Set AI_PROVIDER and the matching API key to enable.`,
+      },
       { status: 200 },
     );
   }
@@ -35,13 +40,24 @@ export async function POST(req: NextRequest) {
   });
   const existingBrands = brands.map((b) => b.name);
 
-  let suggestions = {};
   try {
-    suggestions = await provider.tagImage({ image, existingBrands });
+    const result = await provider.tagImage({ image, existingBrands });
+    return NextResponse.json({
+      enabled: true,
+      provider: provider.name,
+      suggestions: result.suggestions,
+      debug: result.debug,
+    });
   } catch (err) {
     console.error("AI tag failed", err);
-    return NextResponse.json({ enabled: true, suggestions: {}, error: "Provider failed" }, { status: 200 });
+    return NextResponse.json(
+      {
+        enabled: true,
+        provider: provider.name,
+        suggestions: {},
+        debug: { error: err instanceof Error ? err.message : String(err) },
+      },
+      { status: 200 },
+    );
   }
-
-  return NextResponse.json({ enabled: true, provider: provider.name, suggestions });
 }

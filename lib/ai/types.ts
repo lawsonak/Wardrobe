@@ -17,16 +17,30 @@ export type TagSuggestion = {
   confidence?: number;
 };
 
+// Optional diagnostics returned alongside suggestions so the user can
+// see *why* AI tagging didn't fire when the suggestion list is empty.
+export type TagDebug = {
+  status?: number;        // HTTP status from the provider
+  rawText?: string;       // first ~400 chars of the model's response text
+  error?: string;         // human-readable error message
+  promptTokens?: number;
+  responseTokens?: number;
+};
+
+export type TagResult = {
+  suggestions: TagSuggestion;
+  debug?: TagDebug;
+};
+
 export interface TagProvider {
   name: string;
-  /** Whether the provider can run (env vars set, etc). */
   available(): boolean;
-  /** Suggest tags for a single image. Should never throw past the caller — return {} on failure. */
-  tagImage(input: { image: Blob; existingBrands?: string[] }): Promise<TagSuggestion>;
+  /** Suggest tags for a single image. Should never throw past the caller. */
+  tagImage(input: { image: Blob; existingBrands?: string[] }): Promise<TagResult>;
 }
 
 export class DisabledProvider implements TagProvider {
   name = "disabled";
   available() { return false; }
-  async tagImage(): Promise<TagSuggestion> { return {}; }
+  async tagImage(): Promise<TagResult> { return { suggestions: {} }; }
 }

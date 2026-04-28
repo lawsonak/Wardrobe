@@ -88,12 +88,11 @@ export default function EditItemForm({ item }: { item: Item }) {
         activities?: string[];
         notes?: string;
       };
+      const debug = data?.debug as { error?: string; status?: number; rawText?: string } | undefined;
       let applied = 0;
-      if (s.category && CATEGORIES.includes(s.category) && (!subType || category !== s.category)) {
-        if (category !== s.category) {
-          setCategory(s.category);
-          applied++;
-        }
+      if (s.category && CATEGORIES.includes(s.category) && s.category !== category) {
+        setCategory(s.category);
+        applied++;
       }
       if (s.subType && !subType) { setSubType(s.subType); applied++; }
       if (s.color && !color) { setColor(s.color); applied++; }
@@ -107,8 +106,20 @@ export default function EditItemForm({ item }: { item: Item }) {
         if (valid.length > 0) { setActivities(valid); applied++; }
       }
       if (s.notes && !notes) { setNotes(s.notes); applied++; }
-      setAutoTagState("done");
-      setAutoTagMessage(applied > 0 ? `Pre-filled ${applied} field${applied === 1 ? "" : "s"} — review and save.` : "No new suggestions.");
+
+      if (applied > 0) {
+        setAutoTagState("done");
+        setAutoTagMessage(`Pre-filled ${applied} field${applied === 1 ? "" : "s"} — review and save.`);
+      } else if (debug?.error) {
+        setAutoTagState("error");
+        setAutoTagMessage(debug.error);
+      } else if (Object.keys(s).length === 0 && debug?.rawText) {
+        setAutoTagState("error");
+        setAutoTagMessage(`Model returned: ${debug.rawText.slice(0, 200)}`);
+      } else {
+        setAutoTagState("done");
+        setAutoTagMessage("No new suggestions — fields already filled or model couldn't tell.");
+      }
     } catch (err) {
       console.error(err);
       setAutoTagState("error");
