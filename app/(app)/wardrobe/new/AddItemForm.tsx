@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   CATEGORIES,
-  SUBTYPES_BY_CATEGORY,
   SEASONS,
   ACTIVITIES,
   type Category,
@@ -13,6 +12,7 @@ import TagChips from "@/components/TagChips";
 import ColorSwatch from "@/components/ColorSwatch";
 import BrandInput from "@/components/BrandInput";
 import FitDetailsEditor from "@/components/FitDetailsEditor";
+import SubtypePicker from "@/components/SubtypePicker";
 import { removeBackground } from "@/lib/bgRemoval";
 import { heicToJpeg, isHeic } from "@/lib/heic";
 import { normalizeSize } from "@/lib/size";
@@ -254,34 +254,21 @@ export default function AddItemForm() {
 
       {/* Metadata */}
       <div className="card space-y-4 p-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="label">Category</label>
-            <select
-              className="input"
-              value={category}
-              onChange={(e) => { setCategory(e.target.value as Category); setSubType(""); }}
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label">Type</label>
-            <input
-              className="input"
-              list="subtype-suggestions"
-              value={subType}
-              placeholder={SUBTYPES_BY_CATEGORY[category]?.[0] ?? ""}
-              onChange={(e) => setSubType(e.target.value)}
-            />
-            <datalist id="subtype-suggestions">
-              {SUBTYPES_BY_CATEGORY[category]?.map((s) => (
-                <option key={s} value={s} />
-              ))}
-            </datalist>
-          </div>
+        <div>
+          <label className="label">Category</label>
+          <select
+            className="input"
+            value={category}
+            onChange={(e) => { setCategory(e.target.value as Category); setSubType(""); }}
+          >
+            {CATEGORIES.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label">Type</label>
+          <SubtypePicker category={category} value={subType} onChange={setSubType} />
         </div>
 
         <div>

@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CATEGORIES,
-  SUBTYPES_BY_CATEGORY,
   SEASONS,
   ACTIVITIES,
   ITEM_STATUSES,
@@ -15,6 +14,7 @@ import TagChips from "@/components/TagChips";
 import ColorSwatch from "@/components/ColorSwatch";
 import BrandInput from "@/components/BrandInput";
 import FitDetailsEditor from "@/components/FitDetailsEditor";
+import SubtypePicker from "@/components/SubtypePicker";
 import { normalizeSize } from "@/lib/size";
 import { parseFitDetails, serializeFitDetails } from "@/lib/fitDetails";
 
@@ -103,29 +103,17 @@ export default function EditItemForm({ item }: { item: Item }) {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="label">Category</label>
-          <select className="input" value={category} onChange={(e) => { setCategory(e.target.value as Category); setSubType(""); }}>
-            {CATEGORIES.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="label">Type</label>
-          <input
-            className="input"
-            list="subtype-suggestions-edit"
-            value={subType}
-            onChange={(e) => setSubType(e.target.value)}
-          />
-          <datalist id="subtype-suggestions-edit">
-            {SUBTYPES_BY_CATEGORY[category]?.map((s) => (
-              <option key={s} value={s} />
-            ))}
-          </datalist>
-        </div>
+      <div>
+        <label className="label">Category</label>
+        <select className="input" value={category} onChange={(e) => { setCategory(e.target.value as Category); setSubType(""); }}>
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="label">Type</label>
+        <SubtypePicker category={category} value={subType} onChange={setSubType} />
       </div>
 
       <div>

@@ -67,6 +67,27 @@ export const FIT_FIELDS: Partial<Record<Category, FitField[]>> = {
     { key: "metal", label: "Metal" },
     { key: "stone", label: "Stone" },
   ],
+  Bras: [
+    { key: "band", label: "Band size" },
+    { key: "cup", label: "Cup" },
+    { key: "underwireType", label: "Wire / wireless" },
+    { key: "fitNotes", label: "Fit notes" },
+  ],
+  Underwear: [
+    { key: "size", label: "Size" },
+    { key: "rise", label: "Rise" },
+    { key: "fabric", label: "Fabric" },
+  ],
+  Swimwear: [
+    { key: "size", label: "Size" },
+    { key: "bust", label: "Bust", unit: "in" },
+    { key: "waist", label: "Waist", unit: "in" },
+    { key: "hip", label: "Hip", unit: "in" },
+  ],
+  "Socks & Hosiery": [
+    { key: "size", label: "Size" },
+    { key: "denier", label: "Denier (hosiery)" },
+  ],
 };
 
 export function parseFitDetails(json: string | null | undefined): Record<string, string> {

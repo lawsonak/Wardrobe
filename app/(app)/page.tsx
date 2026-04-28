@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
-import { firstNameFromUser } from "@/lib/userName";
 import ItemCard from "@/components/ItemCard";
 import GiftBanner from "@/components/GiftBanner";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
@@ -11,8 +10,6 @@ export const dynamic = "force-dynamic";
 export default async function Dashboard() {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
-  const firstName = firstNameFromUser(session?.user);
-  const name = firstName ?? "there";
 
   const [recent, favorites, outfitCount, itemCount, favoriteCount, needsReviewCount, wishlistCount] = await Promise.all([
     prisma.item.findMany({
@@ -40,19 +37,17 @@ export default async function Dashboard() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <GiftBanner />
 
-      {/* Hero greeting */}
+      {/* Quick actions — the wordmark in the header is enough greeting. */}
       <section>
-        <p className="text-sm uppercase tracking-widest text-stone-500">Hello,</p>
-        <h1 className="font-display text-4xl text-blush-700">{name}</h1>
-        <p className="mt-1 text-stone-600">
+        <p className="text-sm text-stone-600">
           {itemCount === 0
-            ? "Your closet is waiting. Add your first piece to begin."
+            ? "Your closet is waiting. Snap your first piece to begin."
             : `${itemCount} item${itemCount === 1 ? "" : "s"} · ${outfitCount} outfit${outfitCount === 1 ? "" : "s"}`}
         </p>
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap gap-2">
           <Link href="/wardrobe/new" className="btn-primary">📸 Add item</Link>
           {itemCount > 0 && (
             <Link href="/outfits/builder" className="btn-secondary">Build an outfit</Link>
