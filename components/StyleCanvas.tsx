@@ -61,7 +61,7 @@ export default function StyleCanvas({
   // Build initial layers, restoring any saved layout for items that still
   // belong to this outfit.
   const initialLayers = useMemo<Layer[]>(() => {
-    let saved: Record<string, Partial<Layer>> = {};
+    const saved: Record<string, Partial<Layer>> = {};
     if (initialLayoutJson) {
       try {
         const parsed = JSON.parse(initialLayoutJson) as { layers?: Layer[] };

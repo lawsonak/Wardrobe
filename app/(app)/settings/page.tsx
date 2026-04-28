@@ -71,6 +71,12 @@ export default async function SettingsPage() {
             </Link>
             <span className="text-stone-500"> — group items into pack lists, capsule wardrobes, themes.</span>
           </li>
+          <li>
+            <Link href="/admin" className="text-blush-600 hover:underline">
+              Maintenance
+            </Link>
+            <span className="text-stone-500"> — storage stats, orphaned photo cleanup, AI status.</span>
+          </li>
         </ul>
       </section>
     </div>
