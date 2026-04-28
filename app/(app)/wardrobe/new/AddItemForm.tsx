@@ -13,7 +13,7 @@ import ColorSwatch from "@/components/ColorSwatch";
 import BrandInput from "@/components/BrandInput";
 import FitDetailsEditor from "@/components/FitDetailsEditor";
 import SubtypePicker from "@/components/SubtypePicker";
-import { removeBackground } from "@/lib/bgRemoval";
+import { removeBackground, resetBackgroundRemover } from "@/lib/bgRemoval";
 import { heicToJpeg, isHeic } from "@/lib/heic";
 import { normalizeSize } from "@/lib/size";
 import { serializeFitDetails } from "@/lib/fitDetails";
@@ -77,6 +77,27 @@ export default function AddItemForm() {
     return file;
   }
 
+  async function runBgRemoval(file: File) {
+    setBgState("running");
+    setError(null);
+    try {
+      const out = await removeBackground(file);
+      setBgRemoved(out);
+      if (bgUrl) URL.revokeObjectURL(bgUrl);
+      setBgUrl(URL.createObjectURL(out));
+      setBgState("done");
+    } catch (err) {
+      console.error("Background removal failed", err);
+      setBgState("error");
+    }
+  }
+
+  async function retryBgRemoval() {
+    if (!original) return;
+    resetBackgroundRemover();
+    await runBgRemoval(original);
+  }
+
   async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = e.target.files?.[0];
     if (!picked) return;
@@ -96,15 +117,7 @@ export default function AddItemForm() {
     setOriginal(file);
     setOriginalUrl(URL.createObjectURL(file));
 
-    try {
-      const out = await removeBackground(file);
-      setBgRemoved(out);
-      setBgUrl(URL.createObjectURL(out));
-      setBgState("done");
-    } catch (err) {
-      console.error("Background removal failed", err);
-      setBgState("error");
-    }
+    await runBgRemoval(file);
   }
 
   async function onPickLabelPhoto(e: React.ChangeEvent<HTMLInputElement>) {
@@ -247,7 +260,16 @@ export default function AddItemForm() {
             </label>
           )}
           {bgState === "error" && (
-            <span className="text-sm text-stone-500">Using original photo.</span>
+            <>
+              <span className="text-sm text-stone-500">Background removal failed.</span>
+              <button
+                type="button"
+                onClick={retryBgRemoval}
+                className="btn-ghost text-xs text-blush-600"
+              >
+                Try again
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -335,7 +357,7 @@ export default function AddItemForm() {
         <p className="text-xs text-stone-500 mb-3">Snap the brand, size, or care tag so you can reference it later.</p>
         {labelUrl && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={labelUrl} alt="Label photo" className="mb-3 h-32 w-auto rounded-xl object-cover ring-1 ring-stone-100" />
+          <img src={labelUrl} alt="Label photo" className="mb-3 max-h-48 w-auto rounded-xl bg-cream-50 object-contain p-1 ring-1 ring-stone-100" />
         )}
         <input ref={labelFileRef} type="file" accept="image/*,.heic,.heif" onChange={onPickLabelPhoto} className="hidden" />
         <input ref={labelCameraRef} type="file" accept="image/*" capture="environment" onChange={onPickLabelPhoto} className="hidden" />

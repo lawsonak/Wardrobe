@@ -49,7 +49,7 @@ export default async function ItemDetail({
               <p className="label mb-1">Label / tag photo</p>
               <div className="overflow-hidden rounded-xl ring-1 ring-stone-100">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={labelSrc} alt="Label tag" className="w-full object-cover" />
+                <img src={labelSrc} alt="Label tag" className="max-h-72 w-full object-contain bg-cream-50 p-2" />
               </div>
             </div>
           )}
