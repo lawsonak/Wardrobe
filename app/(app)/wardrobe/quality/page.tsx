@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { firstNameFromUser } from "@/lib/userName";
 import { editDistance } from "@/lib/brand";
-import { csvToList } from "@/lib/constants";
+import { CATEGORIES, csvToList, type Category } from "@/lib/constants";
 import MergeBrandsControl from "./MergeBrandsControl";
 
 export const dynamic = "force-dynamic";
@@ -69,6 +69,59 @@ export default async function MetadataQualityPage() {
   for (const i of issues) for (const m of i.missing) missingCounts[m] = (missingCounts[m] ?? 0) + 1;
   const sortedMissing = Object.entries(missingCounts).sort((a, b) => b[1] - a[1]);
 
+  // Possible duplicate items: same category + same color + similar subType
+  // (or both empty) + similar brand. Conservative — we want to flag, not
+  // auto-merge. We compare each pair once.
+  const dupeNorm = (s: string | null | undefined) =>
+    (s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  type DupePair = { a: typeof items[number]; b: typeof items[number]; reason: string };
+  const dupePairs: DupePair[] = [];
+  for (let i = 0; i < items.length; i++) {
+    for (let j = i + 1; j < items.length; j++) {
+      const a = items[i];
+      const b = items[j];
+      if (a.category !== b.category) continue;
+      const colorA = dupeNorm(a.color);
+      const colorB = dupeNorm(b.color);
+      if (colorA && colorB && colorA !== colorB) continue;
+      const brandA = dupeNorm(a.brand);
+      const brandB = dupeNorm(b.brand);
+      if (brandA && brandB && brandA !== brandB) continue;
+      const subA = dupeNorm(a.subType);
+      const subB = dupeNorm(b.subType);
+      if (subA && subB && editDistance(subA, subB) > 2) continue;
+      const reason = [
+        a.category,
+        a.color || b.color || null,
+        a.brand || b.brand || null,
+        a.subType || b.subType || null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      dupePairs.push({ a, b, reason });
+      if (dupePairs.length >= 30) break;
+    }
+    if (dupePairs.length >= 30) break;
+  }
+
+  // Closet gaps: which categories are sparse?
+  const categoryCounts: Record<Category, number> = Object.fromEntries(
+    CATEGORIES.map((c) => [c, 0]),
+  ) as Record<Category, number>;
+  for (const it of items) {
+    const c = it.category as Category;
+    if (c in categoryCounts) categoryCounts[c]++;
+  }
+  // Show categories the user has 0 or 1 of, but only if their closet is
+  // big enough that "sparse" means something.
+  const totalsForGaps = totalItems >= 5 ? totalItems : 0;
+  const gaps = totalsForGaps
+    ? CATEGORIES.filter((c) => categoryCounts[c] <= 1).map((c) => ({
+        category: c,
+        count: categoryCounts[c],
+      }))
+    : [];
+
   return (
     <div className="space-y-6">
       <div>
@@ -118,6 +171,61 @@ export default async function MetadataQualityPage() {
                       <span className="ml-2 text-xs text-stone-400">distance {p.distance}</span>
                     </span>
                     <MergeBrandsControl a={p.a} b={p.b} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {dupePairs.length > 0 && (
+            <section className="card p-4">
+              <h2 className="font-display text-lg text-stone-800">Possible duplicate items</h2>
+              <p className="text-xs text-stone-500">
+                Same category + matching color and brand. Open both to compare and remove the
+                one you don&apos;t want.
+              </p>
+              <ul className="mt-3 divide-y divide-stone-100">
+                {dupePairs.slice(0, 10).map((p) => (
+                  <li key={`${p.a.id}-${p.b.id}`} className="flex items-center justify-between gap-3 py-2 text-sm">
+                    <span className="min-w-0 flex-1 truncate">
+                      <span className="text-stone-700">{p.reason}</span>
+                    </span>
+                    <span className="flex items-center gap-2 text-xs">
+                      <Link href={`/wardrobe/${p.a.id}`} className="text-blush-600 hover:underline">
+                        {p.a.subType || "Item A"}
+                      </Link>
+                      <span className="text-stone-300">vs.</span>
+                      <Link href={`/wardrobe/${p.b.id}`} className="text-blush-600 hover:underline">
+                        {p.b.subType || "Item B"}
+                      </Link>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {dupePairs.length > 10 && (
+                <p className="mt-2 text-xs text-stone-500">+ {dupePairs.length - 10} more</p>
+              )}
+            </section>
+          )}
+
+          {gaps.length > 0 && (
+            <section className="card p-4">
+              <h2 className="font-display text-lg text-stone-800">Closet gaps</h2>
+              <p className="text-xs text-stone-500">
+                Categories you barely have. Worth picking up next, or adding to your wishlist.
+              </p>
+              <ul className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
+                {gaps.map((g) => (
+                  <li key={g.category} className="flex items-center justify-between rounded-xl bg-cream-100 px-3 py-2">
+                    <span>
+                      <span className="font-medium text-stone-800">{g.category}</span>
+                      <span className="block text-xs text-stone-500">
+                        {g.count === 0 ? "none yet" : "only 1"}
+                      </span>
+                    </span>
+                    <Link href={`/wishlist/new?category=${encodeURIComponent(g.category)}`} className="text-xs text-blush-600 hover:underline">
+                      Wish
+                    </Link>
                   </li>
                 ))}
               </ul>
