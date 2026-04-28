@@ -110,6 +110,10 @@ export default function AddItemForm() {
     try {
       const fd = new FormData();
       fd.append("image", original);
+      // Attaching the label photo lets the model OCR the brand/size/care
+      // tag, which is dramatically more reliable than guessing from the
+      // garment alone.
+      if (labelPhoto) fd.append("labelImage", labelPhoto);
       const res = await fetch("/api/ai/tag", { method: "POST", body: fd });
       const data = await res.json().catch(() => ({}));
       if (data?.enabled === false) {
@@ -122,11 +126,15 @@ export default function AddItemForm() {
         subType?: string;
         color?: string;
         brand?: string;
+        size?: string;
         seasons?: string[];
         activities?: string[];
+        material?: string;
+        careNotes?: string;
         notes?: string;
       };
       const debug = data?.debug as { error?: string; status?: number; rawText?: string } | undefined;
+      const usedLabel = data?.hasLabel === true;
       let applied = 0;
       if (s.category && CATEGORIES.includes(s.category) && s.category !== category) {
         setCategory(s.category);
@@ -135,6 +143,7 @@ export default function AddItemForm() {
       if (s.subType && !subType) { setSubType(s.subType); applied++; }
       if (s.color && !color) { setColor(s.color); applied++; }
       if (s.brand && !brand) { setBrand(s.brand); setBrandId(null); applied++; }
+      if (s.size && !size) { setSize(s.size); applied++; }
       if (s.seasons && seasons.length === 0) {
         const valid = s.seasons.filter((x) => SEASONS.includes(x as never));
         if (valid.length > 0) { setSeasons(valid); applied++; }
@@ -143,11 +152,25 @@ export default function AddItemForm() {
         const valid = s.activities.filter((x) => ACTIVITIES.includes(x as never));
         if (valid.length > 0) { setActivities(valid); applied++; }
       }
-      if (s.notes && !notes) { setNotes(s.notes); applied++; }
+      // Material + care notes get appended to the freeform notes field
+      // (and into fitNotes) so we don't lose any signal from the label.
+      const extras: string[] = [];
+      if (s.material) extras.push(`Material: ${s.material}`);
+      if (s.careNotes) extras.push(`Care: ${s.careNotes}`);
+      if (s.notes) extras.push(s.notes);
+      if (extras.length > 0 && !notes) {
+        setNotes(extras.join("\n"));
+        applied++;
+      }
+      if (s.material && !fitNotes) {
+        setFitNotes(`Material: ${s.material}`);
+      }
 
       if (applied > 0) {
         setAutoTagState("done");
-        setAutoTagMessage(`Pre-filled ${applied} field${applied === 1 ? "" : "s"} — review before saving.`);
+        setAutoTagMessage(
+          `Pre-filled ${applied} field${applied === 1 ? "" : "s"}${usedLabel ? " (read brand/size/care from the label)" : ""} — review before saving.`,
+        );
       } else if (debug?.error) {
         setAutoTagState("error");
         setAutoTagMessage(debug.error);

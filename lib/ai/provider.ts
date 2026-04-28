@@ -51,11 +51,24 @@ const RESPONSE_SCHEMA = {
     subType: { type: "STRING" },
     color: { type: "STRING", enum: [...ALLOWED_COLORS] },
     brand: { type: "STRING" },
+    size: { type: "STRING" },
     seasons: { type: "ARRAY", items: { type: "STRING", enum: [...ALLOWED_SEASONS] } },
     activities: { type: "ARRAY", items: { type: "STRING", enum: [...ALLOWED_ACTIVITIES] } },
+    material: { type: "STRING" },
+    careNotes: { type: "STRING" },
     notes: { type: "STRING" },
     confidence: { type: "NUMBER" },
   },
+};
+
+const OUTFIT_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    itemIds: { type: "ARRAY", items: { type: "STRING" } },
+    name: { type: "STRING" },
+    reasoning: { type: "STRING" },
+  },
+  required: ["itemIds"],
 };
 
 function makeGemini(): TagProvider {
@@ -63,15 +76,17 @@ function makeGemini(): TagProvider {
   return {
     name: "gemini",
     available: () => !!key,
-    async tagImage({ image, existingBrands }) {
+    async tagImage({ image, labelImage, existingBrands }) {
       if (!key) return { suggestions: {}, debug: { error: "GEMINI_API_KEY not set" } };
 
       let rawText = "";
       let httpStatus: number | undefined;
 
       try {
-        const buf = Buffer.from(await image.arrayBuffer());
-        const mimeType = image.type || "image/jpeg";
+        const mainBuf = Buffer.from(await image.arrayBuffer());
+        const mainMime = image.type || "image/jpeg";
+        const labelBuf = labelImage ? Buffer.from(await labelImage.arrayBuffer()) : null;
+        const labelMime = labelImage?.type || "image/jpeg";
 
         const brandHint =
           existingBrands && existingBrands.length > 0
@@ -80,22 +95,28 @@ function makeGemini(): TagProvider {
                 .join(", ")}.`
             : "";
 
-        const prompt =
-          `You are tagging a single piece of clothing or accessory in a personal wardrobe app. ` +
-          `Look at the image and fill in as many fields of the response schema as you can. ` +
-          `Use only the enumerated values for category / color / seasons / activities. ` +
-          `Omit a field if you genuinely can't tell — never guess wildly.${brandHint}`;
+        const prompt = labelBuf
+          ? `You are tagging a single piece of clothing or accessory in a personal wardrobe app. ` +
+            `You're given two images: the FIRST is the garment itself, the SECOND is a close-up of its brand/size/care label. ` +
+            `Read the label text carefully — extract brand, size (alpha or numeric, exactly as printed), material/composition, and care instructions. ` +
+            `Use the garment image for category, subType, color, seasons, activities. ` +
+            `Use only the enumerated values for category / color / seasons / activities. ` +
+            `Omit a field if you genuinely can't tell — never guess wildly.${brandHint}`
+          : `You are tagging a single piece of clothing or accessory in a personal wardrobe app. ` +
+            `Look at the image and fill in as many fields of the response schema as you can. ` +
+            `Use only the enumerated values for category / color / seasons / activities. ` +
+            `Omit a field if you genuinely can't tell — never guess wildly.${brandHint}`;
+
+        const parts: Array<Record<string, unknown>> = [
+          { text: prompt },
+          { inlineData: { mimeType: mainMime, data: mainBuf.toString("base64") } },
+        ];
+        if (labelBuf) {
+          parts.push({ inlineData: { mimeType: labelMime, data: labelBuf.toString("base64") } });
+        }
 
         const body = {
-          contents: [
-            {
-              role: "user",
-              parts: [
-                { text: prompt },
-                { inlineData: { mimeType, data: buf.toString("base64") } },
-              ],
-            },
-          ],
+          contents: [{ role: "user", parts }],
           generationConfig: {
             responseMimeType: "application/json",
             responseSchema: RESPONSE_SCHEMA,
@@ -192,6 +213,97 @@ function makeGemini(): TagProvider {
         return { suggestions: {}, debug: { status: httpStatus, error: detail, rawText: rawText.slice(0, 400) } };
       }
     },
+
+    async buildOutfit({ occasion, items }) {
+      if (!key) return { itemIds: [], debug: { error: "GEMINI_API_KEY not set" } };
+
+      // Compact the catalog so big closets don't blow our prompt budget.
+      // Pro reasons over this list (no images) — image-aware would be
+      // overkill and 100x slower.
+      const cap = 250;
+      const catalog = items.slice(0, cap).map((it) => ({
+        id: it.id,
+        category: it.category,
+        subType: it.subType ?? undefined,
+        color: it.color ?? undefined,
+        brand: it.brand ?? undefined,
+        seasons: it.seasons?.length ? it.seasons : undefined,
+        activities: it.activities?.length ? it.activities : undefined,
+      }));
+
+      const prompt =
+        `You're a personal stylist for a wardrobe app. The user is asking for an outfit for: "${occasion}". ` +
+        `Pick a small set of pieces from THIS catalog (you may NOT invent items not in the catalog). ` +
+        `Return their ids in the response. Aim for one cohesive outfit: include either a dress OR a top+bottom, ` +
+        `usually shoes, and only add outerwear/accessories/bags/jewelry if they fit the occasion. ` +
+        `Try not to combine clashing colors or wildly mismatched formality. ` +
+        `Pick a short outfit name (3-5 words) and a one-sentence reasoning. ` +
+        `Catalog (JSON):\n${JSON.stringify(catalog)}`;
+
+      const body = {
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: OUTFIT_SCHEMA,
+          temperature: 0.4,
+        },
+      };
+
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+          GEMINI_MODEL,
+        )}:generateContent?key=${encodeURIComponent(key)}`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const responseText = await res.text();
+        if (!res.ok) {
+          let detail = `HTTP ${res.status}`;
+          try {
+            const e = JSON.parse(responseText) as { error?: { message?: string } };
+            if (e.error?.message) detail = `HTTP ${res.status}: ${e.error.message}`;
+          } catch {
+            detail = `HTTP ${res.status}: ${responseText.slice(0, 200)}`;
+          }
+          return { itemIds: [], debug: { status: res.status, error: detail, rawText: responseText.slice(0, 400) } };
+        }
+        const data = JSON.parse(responseText) as {
+          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+          usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+        };
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+        if (!text) {
+          return { itemIds: [], debug: { status: 200, error: "Empty response", rawText: responseText.slice(0, 400) } };
+        }
+        const cleaned = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(cleaned);
+        } catch {
+          return { itemIds: [], debug: { status: 200, error: "Model response wasn't valid JSON", rawText: cleaned.slice(0, 400) } };
+        }
+        const r = parsed as { itemIds?: unknown; name?: unknown; reasoning?: unknown };
+        const ownedIds = new Set(items.map((i) => i.id));
+        const ids = Array.isArray(r.itemIds)
+          ? r.itemIds.filter((x): x is string => typeof x === "string" && ownedIds.has(x))
+          : [];
+        return {
+          itemIds: ids,
+          name: typeof r.name === "string" ? r.name.slice(0, 80) : undefined,
+          reasoning: typeof r.reasoning === "string" ? r.reasoning.slice(0, 400) : undefined,
+          debug: {
+            status: 200,
+            rawText: cleaned.slice(0, 400),
+            promptTokens: data.usageMetadata?.promptTokenCount,
+            responseTokens: data.usageMetadata?.candidatesTokenCount,
+          },
+        };
+      } catch (err) {
+        return { itemIds: [], debug: { error: err instanceof Error ? err.message : String(err) } };
+      }
+    },
   };
 }
 
@@ -203,8 +315,11 @@ function sanitizeSuggestion(raw: unknown): import("./types").TagSuggestion {
   if (typeof r.subType === "string") out.subType = r.subType.slice(0, 100);
   if (typeof r.color === "string") out.color = r.color.toLowerCase();
   if (typeof r.brand === "string" && r.brand.trim()) out.brand = r.brand.slice(0, 80);
+  if (typeof r.size === "string" && r.size.trim()) out.size = r.size.slice(0, 40);
   if (Array.isArray(r.seasons)) out.seasons = r.seasons.filter((x): x is string => typeof x === "string") as never;
   if (Array.isArray(r.activities)) out.activities = r.activities.filter((x): x is string => typeof x === "string") as never;
+  if (typeof r.material === "string" && r.material.trim()) out.material = r.material.slice(0, 120);
+  if (typeof r.careNotes === "string" && r.careNotes.trim()) out.careNotes = r.careNotes.slice(0, 240);
   if (typeof r.notes === "string" && r.notes.trim()) out.notes = r.notes.slice(0, 240);
   if (typeof r.confidence === "number") out.confidence = Math.max(0, Math.min(1, r.confidence));
   return out;

@@ -10,8 +10,11 @@ export type TagSuggestion = {
   subType?: string;
   color?: string;
   brand?: string;
+  size?: string;
   seasons?: Season[];
   activities?: Activity[];
+  material?: string;
+  careNotes?: string;
   notes?: string;
   // 0–1, optional. Lets the UI badge low-confidence picks.
   confidence?: number;
@@ -35,9 +38,38 @@ export type TagResult = {
 export interface TagProvider {
   name: string;
   available(): boolean;
-  /** Suggest tags for a single image. Should never throw past the caller. */
-  tagImage(input: { image: Blob; existingBrands?: string[] }): Promise<TagResult>;
+  /** Suggest tags. `image` is the main photo; `labelImage` is an optional
+   *  brand/size/care tag close-up that the model should OCR for richer
+   *  metadata. Should never throw past the caller. */
+  tagImage(input: {
+    image: Blob;
+    labelImage?: Blob;
+    existingBrands?: string[];
+  }): Promise<TagResult>;
+  /** Pick items from a closet for a free-text occasion. Returns a list of
+   *  itemIds the user already owns plus an optional outfit name and
+   *  reasoning. Implementations that can't do this should leave it
+   *  undefined; the route handler reports it as unsupported. */
+  buildOutfit?(input: {
+    occasion: string;
+    items: Array<{
+      id: string;
+      category: string;
+      subType?: string | null;
+      color?: string | null;
+      brand?: string | null;
+      seasons?: string[];
+      activities?: string[];
+    }>;
+  }): Promise<OutfitSuggestion>;
 }
+
+export type OutfitSuggestion = {
+  itemIds: string[];
+  name?: string;
+  reasoning?: string;
+  debug?: TagDebug;
+};
 
 export class DisabledProvider implements TagProvider {
   name = "disabled";

@@ -120,6 +120,7 @@ export default async function ItemDetail({
             item={{
               id: item.id,
               imagePath: item.imagePath,
+              labelImagePath: item.labelImagePath ?? null,
               category: item.category,
               subType: item.subType,
               color: item.color,
