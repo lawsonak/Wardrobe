@@ -14,7 +14,9 @@ import {
 import TagChips from "@/components/TagChips";
 import ColorSwatch from "@/components/ColorSwatch";
 import BrandInput from "@/components/BrandInput";
+import FitDetailsEditor from "@/components/FitDetailsEditor";
 import { normalizeSize } from "@/lib/size";
+import { parseFitDetails, serializeFitDetails } from "@/lib/fitDetails";
 
 type Item = {
   id: string;
@@ -29,6 +31,8 @@ type Item = {
   activities: string[];
   isFavorite: boolean;
   status: string;
+  fitDetails: string | null;
+  fitNotes: string | null;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -45,6 +49,8 @@ export default function EditItemForm({ item }: { item: Item }) {
   const [brand, setBrand] = useState(item.brand ?? "");
   const [brandId, setBrandId] = useState<string | null>(item.brandId);
   const [size, setSize] = useState(item.size ?? "");
+  const [fitDetails, setFitDetails] = useState<Record<string, string>>(parseFitDetails(item.fitDetails));
+  const [fitNotes, setFitNotes] = useState(item.fitNotes ?? "");
   const [notes, setNotes] = useState(item.notes ?? "");
   const [seasons, setSeasons] = useState<string[]>(item.seasons);
   const [activities, setActivities] = useState<string[]>(item.activities);
@@ -66,6 +72,8 @@ export default function EditItemForm({ item }: { item: Item }) {
         brand,
         brandId,
         size: normalizeSize(size, category),
+        fitDetails: serializeFitDetails(fitDetails),
+        fitNotes: fitNotes.trim(),
         notes,
         seasons,
         activities,
@@ -139,9 +147,23 @@ export default function EditItemForm({ item }: { item: Item }) {
         </div>
         <div>
           <label className="label">Size</label>
-          <input className="input" value={size} onChange={(e) => setSize(e.target.value)} placeholder="e.g. M, 8" />
+          <input
+            className="input"
+            value={size}
+            onChange={(e) => setSize(e.target.value)}
+            onBlur={() => setSize((s) => normalizeSize(s, category))}
+            placeholder="e.g. M, 8"
+          />
         </div>
       </div>
+
+      <FitDetailsEditor
+        category={category}
+        values={fitDetails}
+        onChange={setFitDetails}
+        notes={fitNotes}
+        onNotesChange={setFitNotes}
+      />
 
       <div>
         <label className="label">Seasons</label>

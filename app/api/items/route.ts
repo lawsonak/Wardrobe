@@ -76,6 +76,8 @@ export async function POST(req: NextRequest) {
   const brandText = (form.get("brand") as string | null) || null;
   const brandIdInput = (form.get("brandId") as string | null) || null;
   const size = (form.get("size") as string | null) || null;
+  const fitDetails = (form.get("fitDetails") as string | null) || null;
+  const fitNotes = (form.get("fitNotes") as string | null) || null;
   const notes = (form.get("notes") as string | null) || null;
   const seasons = listToCsv(form.getAll("seasons").map(String));
   const activities = listToCsv(form.getAll("activities").map(String));
@@ -115,6 +117,8 @@ export async function POST(req: NextRequest) {
       brand: brandFinal,
       brandId,
       size,
+      fitDetails,
+      fitNotes,
       seasons,
       activities,
       notes,

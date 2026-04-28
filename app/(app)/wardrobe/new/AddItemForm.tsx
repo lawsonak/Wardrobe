@@ -12,9 +12,11 @@ import {
 import TagChips from "@/components/TagChips";
 import ColorSwatch from "@/components/ColorSwatch";
 import BrandInput from "@/components/BrandInput";
+import FitDetailsEditor from "@/components/FitDetailsEditor";
 import { removeBackground } from "@/lib/bgRemoval";
 import { heicToJpeg, isHeic } from "@/lib/heic";
 import { normalizeSize } from "@/lib/size";
+import { serializeFitDetails } from "@/lib/fitDetails";
 
 export default function AddItemForm() {
   const router = useRouter();
@@ -42,6 +44,8 @@ export default function AddItemForm() {
   const [brand, setBrand] = useState("");
   const [brandId, setBrandId] = useState<string | null>(null);
   const [size, setSize] = useState("");
+  const [fitDetails, setFitDetails] = useState<Record<string, string>>({});
+  const [fitNotes, setFitNotes] = useState("");
   const [notes, setNotes] = useState("");
   const [seasons, setSeasons] = useState<string[]>([]);
   const [activities, setActivities] = useState<string[]>([]);
@@ -136,6 +140,9 @@ export default function AddItemForm() {
     if (brand) fd.append("brand", brand);
     if (brandId) fd.append("brandId", brandId);
     if (size) fd.append("size", normalizeSize(size, category));
+    const fitJson = serializeFitDetails(fitDetails);
+    if (fitJson) fd.append("fitDetails", fitJson);
+    if (fitNotes.trim()) fd.append("fitNotes", fitNotes.trim());
     if (notes) fd.append("notes", notes);
     seasons.forEach((s) => fd.append("seasons", s));
     activities.forEach((a) => fd.append("activities", a));
@@ -161,6 +168,8 @@ export default function AddItemForm() {
         setSize("");
         setBrand("");
         setBrandId(null);
+        setFitDetails({});
+        setFitNotes("");
         setNotes("");
         setIsFavorite(false);
         if (fileRef.current) fileRef.current.value = "";
@@ -303,6 +312,14 @@ export default function AddItemForm() {
             />
           </div>
         </div>
+
+        <FitDetailsEditor
+          category={category}
+          values={fitDetails}
+          onChange={setFitDetails}
+          notes={fitNotes}
+          onNotesChange={setFitNotes}
+        />
 
         <div>
           <label className="label">Seasons</label>

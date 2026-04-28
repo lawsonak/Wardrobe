@@ -39,6 +39,12 @@ model Item {
   brandId            String?
   brandRef           Brand?  @relation(fields: [brandId], references: [id])
   size               String?
+  // Optional sizing system (alpha, numeric, eu, us, jeans, bra, ring, etc).
+  sizeSystem         String?
+  // Per-category structured measurements as JSON. Free-form schema so we
+  // can extend without migrations; rendered by a category-aware editor.
+  fitDetails         String?
+  fitNotes           String?
   // Comma-separated lists (SQLite has no array type)
   seasons            String   @default("")
   activities         String   @default("")

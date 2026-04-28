@@ -31,6 +31,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (typeof body.subType === "string") data.subType = body.subType || null;
   if (typeof body.color === "string") data.color = body.color || null;
   if (typeof body.size === "string") data.size = body.size || null;
+  if (body.fitDetails === null || typeof body.fitDetails === "string") {
+    data.fitDetails = body.fitDetails && String(body.fitDetails).trim() ? String(body.fitDetails) : null;
+  }
+  if (typeof body.fitNotes === "string") data.fitNotes = body.fitNotes || null;
   if (typeof body.notes === "string") data.notes = body.notes || null;
 
   // Brand: accept either an explicit brandId or free-form text. Free-form
