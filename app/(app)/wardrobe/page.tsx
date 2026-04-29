@@ -153,7 +153,7 @@ export default async function WardrobePage({
           )}
         </div>
       ) : (
-        <div className="-mx-1 grid grid-cols-3 gap-1 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+        <div className="-mx-1 grid grid-cols-4 gap-1 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7">
           {filtered.map((item) => {
             const tags: string[] = [];
             if (dormantOnly) {
