@@ -153,7 +153,7 @@ export default async function WardrobePage({
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+        <div className="-mx-1 grid grid-cols-3 gap-1 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
           {filtered.map((item) => {
             const tags: string[] = [];
             if (dormantOnly) {
@@ -162,8 +162,8 @@ export default async function WardrobePage({
               tags.push(`${daysSince(iso)}d`);
             }
             return (
-              <div key={item.id} className="space-y-1">
-                <ItemCard item={item} href={`/wardrobe/${item.id}`} />
+              <div key={item.id} className="space-y-0.5">
+                <ItemCard item={item} href={`/wardrobe/${item.id}`} compact />
                 {tags.length > 0 && (
                   <p className="px-1 text-[10px] uppercase tracking-wide text-stone-400">{tags.join(" · ")}</p>
                 )}
