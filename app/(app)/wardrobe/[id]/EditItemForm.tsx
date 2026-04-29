@@ -17,6 +17,8 @@ import FitDetailsEditor from "@/components/FitDetailsEditor";
 import SubtypePicker from "@/components/SubtypePicker";
 import { normalizeSize } from "@/lib/size";
 import { parseFitDetails, serializeFitDetails } from "@/lib/fitDetails";
+import { confirmDialog } from "@/components/ConfirmDialog";
+import { toast } from "@/lib/toast";
 
 type Item = {
   id: string;
@@ -221,7 +223,7 @@ export default function EditItemForm({ item }: { item: Item }) {
   async function save() {
     setBusy(true);
     setSaved(false);
-    await fetch(`/api/items/${item.id}`, {
+    const res = await fetch(`/api/items/${item.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -241,15 +243,44 @@ export default function EditItemForm({ item }: { item: Item }) {
       }),
     });
     setBusy(false);
+    if (!res.ok) {
+      toast("Couldn't save changes", "error");
+      return;
+    }
     setSaved(true);
+    toast("Changes saved");
     router.refresh();
     setTimeout(() => setSaved(false), 2000);
   }
 
-  async function remove() {
-    if (!confirm("Delete this item from your closet?")) return;
+  async function markWorn() {
     setBusy(true);
-    await fetch(`/api/items/${item.id}`, { method: "DELETE" });
+    const res = await fetch(`/api/items/${item.id}/wear`, { method: "POST" });
+    setBusy(false);
+    if (res.ok) {
+      toast("Marked as worn today");
+      router.refresh();
+    } else {
+      toast("Couldn't update", "error");
+    }
+  }
+
+  async function remove() {
+    const ok = await confirmDialog({
+      title: "Delete this item?",
+      body: "It will be removed from your closet, outfits, and capsules.",
+      confirmText: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
+    setBusy(true);
+    const res = await fetch(`/api/items/${item.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      setBusy(false);
+      toast("Couldn't delete", "error");
+      return;
+    }
+    toast("Item deleted");
     router.push("/wardrobe");
     router.refresh();
   }
@@ -372,9 +403,18 @@ export default function EditItemForm({ item }: { item: Item }) {
         )}
       </div>
 
-      <div className="flex gap-2 pt-2">
+      <div className="flex flex-wrap gap-2 pt-2">
         <button onClick={save} className="btn-primary flex-1" disabled={busy}>
           {saved ? "Saved!" : busy ? "Saving…" : "Save changes"}
+        </button>
+        <button
+          type="button"
+          onClick={markWorn}
+          className="btn-secondary"
+          disabled={busy}
+          title="Bumps last-worn so dormant nudges leave it alone"
+        >
+          👕 Wore today
         </button>
         <button onClick={remove} className="btn-ghost text-blush-600" disabled={busy}>
           Delete

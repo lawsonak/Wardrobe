@@ -17,6 +17,7 @@ import { removeBackground, resetBackgroundRemover } from "@/lib/bgRemoval";
 import { heicToJpeg, isHeic } from "@/lib/heic";
 import { normalizeSize } from "@/lib/size";
 import { serializeFitDetails } from "@/lib/fitDetails";
+import { toast } from "@/lib/toast";
 
 export default function AddItemForm() {
   const router = useRouter();
@@ -53,7 +54,7 @@ export default function AddItemForm() {
   const [isFavorite, setIsFavorite] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [savedToast, setSavedToast] = useState<string | null>(null);
+  const [reopenCamera, setReopenCamera] = useState(false);
   const [autoTagState, setAutoTagState] = useState<"idle" | "running" | "done" | "disabled" | "error">("idle");
   const [autoTagMessage, setAutoTagMessage] = useState<string | null>(null);
   const [notesState, setNotesState] = useState<"idle" | "running" | "error">("idle");
@@ -66,6 +67,16 @@ export default function AddItemForm() {
       if (labelUrl) URL.revokeObjectURL(labelUrl);
     };
   }, [originalUrl, bgUrl, labelUrl]);
+
+  // After a successful batch save, reopen the camera once the form has
+  // finished resetting (any preview elements unmounted, refs cleared).
+  // Driven by state instead of setTimeout so the camera always fires.
+  useEffect(() => {
+    if (reopenCamera && !original) {
+      cameraRef.current?.click();
+      setReopenCamera(false);
+    }
+  }, [reopenCamera, original]);
 
   async function processFile(picked: File): Promise<File | null> {
     let file = picked;
@@ -325,21 +336,22 @@ export default function AddItemForm() {
         if (cameraRef.current) cameraRef.current.value = "";
         if (labelFileRef.current) labelFileRef.current.value = "";
         setSubmitting(false);
-        setSavedToast(batchMode ? "Saved. Snap the next one." : "Saved.");
+        toast(batchMode ? "Saved. Snap the next one." : "Saved");
         if (batchMode) {
-          setTimeout(() => cameraRef.current?.click(), 80);
+          setReopenCamera(true);
         } else {
           window.scrollTo({ top: 0, behavior: "smooth" });
         }
-        setTimeout(() => setSavedToast(null), 2200);
         router.refresh();
       } else {
+        toast("Saved to closet");
         router.push("/wardrobe");
         router.refresh();
       }
     } catch (err) {
       console.error(err);
       setError("Something went wrong saving that item.");
+      toast("Couldn't save that item", "error");
       setSubmitting(false);
     }
   }
@@ -372,8 +384,23 @@ export default function AddItemForm() {
             </div>
           )}
         </div>
-        <input ref={fileRef} type="file" accept="image/*,.heic,.heif" onChange={onPickFile} className="hidden" />
-        <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={onPickFile} className="hidden" />
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*,.heic,.heif"
+          onChange={onPickFile}
+          className="hidden"
+          aria-label="Choose item photo from library"
+        />
+        <input
+          ref={cameraRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={onPickFile}
+          className="hidden"
+          aria-label="Take item photo with camera"
+        />
         <div className="flex flex-wrap items-center gap-2">
           {/* Camera is primary on mobile */}
           <button type="button" className="btn-primary flex-1 sm:flex-none" onClick={() => cameraRef.current?.click()}>
@@ -527,8 +554,23 @@ export default function AddItemForm() {
           // eslint-disable-next-line @next/next/no-img-element
           <img src={labelUrl} alt="Label photo" className="mb-3 max-h-48 w-auto rounded-xl bg-cream-50 object-contain p-1 ring-1 ring-stone-100" />
         )}
-        <input ref={labelFileRef} type="file" accept="image/*,.heic,.heif" onChange={onPickLabelPhoto} className="hidden" />
-        <input ref={labelCameraRef} type="file" accept="image/*" capture="environment" onChange={onPickLabelPhoto} className="hidden" />
+        <input
+          ref={labelFileRef}
+          type="file"
+          accept="image/*,.heic,.heif"
+          onChange={onPickLabelPhoto}
+          className="hidden"
+          aria-label="Choose tag photo from library"
+        />
+        <input
+          ref={labelCameraRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={onPickLabelPhoto}
+          className="hidden"
+          aria-label="Take tag photo with camera"
+        />
         <div className="flex gap-2">
           <button type="button" className="btn-secondary text-xs" onClick={() => labelCameraRef.current?.click()}>
             📷 Take photo
@@ -563,13 +605,6 @@ export default function AddItemForm() {
         )}
       </div>
 
-      {savedToast && (
-        <div className="fixed inset-x-0 bottom-24 z-30 flex justify-center px-4 sm:bottom-8">
-          <div className="rounded-full bg-blush-600 px-4 py-2 text-sm text-white shadow-card">
-            {savedToast}
-          </div>
-        </div>
-      )}
     </form>
   );
 }

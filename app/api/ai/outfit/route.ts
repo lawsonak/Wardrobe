@@ -3,10 +3,12 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { getProvider } from "@/lib/ai/provider";
 import { csvToList } from "@/lib/constants";
+import { getPrefs } from "@/lib/userPrefs";
+import { describeForOutfit, getForecast } from "@/lib/weather";
 
 export const runtime = "nodejs";
 
-// POST { occasion: string, season?: string, activity?: string }
+// POST { occasion: string, season?: string, activity?: string, useWeather?: boolean }
 // Returns { itemIds: string[], name?: string, reasoning?: string } —
 // just the picked item ids; the client routes the user into the builder
 // pre-filled. Never writes to the DB itself.
@@ -33,6 +35,7 @@ export async function POST(req: NextRequest) {
   if (!occasion) return NextResponse.json({ error: "occasion required" }, { status: 400 });
   const season = typeof body.season === "string" ? body.season.trim() : "";
   const activity = typeof body.activity === "string" ? body.activity.trim() : "";
+  const useWeather = body.useWeather !== false; // default true
 
   const items = await prisma.item.findMany({
     where: { ownerId: userId, status: "active" },
@@ -43,8 +46,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ enabled: true, itemIds: [], message: "Your closet is empty." });
   }
 
+  // Optional weather hint. Free, no API key — falls back silently if
+  // the home city isn't set or the geocoder doesn't recognize it.
+  let weatherLine = "";
+  if (useWeather) {
+    const prefs = await getPrefs();
+    if (prefs.homeCity) {
+      const f = await getForecast(prefs.homeCity);
+      if (f) weatherLine = describeForOutfit(f);
+    }
+  }
+
   const result = await provider.buildOutfit({
-    occasion: [occasion, season ? `season: ${season}` : "", activity ? `activity: ${activity}` : ""]
+    occasion: [
+      occasion,
+      season ? `season: ${season}` : "",
+      activity ? `activity: ${activity}` : "",
+      weatherLine ? `weather: ${weatherLine}` : "",
+    ]
       .filter(Boolean)
       .join(" · "),
     items: items.map((i) => ({
@@ -64,6 +83,7 @@ export async function POST(req: NextRequest) {
     itemIds: result.itemIds,
     name: result.name,
     reasoning: result.reasoning,
+    weather: weatherLine || null,
     debug: result.debug,
   });
 }

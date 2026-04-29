@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { confirmDialog } from "@/components/ConfirmDialog";
+import { toast } from "@/lib/toast";
 
 type WishlistItem = {
   id: string;
@@ -32,20 +34,38 @@ export default function WishlistCard({ item }: { item: WishlistItem }) {
 
   async function togglePurchased() {
     setBusy(true);
-    await fetch(`/api/wishlist/${item.id}`, {
+    const next = !item.purchased;
+    const res = await fetch(`/api/wishlist/${item.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ purchased: !item.purchased }),
+      body: JSON.stringify({ purchased: next }),
     });
     setBusy(false);
-    router.refresh();
+    if (res.ok) {
+      toast(next ? "Marked purchased" : "Back on your wishlist");
+      router.refresh();
+    } else {
+      toast("Couldn't update wish", "error");
+    }
   }
 
   async function remove() {
-    if (!confirm(`Remove "${item.name}" from your wishlist?`)) return;
+    const ok = await confirmDialog({
+      title: `Remove "${item.name}"?`,
+      body: "You can always add it back later.",
+      confirmText: "Remove",
+      destructive: true,
+    });
+    if (!ok) return;
     setBusy(true);
-    await fetch(`/api/wishlist/${item.id}`, { method: "DELETE" });
-    router.refresh();
+    const res = await fetch(`/api/wishlist/${item.id}`, { method: "DELETE" });
+    setBusy(false);
+    if (res.ok) {
+      toast("Removed from wishlist");
+      router.refresh();
+    } else {
+      toast("Couldn't remove wish", "error");
+    }
   }
 
   const priorityClass = PRIORITY_COLORS[item.priority] ?? PRIORITY_COLORS.medium;

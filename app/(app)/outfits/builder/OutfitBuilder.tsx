@@ -13,6 +13,7 @@ import {
 } from "@/lib/constants";
 import ItemCard from "@/components/ItemCard";
 import { cn } from "@/lib/cn";
+import { toast } from "@/lib/toast";
 
 type BuilderItem = {
   id: string;
@@ -99,6 +100,7 @@ export default function OutfitBuilder({
   });
   const [name, setName] = useState(initial?.name ?? initialName);
   const [isFavorite, setIsFavorite] = useState(initial?.isFavorite ?? false);
+  const [wearToday, setWearToday] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -210,6 +212,16 @@ export default function OutfitBuilder({
       setError("Couldn't save that outfit.");
       return;
     }
+    if (wearToday) {
+      // Best-effort: bump "worn today" on each item. Quietly ignore errors —
+      // the outfit is already saved, we don't want to block on this.
+      await Promise.all(
+        chosen.map((c) =>
+          fetch(`/api/items/${c.itemId}/wear`, { method: "POST" }).catch(() => null),
+        ),
+      );
+    }
+    toast(initial ? "Outfit saved" : wearToday ? "Outfit saved · marked worn today" : "Outfit saved");
     router.push("/outfits");
     router.refresh();
   }
@@ -313,6 +325,15 @@ export default function OutfitBuilder({
             <input type="checkbox" className="mr-1" checked={isFavorite} onChange={(e) => setIsFavorite(e.target.checked)} />
             Favorite
           </label>
+          {!initial && (
+            <label
+              className="chip chip-off cursor-pointer"
+              title="Marks each piece as worn today so the dormancy nudges leave them alone"
+            >
+              <input type="checkbox" className="mr-1" checked={wearToday} onChange={(e) => setWearToday(e.target.checked)} />
+              Wearing today
+            </label>
+          )}
         </div>
         {error && <p className="text-sm text-blush-700">{error}</p>}
         <button type="button" onClick={save} className="btn-primary w-full" disabled={saving}>

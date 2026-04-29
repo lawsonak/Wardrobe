@@ -59,9 +59,15 @@ export default async function OutfitsPage({
 
       {outfits.length === 0 ? (
         <div className="card p-10 text-center">
-          <p className="font-display text-2xl text-blush-700">No outfits yet</p>
-          <p className="mt-1 text-stone-600">Mix and match your pieces to save your first look.</p>
-          <Link href="/outfits/builder" className="btn-primary mt-4 inline-flex">Build an outfit</Link>
+          <div className="text-4xl" aria-hidden>👗</div>
+          <p className="mt-3 font-display text-2xl text-blush-700">
+            {firstName ? `Build your first look, ${firstName}.` : "Build your first look."}
+          </p>
+          <p className="mt-1 text-stone-600">Mix and match a few favorites — or let AI suggest something.</p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <Link href="/outfits/builder" className="btn-primary">Build an outfit</Link>
+            <Link href="/outfits/builder?shuffle=1" className="btn-secondary">✨ Shuffle one</Link>
+          </div>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">

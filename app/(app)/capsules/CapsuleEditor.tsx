@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CATEGORIES, SEASONS, ACTIVITIES, csvToList, type Category } from "@/lib/constants";
 import { cn } from "@/lib/cn";
+import { confirmDialog } from "@/components/ConfirmDialog";
+import { toast } from "@/lib/toast";
 
 export type Selectable = {
   id: string;
@@ -105,6 +107,7 @@ export default function CapsuleEditor({
       });
       if (!res.ok) throw new Error(await res.text());
       const d = (await res.json()) as { capsule?: { id: string } };
+      toast(mode === "create" ? "Capsule created" : "Capsule saved");
       router.push(d.capsule?.id ? `/capsules/${d.capsule.id}` : "/capsules");
       router.refresh();
     } catch (err) {
@@ -116,9 +119,21 @@ export default function CapsuleEditor({
 
   async function remove() {
     if (!capsule.id) return;
-    if (!confirm(`Delete "${capsule.name}"?`)) return;
+    const ok = await confirmDialog({
+      title: `Delete "${capsule.name}"?`,
+      body: "The pieces stay in your closet — only this capsule is removed.",
+      confirmText: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
     setBusy(true);
-    await fetch(`/api/capsules/${capsule.id}`, { method: "DELETE" });
+    const res = await fetch(`/api/capsules/${capsule.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      toast("Couldn't delete capsule", "error");
+      setBusy(false);
+      return;
+    }
+    toast("Capsule deleted");
     router.push("/capsules");
     router.refresh();
   }

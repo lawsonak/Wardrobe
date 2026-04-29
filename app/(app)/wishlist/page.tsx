@@ -41,8 +41,11 @@ export default async function WishlistPage() {
 
       {items.length === 0 ? (
         <div className="card p-10 text-center">
-          <p className="font-display text-2xl text-blush-700">Nothing on the list yet</p>
-          <p className="mt-1 text-stone-600">Add pieces you love, want to try, or need to fill a gap.</p>
+          <div className="text-4xl" aria-hidden>💝</div>
+          <p className="mt-3 font-display text-2xl text-blush-700">
+            {firstName ? `Start a wishlist, ${firstName}.` : "Start a wishlist."}
+          </p>
+          <p className="mt-1 text-stone-600">Birthday hints, vacation dreams, or pieces you keep eyeing.</p>
           <Link href="/wishlist/new" className="btn-primary mt-4 inline-flex">Add your first wish</Link>
         </div>
       ) : (

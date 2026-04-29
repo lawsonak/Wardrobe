@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "@/lib/toast";
 
 // Compact inline form on the dashboard. Type an occasion ("Sunday brunch",
 // "Paris dinner"), AI picks a few items from the closet, the user lands
@@ -36,6 +37,7 @@ export default function AiOutfitPicker() {
       }
       const params = new URLSearchParams({ ids: ids.join(",") });
       if (data.name) params.set("name", String(data.name));
+      toast("Outfit picked — review in Builder");
       router.push(`/outfits/builder?${params.toString()}`);
     } catch (err) {
       console.error(err);
@@ -63,6 +65,7 @@ export default function AiOutfitPicker() {
         onChange={(e) => setOccasion(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") go(); }}
         disabled={busy}
+        aria-label="Occasion"
       />
       <button type="button" onClick={go} disabled={busy || !occasion.trim()} className="btn-primary">
         {busy ? "Picking…" : "Go"}

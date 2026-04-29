@@ -79,6 +79,19 @@ const NOTES_SCHEMA = {
   required: ["notes"],
 };
 
+const SEARCH_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    category: { type: "STRING", enum: [...ALLOWED_CATEGORIES] },
+    color: { type: "STRING", enum: [...ALLOWED_COLORS] },
+    season: { type: "STRING", enum: [...ALLOWED_SEASONS] },
+    activity: { type: "STRING", enum: [...ALLOWED_ACTIVITIES] },
+    favoritesOnly: { type: "BOOLEAN" },
+    dormantOnly: { type: "BOOLEAN" },
+    freeText: { type: "STRING" },
+  },
+};
+
 function makeGemini(): TagProvider {
   const key = process.env.GEMINI_API_KEY;
   return {
@@ -401,6 +414,83 @@ function makeGemini(): TagProvider {
         };
       } catch (err) {
         return { itemIds: [], debug: { error: err instanceof Error ? err.message : String(err) } };
+      }
+    },
+
+    async parseSearch({ query }) {
+      if (!key) return { filters: {}, debug: { error: "GEMINI_API_KEY not set" } };
+      try {
+        const prompt =
+          `Parse the user's natural-language closet search into structured filters. ` +
+          `Only set a field if the query clearly implies it. ` +
+          `Use ONLY the enumerated values for category / color / season / activity. ` +
+          `Map informal words: "dresses" → category=Dresses; "denim" → freeText=jeans; ` +
+          `"haven't worn in a while" / "forgotten" / "dormant" → dormantOnly=true; ` +
+          `"favorites" / "I love" → favoritesOnly=true. ` +
+          `Anything that doesn't fit a structured field goes in freeText (one or two short keywords). ` +
+          `Query: "${query.slice(0, 200)}"`;
+
+        const body = {
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: SEARCH_SCHEMA,
+            temperature: 0.0,
+          },
+        };
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+          GEMINI_MODEL,
+        )}:generateContent?key=${encodeURIComponent(key)}`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const responseText = await res.text();
+        if (!res.ok) {
+          let detail = `HTTP ${res.status}`;
+          try {
+            const e = JSON.parse(responseText) as { error?: { message?: string } };
+            if (e.error?.message) detail = `HTTP ${res.status}: ${e.error.message}`;
+          } catch {
+            detail = `HTTP ${res.status}: ${responseText.slice(0, 200)}`;
+          }
+          return { filters: {}, debug: { status: res.status, error: detail, rawText: responseText.slice(0, 400) } };
+        }
+        const data = JSON.parse(responseText) as {
+          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+          usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+        };
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+        if (!text) return { filters: {}, debug: { status: 200, error: "Empty response", rawText: responseText.slice(0, 400) } };
+        const cleaned = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(cleaned);
+        } catch {
+          return { filters: {}, debug: { status: 200, error: "Model response wasn't valid JSON", rawText: cleaned.slice(0, 400) } };
+        }
+        const r = (parsed as Record<string, unknown>) ?? {};
+        const filters: import("./types").SearchFilters = {};
+        if (typeof r.category === "string") filters.category = r.category;
+        if (typeof r.color === "string") filters.color = r.color.toLowerCase();
+        if (typeof r.season === "string") filters.season = r.season.toLowerCase();
+        if (typeof r.activity === "string") filters.activity = r.activity.toLowerCase();
+        if (typeof r.favoritesOnly === "boolean") filters.favoritesOnly = r.favoritesOnly;
+        if (typeof r.dormantOnly === "boolean") filters.dormantOnly = r.dormantOnly;
+        if (typeof r.freeText === "string" && r.freeText.trim()) filters.freeText = r.freeText.trim().slice(0, 60);
+        return {
+          filters,
+          debug: {
+            status: 200,
+            rawText: cleaned.slice(0, 400),
+            promptTokens: data.usageMetadata?.promptTokenCount,
+            responseTokens: data.usageMetadata?.candidatesTokenCount,
+          },
+        };
+      } catch (err) {
+        return { filters: {}, debug: { error: err instanceof Error ? err.message : String(err) } };
       }
     },
   };
