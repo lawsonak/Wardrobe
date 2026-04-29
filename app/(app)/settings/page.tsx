@@ -109,15 +109,15 @@ export default async function SettingsPage() {
           </li>
           <li>
             <Link href="/wardrobe/new?batch=1" className="text-blush-600 hover:underline">
-              Batch add
+              Quick add
             </Link>
-            <span className="text-stone-500"> — rapid-fire add many items in a row.</span>
+            <span className="text-stone-500"> — snap photos one at a time; the camera reopens after each save.</span>
           </li>
           <li>
             <Link href="/wardrobe/bulk" className="text-blush-600 hover:underline">
-              Bulk upload
+              Import from library
             </Link>
-            <span className="text-stone-500"> — pick a stack of photos at once, send to Needs Review.</span>
+            <span className="text-stone-500"> — pick a stack of existing photos at once; AI tags them in the background.</span>
           </li>
           <li>
             <Link href="/capsules" className="text-blush-600 hover:underline">

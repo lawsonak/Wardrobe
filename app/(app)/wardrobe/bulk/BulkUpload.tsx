@@ -161,7 +161,7 @@ export default function BulkUpload() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: "Bulk upload complete",
+          title: "Import complete",
           body: `${uploadedCount} item${uploadedCount === 1 ? "" : "s"} saved${defaultStatus === "needs_review" ? " — waiting for review" : ""}.`,
           href: defaultStatus === "needs_review" ? "/wardrobe/needs-review" : "/wardrobe",
         }),

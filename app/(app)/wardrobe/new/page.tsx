@@ -15,11 +15,11 @@ export default async function NewItemPage({
       <div className="flex items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl text-blush-700">
-            {batch ? "Batch add" : "Add a piece"}
+            {batch ? "Quick add" : "Add a piece"}
           </h1>
           <p className="text-sm text-stone-500">
             {batch
-              ? "Snap, save, repeat — the form clears itself between items."
+              ? "Snap, save, repeat — the camera reopens for the next piece."
               : "Snap a photo and tag it however you like."}
           </p>
         </div>
@@ -27,9 +27,9 @@ export default async function NewItemPage({
           {batch ? (
             <Link href="/wardrobe/new" className="text-stone-500">Done</Link>
           ) : (
-            <Link href="/wardrobe/new?batch=1" className="text-blush-600 hover:underline">Batch mode</Link>
+            <Link href="/wardrobe/new?batch=1" className="text-blush-600 hover:underline">Quick add (one at a time)</Link>
           )}
-          <Link href="/wardrobe/bulk" className="text-blush-600 hover:underline">Bulk upload</Link>
+          <Link href="/wardrobe/bulk" className="text-blush-600 hover:underline">Import from library</Link>
         </div>
       </div>
       <Suspense>
