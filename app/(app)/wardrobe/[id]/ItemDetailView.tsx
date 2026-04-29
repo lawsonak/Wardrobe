@@ -11,6 +11,7 @@ import {
 } from "@/lib/wear";
 import type { Category } from "@/lib/constants";
 import { FavoriteToggle, WoreTodayButton, DeleteItemButton } from "./ItemActions";
+import ItemNav from "./ItemNav";
 
 type DetailItem = {
   id: string;
@@ -64,9 +65,13 @@ function formatLastWorn(iso: string | null): string {
 export default function ItemDetailView({
   item,
   outfits,
+  prevId,
+  nextId,
 }: {
   item: DetailItem;
   outfits: DetailOutfit[];
+  prevId: string | null;
+  nextId: string | null;
 }) {
   const src = item.imageBgRemovedPath
     ? `/api/uploads/${item.imageBgRemovedPath}`
@@ -94,13 +99,16 @@ export default function ItemDetailView({
         <Link href="/wardrobe" className="text-sm text-blush-600 hover:underline">
           ← Back to closet
         </Link>
-        <Link
-          href={`/wardrobe/${item.id}?edit=1`}
-          className="btn-secondary text-xs"
-          aria-label="Edit this item"
-        >
-          ✎ Edit
-        </Link>
+        <div className="flex items-center gap-2">
+          <ItemNav prevId={prevId} nextId={nextId} />
+          <Link
+            href={`/wardrobe/${item.id}?edit=1`}
+            className="btn-secondary text-xs"
+            aria-label="Edit this item"
+          >
+            ✎ Edit
+          </Link>
+        </div>
       </div>
 
       {/* Hero photo */}
