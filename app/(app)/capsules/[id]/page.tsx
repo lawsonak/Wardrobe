@@ -41,7 +41,7 @@ export default async function CapsuleDetailPage({
   return (
     <div className="space-y-5">
       <div>
-        <Link href="/capsules" className="text-sm text-blush-600 hover:underline">← Capsules</Link>
+        <Link href="/capsules" className="text-sm text-blush-600 hover:underline">← Collections</Link>
         <h1 className="mt-1 font-display text-3xl text-blush-700">{capsule.name}</h1>
         <p className="text-sm text-stone-500">
           {[capsule.occasion, capsule.season].filter(Boolean).join(" · ") || "Edit pieces, occasion, and season."}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { haptic } from "@/lib/haptics";
 
 // In-app confirm dialog. Use `confirmDialog({...})` from any client
 // component instead of the browser-native `confirm()` so the destructive
@@ -61,6 +62,7 @@ export default function ConfirmDialogHost() {
   }
 
   function confirm() {
+    haptic(pending?.destructive ? "impact" : "selection");
     close(true);
   }
   function cancel() {

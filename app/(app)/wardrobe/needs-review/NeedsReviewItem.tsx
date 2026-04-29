@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
+import { haptic } from "@/lib/haptics";
 
 type ReviewItem = {
   id: string;
@@ -37,6 +38,7 @@ export default function NeedsReviewItem({ item }: { item: ReviewItem }) {
 
   async function approve() {
     setBusy(true);
+    haptic("success");
     const res = await fetch(`/api/items/${item.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },

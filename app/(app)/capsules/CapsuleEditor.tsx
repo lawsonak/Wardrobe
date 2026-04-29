@@ -7,6 +7,7 @@ import { CATEGORIES, SEASONS, ACTIVITIES, csvToList, type Category } from "@/lib
 import { cn } from "@/lib/cn";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
+import { haptic } from "@/lib/haptics";
 
 export type Selectable = {
   id: string;
@@ -76,6 +77,7 @@ export default function CapsuleEditor({
   }, [items, filterCategory, filterSeason, filterActivity, favOnly, search]);
 
   function toggle(id: string) {
+    haptic("selection");
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -86,7 +88,7 @@ export default function CapsuleEditor({
 
   async function save() {
     if (!name.trim()) {
-      setError("Give the capsule a name first.");
+      setError("Give the collection a name first.");
       return;
     }
     setError(null);
@@ -107,12 +109,13 @@ export default function CapsuleEditor({
       });
       if (!res.ok) throw new Error(await res.text());
       const d = (await res.json()) as { capsule?: { id: string } };
-      toast(mode === "create" ? "Capsule created" : "Capsule saved");
+      haptic("success");
+      toast(mode === "create" ? "Collection created" : "Collection saved");
       router.push(d.capsule?.id ? `/capsules/${d.capsule.id}` : "/capsules");
       router.refresh();
     } catch (err) {
       console.error(err);
-      setError("Couldn't save the capsule.");
+      setError("Couldn't save the collection.");
       setBusy(false);
     }
   }
@@ -121,7 +124,7 @@ export default function CapsuleEditor({
     if (!capsule.id) return;
     const ok = await confirmDialog({
       title: `Delete "${capsule.name}"?`,
-      body: "The pieces stay in your closet — only this capsule is removed.",
+      body: "The pieces stay in your closet — only this collection is removed.",
       confirmText: "Delete",
       destructive: true,
     });
@@ -129,11 +132,11 @@ export default function CapsuleEditor({
     setBusy(true);
     const res = await fetch(`/api/capsules/${capsule.id}`, { method: "DELETE" });
     if (!res.ok) {
-      toast("Couldn't delete capsule", "error");
+      toast("Couldn't delete collection", "error");
       setBusy(false);
       return;
     }
-    toast("Capsule deleted");
+    toast("Collection deleted");
     router.push("/capsules");
     router.refresh();
   }
@@ -243,7 +246,7 @@ export default function CapsuleEditor({
 
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" onClick={save} className="btn-primary flex-1" disabled={busy}>
-          {busy ? "Saving…" : mode === "create" ? "Create capsule" : "Save changes"}
+          {busy ? "Saving…" : mode === "create" ? "Create collection" : "Save changes"}
         </button>
         {mode === "edit" && (
           <button type="button" onClick={remove} className="btn-ghost text-blush-600" disabled={busy}>

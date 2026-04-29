@@ -8,6 +8,7 @@ import { slotDefaults, type SlotPlacement } from "@/lib/slots";
 import type { Landmarks } from "@/lib/ai/mannequinLandmarks";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
+import { haptic } from "@/lib/haptics";
 
 export type CanvasItem = {
   id: string;
@@ -251,6 +252,7 @@ export default function StyleCanvas({
       setRenderedSrc(data.url ?? null);
       setShowRendered(true);
       setRenderState("idle");
+      haptic("success");
       toast("Styled photo ready");
       router.refresh();
     } catch (err) {

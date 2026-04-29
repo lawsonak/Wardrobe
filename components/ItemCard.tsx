@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { cn } from "@/lib/cn";
+import { haptic } from "@/lib/haptics";
 
 export type ItemCardItem = {
   id: string;
@@ -50,6 +51,7 @@ export default function ItemCard({
     setBusy(true);
     const next = !fav;
     setFav(next);
+    haptic("tap");
     try {
       await fetch(`/api/items/${item.id}`, {
         method: "PATCH",

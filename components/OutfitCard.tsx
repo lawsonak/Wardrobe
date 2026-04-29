@@ -8,6 +8,7 @@ import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import OutfitMiniCanvas from "@/components/OutfitMiniCanvas";
 import type { Landmarks } from "@/lib/ai/mannequinLandmarks";
+import { haptic } from "@/lib/haptics";
 
 type Outfit = {
   id: string;
@@ -54,6 +55,7 @@ export default function OutfitCard({
     setBusy(true);
     const next = !fav;
     setFav(next);
+    haptic("tap");
     await fetch(`/api/outfits/${outfit.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -71,6 +73,7 @@ export default function OutfitCard({
     });
     if (!ok) return;
     setBusy(true);
+    haptic("impact");
     const res = await fetch(`/api/outfits/${outfit.id}`, { method: "DELETE" });
     setBusy(false);
     if (res.ok) {

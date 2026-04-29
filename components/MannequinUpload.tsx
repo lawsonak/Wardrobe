@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import { heicToJpeg, isHeic } from "@/lib/heic";
+import { haptic } from "@/lib/haptics";
 
 type Info = {
   url: string | null;
@@ -84,6 +85,7 @@ export default function MannequinUpload({ initial }: { initial: Info }) {
         hasSource: data.hasSource ?? true,
         hasLandmarks: data.hasLandmarks ?? false,
       });
+      haptic("success");
       if (data.calibrationError) {
         toast("Mannequin generated · couldn't auto-calibrate fit", "info");
         setError(`Auto-calibration failed: ${data.calibrationError}. Tap "Recalibrate fit" to retry.`);
@@ -155,6 +157,7 @@ export default function MannequinUpload({ initial }: { initial: Info }) {
         hasSource: data.hasSource ?? true,
         hasLandmarks: data.hasLandmarks ?? false,
       });
+      haptic("success");
       toast("Fit recalibrated");
       router.refresh();
     } catch (err) {
