@@ -132,6 +132,7 @@ export default async function ItemDetail({
             item={{
               id: item.id,
               imagePath: item.imagePath,
+              imageBgRemovedPath: item.imageBgRemovedPath ?? null,
               labelImagePath: item.labelImagePath ?? null,
               category: item.category,
               subType: item.subType,

@@ -19,6 +19,7 @@ import { normalizeSize } from "@/lib/size";
 import { serializeFitDetails } from "@/lib/fitDetails";
 import { toast } from "@/lib/toast";
 import { haptic } from "@/lib/haptics";
+import { fetchWithRetry, friendlyFetchError } from "@/lib/fetchRetry";
 
 export default function AddItemForm() {
   const router = useRouter();
@@ -138,7 +139,11 @@ export default function AddItemForm() {
           existingNotes: notes || undefined,
         }),
       );
-      const res = await fetch("/api/ai/notes", { method: "POST", body: fd });
+      const res = await fetchWithRetry(
+        "/api/ai/notes",
+        { method: "POST", body: fd },
+        { timeoutMs: 60_000 },
+      );
       const data = await res.json().catch(() => ({}));
       if (data?.enabled === false) {
         setNotesError(data.message ?? "AI is disabled.");
@@ -156,7 +161,7 @@ export default function AddItemForm() {
       setNotesState("idle");
     } catch (err) {
       console.error(err);
-      setNotesError(err instanceof Error ? err.message : "Notes failed.");
+      setNotesError(friendlyFetchError(err, "Notes failed."));
       setNotesState("error");
     }
   }
@@ -172,7 +177,11 @@ export default function AddItemForm() {
       // tag, which is dramatically more reliable than guessing from the
       // garment alone.
       if (labelPhoto) fd.append("labelImage", labelPhoto);
-      const res = await fetch("/api/ai/tag", { method: "POST", body: fd });
+      const res = await fetchWithRetry(
+        "/api/ai/tag",
+        { method: "POST", body: fd },
+        { timeoutMs: 60_000 },
+      );
       const data = await res.json().catch(() => ({}));
       if (data?.enabled === false) {
         setAutoTagState("disabled");
@@ -242,7 +251,7 @@ export default function AddItemForm() {
     } catch (err) {
       console.error(err);
       setAutoTagState("error");
-      setAutoTagMessage(err instanceof Error ? err.message : "Auto-tag failed.");
+      setAutoTagMessage(friendlyFetchError(err, "Auto-tag failed."));
     }
   }
 

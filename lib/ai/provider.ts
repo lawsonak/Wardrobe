@@ -121,12 +121,14 @@ function makeGemini(): TagProvider {
             `You're given two images: the FIRST is the garment itself, the SECOND is a close-up of its brand/size/care label. ` +
             `Read the label text carefully — extract brand, size (alpha or numeric, exactly as printed), material/composition, and care instructions. ` +
             `Use the garment image for category, subType, color, seasons, activities. ` +
-            `Use only the enumerated values for category / color / seasons / activities. ` +
-            `Omit a field if you genuinely can't tell — never guess wildly.${brandHint}`
+            `Use the enumerated values for category / color / seasons / activities — pick the CLOSEST match even if imperfect. ` +
+            `Always return at least: category and color (snap color to the nearest enum value — for example a maroon item is "burgundy", a beige item is "tan"). ` +
+            `Fill in as many other fields as you reasonably can. Only leave a field empty if the image is genuinely unreadable.${brandHint}`
           : `You are tagging a single piece of clothing or accessory in a personal wardrobe app. ` +
             `Look at the image and fill in as many fields of the response schema as you can. ` +
-            `Use only the enumerated values for category / color / seasons / activities. ` +
-            `Omit a field if you genuinely can't tell — never guess wildly.${brandHint}`;
+            `Use the enumerated values for category / color / seasons / activities — pick the CLOSEST match even if imperfect. ` +
+            `Always return at least: category and color (snap color to the nearest enum value — for example a maroon item is "burgundy", a beige item is "tan"). ` +
+            `Fill in as many other fields as you reasonably can. Only leave a field empty if the image is genuinely unreadable.${brandHint}`;
 
         const parts: Array<Record<string, unknown>> = [
           { text: prompt },
