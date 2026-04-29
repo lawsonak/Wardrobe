@@ -93,6 +93,29 @@ export type OutfitSuggestion = {
   debug?: TagDebug;
 };
 
+// Parsed natural-language closet search. All fields optional; the
+// caller composes the final filter from whatever the model returned.
+export type SearchFilters = {
+  category?: string;       // one of CATEGORIES, or undefined
+  color?: string;          // one of COLOR_PALETTE names
+  season?: string;         // one of SEASONS
+  activity?: string;       // one of ACTIVITIES
+  favoritesOnly?: boolean;
+  dormantOnly?: boolean;   // "haven't worn in a while"
+  freeText?: string;       // remainder for LIKE-search across notes etc.
+};
+
+export type SearchParseResult = {
+  filters: SearchFilters;
+  debug?: TagDebug;
+};
+
+// Extension on the provider that supports parsing search queries.
+// Optional — UI falls back to LIKE-search when not implemented.
+export interface TagProvider {
+  parseSearch?(input: { query: string }): Promise<SearchParseResult>;
+}
+
 export class DisabledProvider implements TagProvider {
   name = "disabled";
   available() { return false; }

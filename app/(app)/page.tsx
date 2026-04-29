@@ -5,30 +5,53 @@ import ItemCard from "@/components/ItemCard";
 import GiftBanner from "@/components/GiftBanner";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
 import AiOutfitPicker from "@/components/AiOutfitPicker";
+import TodaysOutfitCard from "@/components/TodaysOutfitCard";
+import { firstNameFromUser } from "@/lib/userName";
+import { getPrefs } from "@/lib/userPrefs";
+import { getForecast, cToF } from "@/lib/weather";
+import { pickOfTheDay } from "@/lib/dailyPick";
+import { maybeNudgeDormant } from "@/lib/dormancy";
 
 export const dynamic = "force-dynamic";
+
+function greet(now: Date, firstName: string | null): string {
+  const hour = now.getHours();
+  const part =
+    hour < 5 ? "Up late" : hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  return firstName ? `${part}, ${firstName}.` : `${part}.`;
+}
 
 export default async function Dashboard() {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
+  const firstName = firstNameFromUser(session?.user);
+  const now = new Date();
 
-  const [recent, favorites, outfitCount, itemCount, favoriteCount, needsReviewCount, wishlistCount] = await Promise.all([
-    prisma.item.findMany({
-      where: { ownerId: userId, status: "active" },
-      orderBy: { createdAt: "desc" },
-      take: 8,
-    }),
-    prisma.item.findMany({
-      where: { ownerId: userId, isFavorite: true, status: "active" },
-      orderBy: { updatedAt: "desc" },
-      take: 8,
-    }),
-    prisma.outfit.count({ where: { ownerId: userId } }),
-    prisma.item.count({ where: { ownerId: userId } }),
-    prisma.item.count({ where: { ownerId: userId, isFavorite: true } }),
-    prisma.item.count({ where: { ownerId: userId, status: "needs_review" } }),
-    prisma.wishlistItem.count({ where: { ownerId: userId, purchased: false } }),
-  ]);
+  const [recent, favorites, allActive, outfitCount, itemCount, favoriteCount, needsReviewCount, wishlistCount] =
+    await Promise.all([
+      prisma.item.findMany({
+        where: { ownerId: userId, status: "active" },
+        orderBy: { createdAt: "desc" },
+        take: 8,
+      }),
+      prisma.item.findMany({
+        where: { ownerId: userId, isFavorite: true, status: "active" },
+        orderBy: { updatedAt: "desc" },
+        take: 8,
+      }),
+      // For pickOfTheDay we want everything active. Cap at 200 — plenty
+      // for picking and keeps the page fast.
+      prisma.item.findMany({
+        where: { ownerId: userId, status: "active" },
+        select: { id: true, isFavorite: true, notes: true, updatedAt: true, imagePath: true, imageBgRemovedPath: true, category: true, subType: true, color: true },
+        take: 200,
+      }),
+      prisma.outfit.count({ where: { ownerId: userId } }),
+      prisma.item.count({ where: { ownerId: userId } }),
+      prisma.item.count({ where: { ownerId: userId, isFavorite: true } }),
+      prisma.item.count({ where: { ownerId: userId, status: "needs_review" } }),
+      prisma.wishlistItem.count({ where: { ownerId: userId, purchased: false } }),
+    ]);
 
   const progress = {
     hasItem: itemCount > 0,
@@ -37,16 +60,51 @@ export default async function Dashboard() {
     hasWishlist: wishlistCount > 0,
   };
 
+  const prefs = await getPrefs();
+  const forecast = prefs.homeCity ? await getForecast(prefs.homeCity) : null;
+
+  // "On this day" — items added on the same calendar day in past years.
+  // SQLite supports strftime through Prisma's $queryRaw.
+  const todayMD = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const currentYear = now.getFullYear();
+  const onThisDay = await prisma.$queryRaw<Array<{
+    id: string;
+    imagePath: string;
+    imageBgRemovedPath: string | null;
+    category: string;
+    subType: string | null;
+    color: string | null;
+    isFavorite: number;
+    createdAt: string;
+  }>>`
+    SELECT id, imagePath, imageBgRemovedPath, category, subType, color, isFavorite, createdAt
+    FROM Item
+    WHERE ownerId = ${userId}
+      AND status = 'active'
+      AND strftime('%m-%d', createdAt) = ${todayMD}
+      AND CAST(strftime('%Y', createdAt) AS INTEGER) < ${currentYear}
+    ORDER BY createdAt DESC
+    LIMIT 6
+  `;
+
+  const dailyPick = pickOfTheDay(allActive, now);
+
+  // Drop a single dormancy nudge if it's been a while. Idempotent —
+  // safe on every render.
+  if (userId) await maybeNudgeDormant(userId);
+
   return (
     <div className="space-y-6">
       <GiftBanner />
 
-      {/* Quick actions — the wordmark in the header is enough greeting. */}
       <section>
-        <p className="text-sm text-stone-600">
-          {itemCount === 0
-            ? "Your closet is waiting. Snap your first piece to begin."
-            : `${itemCount} item${itemCount === 1 ? "" : "s"} · ${outfitCount} outfit${outfitCount === 1 ? "" : "s"}`}
+        <h1 className="font-display text-2xl text-stone-800">{greet(now, firstName)}</h1>
+        <p className="mt-1 text-sm text-stone-600">
+          {needsReviewCount > 0
+            ? `You have ${needsReviewCount} item${needsReviewCount === 1 ? "" : "s"} waiting for review.`
+            : itemCount === 0
+              ? "Your closet is waiting. Snap your first piece to begin."
+              : `${itemCount} item${itemCount === 1 ? "" : "s"} · ${outfitCount} outfit${outfitCount === 1 ? "" : "s"}.`}
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <Link href="/wardrobe/new" className="btn-primary">📸 Add item</Link>
@@ -65,10 +123,42 @@ export default async function Dashboard() {
         )}
       </section>
 
+      {/* Today's outfit (AI-picked, weather-aware when home city is set) */}
+      {itemCount >= 3 && (
+        <TodaysOutfitCard
+          homeCity={prefs.homeCity}
+          weatherSummary={
+            forecast
+              ? `${cToF(forecast.tempC)}°F · ${forecast.conditions} in ${forecast.city} (high ${cToF(forecast.highC)}°, low ${cToF(forecast.lowC)}°)`
+              : null
+          }
+        />
+      )}
+
+      {/* Today's pick — a deterministic-per-day rediscovery card */}
+      {dailyPick && (
+        <section>
+          <div className="mb-3 flex items-end justify-between">
+            <div>
+              <h2 className="font-display text-2xl text-stone-800">Today&apos;s pick</h2>
+              <p className="text-xs text-stone-500">A piece worth wearing again.</p>
+            </div>
+            <Link href={`/wardrobe/${dailyPick.id}`} className="text-sm text-blush-600 hover:underline">
+              See it →
+            </Link>
+          </div>
+          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+            <div className="col-span-1">
+              <ItemCard item={dailyPick} href={`/wardrobe/${dailyPick.id}`} />
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Alert cards */}
       <div className="grid gap-3 sm:grid-cols-2">
         {needsReviewCount > 0 && (
-          <Link href="/wardrobe/needs-review" className="card flex items-center gap-3 p-4 hover:shadow-md transition-shadow">
+          <Link href="/wardrobe/needs-review" className="card flex items-center gap-3 p-4 transition-shadow hover:shadow-md">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
@@ -85,7 +175,7 @@ export default async function Dashboard() {
         )}
 
         {wishlistCount > 0 && (
-          <Link href="/wishlist" className="card flex items-center gap-3 p-4 hover:shadow-md transition-shadow">
+          <Link href="/wishlist" className="card flex items-center gap-3 p-4 transition-shadow hover:shadow-md">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blush-100 text-blush-600">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" />
@@ -102,8 +192,38 @@ export default async function Dashboard() {
         )}
       </div>
 
-      {/* Onboarding checklist tracks real progress and auto-hides when done */}
+      {/* Onboarding checklist — auto-hides when complete */}
       <OnboardingChecklist progress={progress} />
+
+      {/* On this day */}
+      {onThisDay.length > 0 && (
+        <section>
+          <div className="mb-3 flex items-end justify-between">
+            <div>
+              <h2 className="font-display text-2xl text-stone-800">On this day</h2>
+              <p className="text-xs text-stone-500">Pieces you added on this date in past years.</p>
+            </div>
+          </div>
+          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
+            {onThisDay.map((item) => (
+              <div key={item.id} className="w-32 shrink-0">
+                <ItemCard
+                  item={{
+                    id: item.id,
+                    imagePath: item.imagePath,
+                    imageBgRemovedPath: item.imageBgRemovedPath,
+                    category: item.category,
+                    subType: item.subType,
+                    color: item.color,
+                    isFavorite: !!item.isFavorite,
+                  }}
+                  href={`/wardrobe/${item.id}`}
+                />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Favorites */}
       {favorites.length > 0 && (

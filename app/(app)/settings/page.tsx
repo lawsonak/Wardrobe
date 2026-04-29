@@ -1,20 +1,33 @@
 import Link from "next/link";
+import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { firstNameFromUser } from "@/lib/userName";
+import { getPrefs, setHomeCity } from "@/lib/userPrefs";
+import { getForecast, cToF } from "@/lib/weather";
 
 export const dynamic = "force-dynamic";
+
+async function saveHomeCityAction(formData: FormData) {
+  "use server";
+  const value = String(formData.get("homeCity") ?? "");
+  await setHomeCity(value);
+  revalidatePath("/");
+  revalidatePath("/settings");
+}
 
 export default async function SettingsPage() {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
   const firstName = firstNameFromUser(session?.user);
+  const prefs = await getPrefs();
 
-  const [items, outfits, wishlist, brands] = await Promise.all([
+  const [items, outfits, wishlist, brands, forecast] = await Promise.all([
     prisma.item.count({ where: { ownerId: userId } }),
     prisma.outfit.count({ where: { ownerId: userId } }),
     prisma.wishlistItem.count({ where: { ownerId: userId } }),
     prisma.brand.count({ where: { ownerId: userId } }),
+    prefs.homeCity ? getForecast(prefs.homeCity) : Promise.resolve(null),
   ]);
 
   return (
@@ -26,6 +39,35 @@ export default async function SettingsPage() {
           {firstName ? `Hi ${firstName}.` : ""} Useful tools and a backup button.
         </p>
       </div>
+
+      <section className="card p-4">
+        <h2 className="font-display text-lg text-stone-800">Home city</h2>
+        <p className="mt-1 text-sm text-stone-600">
+          Used to tailor &ldquo;Today&apos;s outfit&rdquo; on your dashboard with the local weather.
+          Optional — leave blank to skip.
+        </p>
+        <form action={saveHomeCityAction} className="mt-3 flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            name="homeCity"
+            defaultValue={prefs.homeCity ?? ""}
+            placeholder="e.g. Brooklyn, NY"
+            className="input flex-1 min-w-[14rem]"
+            aria-label="Home city"
+          />
+          <button type="submit" className="btn-primary">Save</button>
+        </form>
+        {forecast && (
+          <p className="mt-3 text-xs text-stone-500">
+            Showing {forecast.city}{forecast.country ? `, ${forecast.country}` : ""}: {cToF(forecast.tempC)}°F, {forecast.conditions}.
+          </p>
+        )}
+        {prefs.homeCity && !forecast && (
+          <p className="mt-3 text-xs text-stone-500">
+            Couldn&apos;t look up &ldquo;{prefs.homeCity}&rdquo; just now — try a more specific name.
+          </p>
+        )}
+      </section>
 
       <section className="card p-4">
         <h2 className="font-display text-lg text-stone-800">Backup</h2>
@@ -58,6 +100,12 @@ export default async function SettingsPage() {
               Closet quality
             </Link>
             <span className="text-stone-500"> — find missing fields and possible duplicate brands.</span>
+          </li>
+          <li>
+            <Link href="/wardrobe?dormant=1" className="text-blush-600 hover:underline">
+              Haven&apos;t worn lately
+            </Link>
+            <span className="text-stone-500"> — pieces that could use a rediscover.</span>
           </li>
           <li>
             <Link href="/wardrobe/new?batch=1" className="text-blush-600 hover:underline">
