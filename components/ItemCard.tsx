@@ -21,6 +21,7 @@ export default function ItemCard({
   selected,
   onClick,
   size = "md",
+  compact = false,
 }: {
   item: ItemCardItem;
   href?: string;
@@ -28,6 +29,9 @@ export default function ItemCard({
   selected?: boolean;
   onClick?: () => void;
   size?: "sm" | "md" | "lg";
+  /** Dense gallery rendering — smaller padding, smaller heart, no
+   *  subtype caption. Used on the wardrobe gallery page. */
+  compact?: boolean;
 }) {
   const [fav, setFav] = useState(item.isFavorite);
   const [busy, setBusy] = useState(false);
@@ -63,11 +67,12 @@ export default function ItemCard({
   const inner = (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-2xl tile-bg ring-1 ring-stone-100 transition",
+        "group relative overflow-hidden tile-bg ring-1 ring-stone-100 transition",
+        compact ? "rounded-lg" : "rounded-2xl",
         selected && "ring-2 ring-blush-500",
       )}
     >
-      <div className={cn(sizeCls, "flex items-center justify-center p-3")}>
+      <div className={cn(sizeCls, "flex items-center justify-center", compact ? "p-1.5" : "p-3")}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={src}
@@ -81,15 +86,26 @@ export default function ItemCard({
         onClick={toggleFav}
         aria-label={fav ? "Unfavorite" : "Favorite"}
         className={cn(
-          "absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-white/80 backdrop-blur transition",
+          "absolute grid place-items-center rounded-full bg-white/80 backdrop-blur transition",
+          compact ? "right-1 top-1 h-6 w-6" : "right-2 top-2 h-8 w-8",
+          // Hide the heart in compact mode unless it's already favorited —
+          // small thumbnails get visually busy otherwise. Tap the item to
+          // favorite from the detail page.
+          compact && !fav && "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
           fav ? "text-blush-600" : "text-stone-400 hover:text-blush-500",
         )}
       >
-        <svg viewBox="0 0 24 24" className="h-4 w-4" fill={fav ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+        <svg
+          viewBox="0 0 24 24"
+          className={compact ? "h-3 w-3" : "h-4 w-4"}
+          fill={fav ? "currentColor" : "none"}
+          stroke="currentColor"
+          strokeWidth="2"
+        >
           <path d="M12 21s-7-4.35-9.5-8.5C.5 8.5 3 5 6.5 5c2 0 3.5 1 5.5 3 2-2 3.5-3 5.5-3 3.5 0 6 3.5 4 7.5C19 16.65 12 21 12 21z" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
-      {item.subType && (
+      {item.subType && !compact && (
         <div className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/30 to-transparent px-3 py-2 text-xs font-medium text-white">
           {item.subType}
         </div>
