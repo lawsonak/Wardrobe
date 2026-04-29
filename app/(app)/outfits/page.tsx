@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { ACTIVITIES, SEASONS, SLOTS } from "@/lib/constants";
 import OutfitCard from "@/components/OutfitCard";
 import { firstNameFromUser, possessiveTitle } from "@/lib/userName";
+import { getMannequinForUser } from "@/lib/mannequin";
 
 export const dynamic = "force-dynamic";
 
@@ -13,17 +14,21 @@ export default async function OutfitsPage({
   searchParams: Promise<{ activity?: string; season?: string; fav?: string }>;
 }) {
   const [sp, session] = await Promise.all([searchParams, auth()]);
+  const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
   const firstName = firstNameFromUser(session?.user);
 
-  const outfits = await prisma.outfit.findMany({
-    where: {
-      ...(sp.activity ? { activity: sp.activity } : {}),
-      ...(sp.season ? { season: sp.season } : {}),
-      ...(sp.fav === "1" ? { isFavorite: true } : {}),
-    },
-    orderBy: { updatedAt: "desc" },
-    include: { items: { include: { item: true } } },
-  });
+  const [outfits, mannequin] = await Promise.all([
+    prisma.outfit.findMany({
+      where: {
+        ...(sp.activity ? { activity: sp.activity } : {}),
+        ...(sp.season ? { season: sp.season } : {}),
+        ...(sp.fav === "1" ? { isFavorite: true } : {}),
+      },
+      orderBy: { updatedAt: "desc" },
+      include: { items: { include: { item: true } } },
+    }),
+    getMannequinForUser(userId),
+  ]);
 
   const title = possessiveTitle("Outfits", firstName);
 
@@ -80,6 +85,7 @@ export default async function OutfitsPage({
                 activity: o.activity,
                 season: o.season,
                 isFavorite: o.isFavorite,
+                layoutJson: o.layoutJson,
                 items: o.items.map((oi) => ({
                   slot: oi.slot,
                   item: {
@@ -92,6 +98,7 @@ export default async function OutfitsPage({
                 }))}
               }
               slotsOrder={[...SLOTS]}
+              mannequinSrc={mannequin.url}
             />
           ))}
         </div>

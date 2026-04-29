@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/cn";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
+import OutfitMiniCanvas from "@/components/OutfitMiniCanvas";
 
 type Outfit = {
   id: string;
@@ -13,6 +14,7 @@ type Outfit = {
   activity: string | null;
   season: string | null;
   isFavorite: boolean;
+  layoutJson: string | null;
   items: Array<{
     slot: string;
     item: {
@@ -28,9 +30,11 @@ type Outfit = {
 export default function OutfitCard({
   outfit,
   slotsOrder,
+  mannequinSrc,
 }: {
   outfit: Outfit;
   slotsOrder: string[];
+  mannequinSrc?: string | null;
 }) {
   const router = useRouter();
   const [fav, setFav] = useState(outfit.isFavorite);
@@ -72,21 +76,22 @@ export default function OutfitCard({
     }
   }
 
+  const items = sorted.map((s) => s.item);
+
   return (
     <div className="card overflow-hidden">
-      <div className="tile-bg grid grid-cols-3 gap-2 p-3">
-        {sorted.slice(0, 6).map(({ item }) => {
-          const src = item.imageBgRemovedPath
-            ? `/api/uploads/${item.imageBgRemovedPath}`
-            : `/api/uploads/${item.imagePath}`;
-          return (
-            <div key={item.id} className="flex aspect-square items-center justify-center rounded-xl bg-white/60 p-1">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={src} alt={item.subType ?? item.category} className="h-full w-full object-contain" />
-            </div>
-          );
-        })}
-      </div>
+      <Link
+        href={`/outfits/${outfit.id}/style`}
+        aria-label={`Open style canvas for ${outfit.name}`}
+        className="block tile-bg transition hover:opacity-95"
+      >
+        <OutfitMiniCanvas
+          items={items}
+          layoutJson={outfit.layoutJson}
+          mannequinSrc={mannequinSrc}
+          className="mx-auto max-h-[60vh] w-full"
+        />
+      </Link>
       <div className="flex items-center justify-between gap-2 px-4 py-3">
         <div className="min-w-0">
           <p className="truncate font-display text-lg text-stone-800">{outfit.name}</p>

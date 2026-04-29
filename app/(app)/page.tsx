@@ -6,11 +6,13 @@ import GiftBanner from "@/components/GiftBanner";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
 import AiOutfitPicker from "@/components/AiOutfitPicker";
 import TodaysOutfitCard from "@/components/TodaysOutfitCard";
+import OutfitMiniCanvas from "@/components/OutfitMiniCanvas";
 import { firstNameFromUser } from "@/lib/userName";
 import { getPrefs } from "@/lib/userPrefs";
 import { getForecast, cToF } from "@/lib/weather";
 import { pickOfTheDay } from "@/lib/dailyPick";
 import { maybeNudgeDormant } from "@/lib/dormancy";
+import { getMannequinForUser } from "@/lib/mannequin";
 
 export const dynamic = "force-dynamic";
 
@@ -61,7 +63,15 @@ export default async function Dashboard() {
   };
 
   const prefs = await getPrefs();
-  const forecast = prefs.homeCity ? await getForecast(prefs.homeCity) : null;
+  const [forecast, mannequin, latestOutfit] = await Promise.all([
+    prefs.homeCity ? getForecast(prefs.homeCity) : Promise.resolve(null),
+    getMannequinForUser(userId),
+    prisma.outfit.findFirst({
+      where: { ownerId: userId },
+      orderBy: { updatedAt: "desc" },
+      include: { items: { include: { item: true } } },
+    }),
+  ]);
 
   // "On this day" — items added on the same calendar day in past years.
   // SQLite supports strftime through Prisma's $queryRaw.
@@ -133,6 +143,48 @@ export default async function Dashboard() {
               : null
           }
         />
+      )}
+
+      {/* Styled on you — preview of the latest outfit on the user's mannequin */}
+      {latestOutfit && latestOutfit.items.length > 0 && (
+        <section>
+          <div className="mb-3 flex items-end justify-between gap-2">
+            <div>
+              <h2 className="font-display text-2xl text-stone-800">Styled on you</h2>
+              <p className="text-xs text-stone-500">
+                {mannequin.url
+                  ? `Your latest outfit, on your mannequin.`
+                  : "Your latest outfit. Set a custom mannequin in Settings to see it on you."}
+              </p>
+            </div>
+            <Link
+              href={`/outfits/${latestOutfit.id}/style`}
+              className="text-sm text-blush-600 hover:underline"
+            >
+              Open canvas →
+            </Link>
+          </div>
+          <Link href={`/outfits/${latestOutfit.id}/style`} className="card block overflow-hidden tile-bg transition hover:shadow-md">
+            <OutfitMiniCanvas
+              items={latestOutfit.items.map((oi) => ({
+                id: oi.item.id,
+                imagePath: oi.item.imagePath,
+                imageBgRemovedPath: oi.item.imageBgRemovedPath,
+                category: oi.item.category,
+                subType: oi.item.subType,
+              }))}
+              layoutJson={latestOutfit.layoutJson}
+              mannequinSrc={mannequin.url}
+              className="mx-auto max-h-[60vh] w-full max-w-xs"
+            />
+            <div className="px-4 py-3 text-center">
+              <p className="truncate font-display text-lg text-stone-800">{latestOutfit.name}</p>
+              <p className="truncate text-xs text-stone-500">
+                {[latestOutfit.activity, latestOutfit.season].filter(Boolean).join(" • ") || "Tap to dress this look"}
+              </p>
+            </div>
+          </Link>
+        </section>
       )}
 
       {/* Today's pick — a deterministic-per-day rediscovery card */}
