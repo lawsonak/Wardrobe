@@ -41,6 +41,27 @@ export function wearCount(notes: string | null | undefined): number {
   return n;
 }
 
+// Every wear date in the notes, most recent first.
+export function wearDates(notes: string | null | undefined): string[] {
+  if (!notes) return [];
+  WEAR_LINE.lastIndex = 0;
+  const dates = new Set<string>();
+  let m: RegExpExecArray | null;
+  while ((m = WEAR_LINE.exec(notes)) !== null) {
+    dates.add(`${m[1]}-${m[2]}-${m[3]}`);
+  }
+  return [...dates].sort().reverse();
+}
+
+// User-visible notes with the [Worn: …] markers stripped out.
+export function notesWithoutWears(notes: string | null | undefined): string {
+  if (!notes) return "";
+  return notes
+    .replace(/^[\t ]*\[Worn:\s*\d{4}-\d{2}-\d{2}\][\t ]*\r?\n?/gm, "")
+    .replace(/[\t ]*\[Worn:\s*\d{4}-\d{2}-\d{2}\]/g, "")
+    .trim();
+}
+
 export function daysSince(iso: string, now: Date = new Date()): number {
   const [y, m, d] = iso.split("-").map(Number);
   const then = Date.UTC(y, (m ?? 1) - 1, d ?? 1);

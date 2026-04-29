@@ -251,6 +251,9 @@ export default function EditItemForm({ item }: { item: Item }) {
     setSaved(true);
     haptic("success");
     toast("Changes saved");
+    // Drop the ?edit=1 query param and refresh — kicks the user back
+    // to the read-only detail view.
+    router.push(`/wardrobe/${item.id}`);
     router.refresh();
     setTimeout(() => setSaved(false), 2000);
   }
