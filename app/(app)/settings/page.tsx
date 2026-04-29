@@ -50,7 +50,13 @@ export default async function SettingsPage() {
           mannequin. It&apos;s used in the outfit style canvas so layouts feel like they&apos;re on you.
         </p>
         <div className="mt-3">
-          <MannequinUpload initial={mannequin} />
+          <MannequinUpload
+            initial={{
+              url: mannequin.url,
+              hasSource: mannequin.hasSource,
+              hasLandmarks: !!mannequin.landmarks,
+            }}
+          />
         </div>
       </section>
 

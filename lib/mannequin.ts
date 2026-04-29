@@ -2,37 +2,43 @@
 // We store the AI-rendered illustration on disk under the user's
 // upload directory and serve it via the existing /api/uploads route.
 //
-// Two files per user:
-//   data/uploads/{userId}/mannequin.png        — rendered illustration
-//   data/uploads/{userId}/mannequin-source.<ext> — original photo (kept
+// Files per user:
+//   data/uploads/{userId}/mannequin.png             — rendered illustration
+//   data/uploads/{userId}/mannequin-source.<ext>    — original photo (kept
 //       so "Regenerate" can re-run without re-uploading)
-//
-// Convention-over-config means no DB column or cookie is needed; the
-// presence of mannequin.png on disk *is* the user's choice.
+//   data/uploads/{userId}/mannequin-landmarks.json  — anatomical anchor
+//       points used to fit clothing items to this specific mannequin
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import type { Landmarks } from "@/lib/ai/mannequinLandmarks";
 
 const UPLOAD_ROOT = path.join(process.cwd(), "data", "uploads");
 export const MANNEQUIN_FILENAME = "mannequin.png";
 export const MANNEQUIN_SOURCE_PREFIX = "mannequin-source";
+export const MANNEQUIN_LANDMARKS_FILENAME = "mannequin-landmarks.json";
 
 export type MannequinInfo = {
   /** Path served via /api/uploads/<rel> when present, else null. */
   url: string | null;
   hasSource: boolean;
+  /** Disk path to the rendered PNG when present (server-only). */
+  renderedAbsPath: string | null;
+  /** Cached anatomical landmarks for the rendered mannequin, when known. */
+  landmarks: Landmarks | null;
 };
 
 export async function getMannequinForUser(userId: string): Promise<MannequinInfo> {
-  if (!userId) return { url: null, hasSource: false };
+  if (!userId) return { url: null, hasSource: false, renderedAbsPath: null, landmarks: null };
   const dir = path.join(UPLOAD_ROOT, userId);
   const renderedAbs = path.join(dir, MANNEQUIN_FILENAME);
   let url: string | null = null;
+  let renderedAbsPath: string | null = null;
   try {
     await fs.access(renderedAbs);
-    // Cache-bust on file mtime so a regeneration shows up immediately.
     const stat = await fs.stat(renderedAbs);
     url = `/api/uploads/${userId}/${MANNEQUIN_FILENAME}?v=${stat.mtimeMs.toFixed(0)}`;
+    renderedAbsPath = renderedAbs;
   } catch {
     /* not present */
   }
@@ -44,7 +50,9 @@ export async function getMannequinForUser(userId: string): Promise<MannequinInfo
   } catch {
     /* dir may not exist yet */
   }
-  return { url, hasSource };
+
+  const landmarks = await readLandmarks(userId);
+  return { url, hasSource, renderedAbsPath, landmarks };
 }
 
 export async function findSourcePath(userId: string): Promise<string | null> {
@@ -66,7 +74,12 @@ export async function clearMannequinFiles(userId: string): Promise<void> {
     const entries = await fs.readdir(dir);
     await Promise.all(
       entries
-        .filter((e) => e === MANNEQUIN_FILENAME || e.startsWith(`${MANNEQUIN_SOURCE_PREFIX}.`))
+        .filter(
+          (e) =>
+            e === MANNEQUIN_FILENAME ||
+            e === MANNEQUIN_LANDMARKS_FILENAME ||
+            e.startsWith(`${MANNEQUIN_SOURCE_PREFIX}.`),
+        )
         .map((e) => fs.unlink(path.join(dir, e)).catch(() => null)),
     );
   } catch {
@@ -98,6 +111,37 @@ export async function saveRendered(userId: string, png: Buffer): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
   const fullPath = path.join(dir, MANNEQUIN_FILENAME);
   await fs.writeFile(fullPath, png);
+}
+
+export async function readRenderedPng(userId: string): Promise<Buffer | null> {
+  const dir = path.join(UPLOAD_ROOT, userId);
+  const fullPath = path.join(dir, MANNEQUIN_FILENAME);
+  try {
+    return await fs.readFile(fullPath);
+  } catch {
+    return null;
+  }
+}
+
+export async function saveLandmarks(userId: string, landmarks: Landmarks): Promise<void> {
+  const dir = path.join(UPLOAD_ROOT, userId);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(
+    path.join(dir, MANNEQUIN_LANDMARKS_FILENAME),
+    JSON.stringify(landmarks, null, 2),
+  );
+}
+
+export async function readLandmarks(userId: string): Promise<Landmarks | null> {
+  if (!userId) return null;
+  const dir = path.join(UPLOAD_ROOT, userId);
+  try {
+    const raw = await fs.readFile(path.join(dir, MANNEQUIN_LANDMARKS_FILENAME), "utf8");
+    const parsed = JSON.parse(raw) as Landmarks;
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
 function mimeToExt(mime: string): string {

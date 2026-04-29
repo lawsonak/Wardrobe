@@ -8,6 +8,8 @@
 
 import MannequinSilhouette from "@/components/MannequinSilhouette";
 import { CATEGORY_TO_SLOT, type Category, type Slot } from "@/lib/constants";
+import { slotDefaults } from "@/lib/slots";
+import type { Landmarks } from "@/lib/ai/mannequinLandmarks";
 
 type Item = {
   id: string;
@@ -27,16 +29,6 @@ type LayoutLayer = {
   hidden?: boolean;
 };
 
-const SLOT_DEFAULTS: Record<Slot, { x: number; y: number; w: number; z: number }> = {
-  top:       { x: 50, y: 32, w: 56, z: 4 },
-  dress:     { x: 50, y: 44, w: 60, z: 3 },
-  bottom:    { x: 50, y: 58, w: 50, z: 4 },
-  outerwear: { x: 50, y: 38, w: 70, z: 5 },
-  shoes:     { x: 50, y: 92, w: 30, z: 6 },
-  accessory: { x: 50, y: 22, w: 24, z: 7 },
-  bag:       { x: 78, y: 50, w: 24, z: 8 },
-};
-
 function srcFor(item: Item): string {
   return item.imageBgRemovedPath
     ? `/api/uploads/${item.imageBgRemovedPath}`
@@ -48,6 +40,7 @@ export default function OutfitMiniCanvas({
   layoutJson,
   mannequinSrc,
   renderedSrc,
+  landmarks,
   className,
 }: {
   items: Item[];
@@ -56,6 +49,9 @@ export default function OutfitMiniCanvas({
   /** When set, render this single composed image instead of the layered
    *  cutouts. Used by the AI "styled photo" feature. */
   renderedSrc?: string | null;
+  /** Anatomical anchor points used to fit clothing to this specific
+   *  mannequin. When absent, falls back to hardcoded silhouette defaults. */
+  landmarks?: Landmarks | null;
   className?: string;
 }) {
   if (renderedSrc) {
@@ -72,6 +68,8 @@ export default function OutfitMiniCanvas({
     );
   }
 
+  const defaults = slotDefaults(landmarks);
+
   const saved: Record<string, LayoutLayer> = {};
   if (layoutJson) {
     try {
@@ -85,7 +83,7 @@ export default function OutfitMiniCanvas({
   const layers = items
     .map((it, idx) => {
       const slot = (CATEGORY_TO_SLOT[it.category as Category] ?? "accessory") as Slot;
-      const d = SLOT_DEFAULTS[slot];
+      const d = defaults[slot];
       const fromSaved = saved[it.id];
       return {
         id: it.id,

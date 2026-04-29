@@ -6,23 +6,30 @@ import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import { heicToJpeg, isHeic } from "@/lib/heic";
 
-type Info = { url: string | null; hasSource: boolean };
+type Info = {
+  url: string | null;
+  hasSource: boolean;
+  hasLandmarks: boolean;
+};
 
 // Settings panel for the per-user "custom mannequin" feature.
 //
 // Lifecycle:
-//   1. User uploads a photo → POST multipart → server saves source +
-//      calls Gemini image-gen → server saves rendered PNG → we refresh.
-//   2. "Regenerate" → POST { mode: "regenerate" } → server reuses the
-//      previously-saved source.
-//   3. "Reset" → DELETE → both source + rendered files removed; the
-//      app falls back to the default silhouette everywhere.
+//   1. Upload → POST multipart → server saves source, generates the
+//      illustration, and extracts landmarks (anchor points on the
+//      figure). Used everywhere the canvas places clothes.
+//   2. "Regenerate" → POST { mode: "regenerate" } → re-run on saved
+//      source; landmarks are re-extracted on the new render.
+//   3. "Recalibrate fit" → POST { mode: "recalibrate" } → re-extract
+//      landmarks from the existing mannequin without regenerating
+//      (useful if the auto-extract failed or items look misaligned).
+//   4. "Reset" → DELETE → mannequin, source, and landmarks all go.
 export default function MannequinUpload({ initial }: { initial: Info }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [info, setInfo] = useState<Info>(initial);
   const [busy, setBusy] = useState(false);
-  const [phase, setPhase] = useState<"idle" | "preparing" | "generating">("idle");
+  const [phase, setPhase] = useState<"idle" | "preparing" | "generating" | "calibrating">("idle");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -72,14 +79,22 @@ export default function MannequinUpload({ initial }: { initial: Info }) {
       if (!res.ok) {
         throw new Error(data?.error ?? `HTTP ${res.status}`);
       }
-      setInfo({ url: data.url ?? null, hasSource: data.hasSource ?? true });
-      toast("Mannequin generated");
+      setInfo({
+        url: data.url ?? null,
+        hasSource: data.hasSource ?? true,
+        hasLandmarks: data.hasLandmarks ?? false,
+      });
+      if (data.calibrationError) {
+        toast("Mannequin generated · couldn't auto-calibrate fit", "info");
+        setError(`Auto-calibration failed: ${data.calibrationError}. Tap "Recalibrate fit" to retry.`);
+      } else {
+        toast("Mannequin generated");
+      }
       router.refresh();
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : String(err));
       toast("Couldn't generate mannequin", "error");
-      // Refresh to surface any partial state (e.g. source saved but render failed).
       await refresh();
     } finally {
       setBusy(false);
@@ -99,8 +114,17 @@ export default function MannequinUpload({ initial }: { initial: Info }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
-      setInfo({ url: data.url ?? null, hasSource: data.hasSource ?? true });
-      toast("Mannequin regenerated");
+      setInfo({
+        url: data.url ?? null,
+        hasSource: data.hasSource ?? true,
+        hasLandmarks: data.hasLandmarks ?? false,
+      });
+      if (data.calibrationError) {
+        toast("Mannequin regenerated · couldn't auto-calibrate fit", "info");
+        setError(`Auto-calibration failed: ${data.calibrationError}.`);
+      } else {
+        toast("Mannequin regenerated");
+      }
       router.refresh();
     } catch (err) {
       console.error(err);
@@ -112,10 +136,41 @@ export default function MannequinUpload({ initial }: { initial: Info }) {
     }
   }
 
+  async function recalibrate() {
+    setBusy(true);
+    setPhase("calibrating");
+    setError(null);
+    try {
+      const res = await fetch("/api/mannequin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "recalibrate" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error ?? `HTTP ${res.status}`);
+      }
+      setInfo({
+        url: data.url ?? null,
+        hasSource: data.hasSource ?? true,
+        hasLandmarks: data.hasLandmarks ?? false,
+      });
+      toast("Fit recalibrated");
+      router.refresh();
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : String(err));
+      toast("Couldn't recalibrate", "error");
+    } finally {
+      setBusy(false);
+      setPhase("idle");
+    }
+  }
+
   async function reset() {
     const ok = await confirmDialog({
       title: "Use the default mannequin?",
-      body: "Your uploaded photo and the generated illustration will be deleted. You can upload again any time.",
+      body: "Your uploaded photo, the generated illustration, and the fit calibration will be deleted. You can upload again any time.",
       confirmText: "Reset",
       destructive: true,
     });
@@ -125,7 +180,7 @@ export default function MannequinUpload({ initial }: { initial: Info }) {
     try {
       const res = await fetch("/api/mannequin", { method: "DELETE" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setInfo({ url: null, hasSource: false });
+      setInfo({ url: null, hasSource: false, hasLandmarks: false });
       toast("Mannequin reset");
       router.refresh();
     } catch (err) {
@@ -142,7 +197,9 @@ export default function MannequinUpload({ initial }: { initial: Info }) {
       ? "Preparing photo…"
       : phase === "generating"
         ? "Drawing your mannequin… (this can take 10-30 seconds)"
-        : "";
+        : phase === "calibrating"
+          ? "Calibrating fit…"
+          : "";
 
   return (
     <div className="space-y-3">
@@ -159,10 +216,20 @@ export default function MannequinUpload({ initial }: { initial: Info }) {
         </div>
         <div className="min-w-0 flex-1 space-y-2 text-sm text-stone-600">
           {info.url ? (
-            <p>
-              You&apos;re using your custom mannequin in the outfit style canvas.
-              {info.hasSource && " You can regenerate to try a different illustration without re-uploading."}
-            </p>
+            <>
+              <p>
+                You&apos;re using your custom mannequin in the outfit style canvas.
+                {info.hasSource && " You can regenerate to try a different illustration without re-uploading."}
+              </p>
+              {info.hasLandmarks ? (
+                <p className="text-xs text-sage-600">✓ Fit calibrated to your mannequin&apos;s body.</p>
+              ) : (
+                <p className="text-xs text-amber-700">
+                  Fit not calibrated yet — clothes will use generic positions until you tap
+                  &ldquo;Recalibrate fit&rdquo;.
+                </p>
+              )}
+            </>
           ) : (
             <p>
               Upload a clear, well-lit photo of yourself (head-to-toe is best). We&apos;ll send it to
@@ -172,7 +239,7 @@ export default function MannequinUpload({ initial }: { initial: Info }) {
           )}
           <p className="text-xs text-stone-500">
             Privacy: your photo is sent to Google&apos;s Gemini API to generate the illustration. The
-            illustration is stored on your server. You can reset (delete both files) any time.
+            illustration is stored on your server. You can reset (delete all files) any time.
           </p>
         </div>
       </div>
@@ -204,6 +271,17 @@ export default function MannequinUpload({ initial }: { initial: Info }) {
             title="Re-run the AI on the same photo"
           >
             ✨ Regenerate
+          </button>
+        )}
+        {info.url && (
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={recalibrate}
+            disabled={busy}
+            title="Re-extract body anchor points (helps when clothes look misaligned)"
+          >
+            📐 Recalibrate fit
           </button>
         )}
         {(info.url || info.hasSource) && (
