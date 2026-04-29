@@ -51,10 +51,12 @@ export default function StyleCanvas({
   outfitId,
   items,
   initialLayoutJson,
+  mannequinSrc,
 }: {
   outfitId?: string;
   items: CanvasItem[];
   initialLayoutJson?: string | null;
+  mannequinSrc?: string | null;
 }) {
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -249,7 +251,7 @@ export default function StyleCanvas({
           onPointerCancel={onPointerUp}
           onClick={() => setSelectedId(null)}
         >
-          <MannequinSilhouette className="absolute inset-0 h-full w-full" />
+          <MannequinSilhouette src={mannequinSrc} className="absolute inset-0 h-full w-full" />
           {sorted.map((l) =>
             l.hidden ? null : (
               <div
