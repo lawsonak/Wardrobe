@@ -41,9 +41,17 @@ const SLOT_LABELS: Record<Slot, string> = {
   bag: "Bag",
 };
 
-// Slots where multi-select feels natural (you might layer two tops,
-// add multiple necklaces, or pair a tote and a clutch).
-const MULTI_SLOTS = new Set<Slot>(["top", "outerwear", "accessory", "bag", "shoes"]);
+// Slots where multi-select is natural — layered tops, underwear +
+// pants, multiple necklaces, a tote and a clutch, etc. Only `dress`
+// stays single-pick (and is mutually exclusive with top/bottom).
+const MULTI_SLOTS = new Set<Slot>([
+  "top",
+  "bottom",
+  "outerwear",
+  "accessory",
+  "bag",
+  "shoes",
+]);
 
 function emptyPicks(): Picks {
   return { top: [], bottom: [], dress: [], outerwear: [], shoes: [], accessory: [], bag: [] };
@@ -147,7 +155,7 @@ export default function OutfitBuilder({
         if (MULTI_SLOTS.has(slot)) {
           list.push(item);
         } else {
-          // Single-pick slots (bottom, dress) replace.
+          // Single-pick slots (just `dress`) replace on tap.
           next[slot] = [item];
         }
         if (slot === "dress") { next.top = []; next.bottom = []; }
