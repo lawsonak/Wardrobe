@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { ACTIVITIES, SEASONS, SLOTS } from "@/lib/constants";
 import OutfitCard from "@/components/OutfitCard";
-import { firstNameFromUser, possessiveTitle } from "@/lib/userName";
+import { firstNameFromUser } from "@/lib/userName";
 import { getMannequinForUser } from "@/lib/mannequin";
 import { getOutfitRendersFor } from "@/lib/outfitRender";
 
@@ -35,7 +35,7 @@ export default async function OutfitsPage({
     outfits.map((o) => o.id),
   );
 
-  const title = possessiveTitle("Outfits", firstName);
+  const title = "Outfits";
 
   return (
     <div className="space-y-5">

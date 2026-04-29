@@ -1,14 +1,12 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
-import { firstNameFromUser, possessiveTitle } from "@/lib/userName";
 
 export const dynamic = "force-dynamic";
 
 export default async function CapsulesPage() {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
-  const firstName = firstNameFromUser(session?.user);
 
   const capsules = await prisma.capsule.findMany({
     where: { ownerId: userId },
@@ -22,7 +20,7 @@ export default async function CapsulesPage() {
     },
   });
 
-  const title = possessiveTitle("Collections", firstName);
+  const title = "Collections";
 
   return (
     <div className="space-y-5">
