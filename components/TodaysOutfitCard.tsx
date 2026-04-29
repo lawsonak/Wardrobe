@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
 import OutfitMiniCanvas from "@/components/OutfitMiniCanvas";
@@ -18,41 +18,60 @@ type PickedItem = {
 type Suggestion = {
   itemIds: string[];
   pickedItems: PickedItem[];
-  name?: string;
-  reasoning?: string;
-  weather?: string | null;
+  name: string | null;
+  reasoning: string | null;
+  weather: string | null;
 };
 
-// "Plan today's look" — one-tap outfit-of-the-day. AI picks the items
-// from the closet, then we lay them on the user's mannequin using the
-// same landmark-derived slot positions as the Style canvas. No AI
-// compose step here — keeps the mannequin's identity intact.
+// "Plan today's look".
+//
+// Lifecycle:
+//   - The dashboard server-loads any saved pick for today and passes
+//     it as `initialPick`. So returning to the dashboard shows the
+//     same outfit until the calendar day rolls over (the JSON file
+//     auto-expires by date inside readSavedPick).
+//   - When `initialPick` is present, we still kick off the AI
+//     compose ("polish") in the background. The polish endpoint
+//     caches by item-set hash, so repeated mounts are free.
+//   - "Try another" calls POST /api/ai/outfit/today which picks
+//     fresh and overwrites the saved pick.
 export default function TodaysOutfitCard({
   homeCity,
   weatherSummary,
   mannequinSrc,
   landmarks,
+  initialPick,
 }: {
   homeCity: string | null;
   weatherSummary: string | null;
   mannequinSrc: string | null;
   landmarks: Landmarks | null;
+  initialPick?: Suggestion | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const [picked, setPicked] = useState<Suggestion | null>(null);
+  const [picked, setPicked] = useState<Suggestion | null>(initialPick ?? null);
   const [error, setError] = useState<string | null>(null);
+  const [renderedSrc, setRenderedSrc] = useState<string | null>(null);
+  const [polishing, setPolishing] = useState(false);
+
+  // On mount, if we already have a saved pick, polish it (cached).
+  useEffect(() => {
+    if (initialPick && initialPick.itemIds.length > 0 && mannequinSrc) {
+      void polishOutfit(initialPick.itemIds);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function pick(again = false) {
     setBusy(true);
     setError(null);
+    setRenderedSrc(null);
     try {
-      const day = new Date().toLocaleDateString(undefined, { weekday: "long" });
-      const occasion = again ? `Outfit for ${day} (try another)` : `Outfit for ${day}`;
-      const res = await fetch("/api/ai/outfit", {
+      const res = await fetch("/api/ai/outfit/today", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ occasion }),
+        body: JSON.stringify({ again }),
       });
       const data = await res.json();
       if (data?.enabled === false) {
@@ -68,16 +87,37 @@ export default function TodaysOutfitCard({
       setPicked({
         itemIds: ids,
         pickedItems: enriched,
-        name: data.name,
-        reasoning: data.reasoning,
-        weather: data.weather,
+        name: data.name ?? null,
+        reasoning: data.reasoning ?? null,
+        weather: data.weather ?? null,
       });
       haptic("success");
+      void polishOutfit(ids);
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Today's outfit failed.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function polishOutfit(itemIds: string[]) {
+    if (!mannequinSrc) return; // No mannequin → no polish step.
+    setPolishing(true);
+    try {
+      const res = await fetch("/api/ai/render-items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemIds }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok || !data?.url) return;
+      setRenderedSrc(data.url as string);
+      haptic("tap");
+    } catch {
+      /* silent — overlay stays visible */
+    } finally {
+      setPolishing(false);
     }
   }
 
@@ -123,13 +163,21 @@ export default function TodaysOutfitCard({
       </div>
 
       {picked && picked.pickedItems.length > 0 && (
-        <div className="mt-4 flex justify-center">
-          <OutfitMiniCanvas
-            items={picked.pickedItems}
-            mannequinSrc={mannequinSrc}
-            landmarks={landmarks}
-            className="w-full max-w-[14rem]"
-          />
+        <div className="mt-4 flex flex-col items-center">
+          <div className="relative w-full max-w-[14rem]">
+            <OutfitMiniCanvas
+              items={picked.pickedItems}
+              mannequinSrc={mannequinSrc}
+              landmarks={landmarks}
+              renderedSrc={renderedSrc}
+              className="w-full"
+            />
+            {polishing && !renderedSrc && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-2 mx-auto w-fit rounded-full bg-white/85 px-3 py-1 text-[11px] text-stone-600 shadow-card ring-1 ring-stone-100 backdrop-blur">
+                ✨ Polishing the look…
+              </div>
+            )}
+          </div>
         </div>
       )}
 

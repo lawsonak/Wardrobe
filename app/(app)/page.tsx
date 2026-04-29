@@ -11,6 +11,7 @@ import { getPrefs } from "@/lib/userPrefs";
 import { getForecast, cToF } from "@/lib/weather";
 import { maybeNudgeDormant } from "@/lib/dormancy";
 import { getMannequinForUser } from "@/lib/mannequin";
+import { readSavedPick } from "@/lib/todayOutfit";
 
 export const dynamic = "force-dynamic";
 
@@ -49,10 +50,51 @@ export default async function Dashboard() {
   };
 
   const prefs = await getPrefs();
-  const [forecast, mannequin] = await Promise.all([
+  const [forecast, mannequin, savedPick] = await Promise.all([
     prefs.homeCity ? getForecast(prefs.homeCity) : Promise.resolve(null),
     getMannequinForUser(userId),
+    readSavedPick(userId),
   ]);
+
+  // Rehydrate the saved itemIds → full item records so the card can
+  // render OutfitMiniCanvas without a client round-trip.
+  let initialPick:
+    | {
+        itemIds: string[];
+        pickedItems: Array<{
+          id: string;
+          imagePath: string;
+          imageBgRemovedPath: string | null;
+          category: string;
+          subType: string | null;
+        }>;
+        name: string | null;
+        reasoning: string | null;
+        weather: string | null;
+      }
+    | null = null;
+  if (savedPick) {
+    const pickedItemRows = await prisma.item.findMany({
+      where: { ownerId: userId, id: { in: savedPick.itemIds } },
+      select: {
+        id: true, imagePath: true, imageBgRemovedPath: true,
+        category: true, subType: true,
+      },
+    });
+    const byId = new Map(pickedItemRows.map((r) => [r.id, r]));
+    const ordered = savedPick.itemIds
+      .map((id) => byId.get(id))
+      .filter((x): x is (typeof pickedItemRows)[number] => !!x);
+    if (ordered.length > 0) {
+      initialPick = {
+        itemIds: savedPick.itemIds,
+        pickedItems: ordered,
+        name: savedPick.name,
+        reasoning: savedPick.reasoning,
+        weather: savedPick.weather,
+      };
+    }
+  }
 
   // "On this day" — items added on the same calendar day in past years.
   // SQLite supports strftime through Prisma's $queryRaw.
@@ -123,6 +165,7 @@ export default async function Dashboard() {
           }
           mannequinSrc={mannequin.url}
           landmarks={mannequin.landmarks}
+          initialPick={initialPick}
         />
       )}
 
