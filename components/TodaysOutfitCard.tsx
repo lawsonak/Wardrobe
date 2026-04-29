@@ -3,24 +3,37 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
+import OutfitMiniCanvas from "@/components/OutfitMiniCanvas";
+import type { Landmarks } from "@/lib/ai/mannequinLandmarks";
+
+type PickedItem = {
+  id: string;
+  imagePath: string;
+  imageBgRemovedPath: string | null;
+  category: string;
+  subType: string | null;
+};
 
 type Suggestion = {
   itemIds: string[];
+  pickedItems: PickedItem[];
   name?: string;
   reasoning?: string;
   weather?: string | null;
 };
 
-// One-tap outfit-of-the-day card. Calls the existing /api/ai/outfit
-// endpoint with a date+weather-flavored prompt; the user can save with
-// a click. Only fires AI when the user opts in (button click) so the
-// dashboard stays cheap and snappy.
+// "Plan today's look" — one-tap outfit-of-the-day that renders the
+// pick directly on the mannequin in the card. Only fires AI on click.
 export default function TodaysOutfitCard({
   homeCity,
   weatherSummary,
+  mannequinSrc,
+  landmarks,
 }: {
   homeCity: string | null;
   weatherSummary: string | null;
+  mannequinSrc: string | null;
+  landmarks: Landmarks | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -44,12 +57,14 @@ export default function TodaysOutfitCard({
         return;
       }
       const ids = (data.itemIds ?? []) as string[];
+      const enriched = (data.pickedItems ?? []) as PickedItem[];
       if (ids.length === 0) {
         setError(data?.debug?.error ?? "Couldn't pick an outfit.");
         return;
       }
       setPicked({
         itemIds: ids,
+        pickedItems: enriched,
         name: data.name,
         reasoning: data.reasoning,
         weather: data.weather,
@@ -102,11 +117,22 @@ export default function TodaysOutfitCard({
         </div>
       </div>
 
-      {error && <p className="mt-3 text-xs text-blush-700">{error}</p>}
+      {picked && picked.pickedItems.length > 0 && (
+        <div className="mt-4 flex justify-center">
+          <OutfitMiniCanvas
+            items={picked.pickedItems}
+            mannequinSrc={mannequinSrc}
+            landmarks={landmarks}
+            className="w-full max-w-[14rem]"
+          />
+        </div>
+      )}
 
       {picked && picked.reasoning && (
         <p className="mt-3 text-sm italic text-stone-600">&ldquo;{picked.reasoning}&rdquo;</p>
       )}
+
+      {error && <p className="mt-3 text-xs text-blush-700">{error}</p>}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {!picked ? (

@@ -6,14 +6,11 @@ import GiftBanner from "@/components/GiftBanner";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
 import AiOutfitPicker from "@/components/AiOutfitPicker";
 import TodaysOutfitCard from "@/components/TodaysOutfitCard";
-import OutfitMiniCanvas from "@/components/OutfitMiniCanvas";
 import { firstNameFromUser } from "@/lib/userName";
 import { getPrefs } from "@/lib/userPrefs";
 import { getForecast, cToF } from "@/lib/weather";
-import { pickOfTheDay } from "@/lib/dailyPick";
 import { maybeNudgeDormant } from "@/lib/dormancy";
 import { getMannequinForUser } from "@/lib/mannequin";
-import { getOutfitRender } from "@/lib/outfitRender";
 
 export const dynamic = "force-dynamic";
 
@@ -30,24 +27,12 @@ export default async function Dashboard() {
   const firstName = firstNameFromUser(session?.user);
   const now = new Date();
 
-  const [recent, favorites, allActive, outfitCount, itemCount, favoriteCount, needsReviewCount, wishlistCount] =
+  const [recent, outfitCount, itemCount, favoriteCount, needsReviewCount, wishlistCount] =
     await Promise.all([
       prisma.item.findMany({
         where: { ownerId: userId, status: "active" },
         orderBy: { createdAt: "desc" },
         take: 8,
-      }),
-      prisma.item.findMany({
-        where: { ownerId: userId, isFavorite: true, status: "active" },
-        orderBy: { updatedAt: "desc" },
-        take: 8,
-      }),
-      // For pickOfTheDay we want everything active. Cap at 200 — plenty
-      // for picking and keeps the page fast.
-      prisma.item.findMany({
-        where: { ownerId: userId, status: "active" },
-        select: { id: true, isFavorite: true, notes: true, updatedAt: true, imagePath: true, imageBgRemovedPath: true, category: true, subType: true, color: true },
-        take: 200,
       }),
       prisma.outfit.count({ where: { ownerId: userId } }),
       prisma.item.count({ where: { ownerId: userId } }),
@@ -64,18 +49,10 @@ export default async function Dashboard() {
   };
 
   const prefs = await getPrefs();
-  const [forecast, mannequin, latestOutfit] = await Promise.all([
+  const [forecast, mannequin] = await Promise.all([
     prefs.homeCity ? getForecast(prefs.homeCity) : Promise.resolve(null),
     getMannequinForUser(userId),
-    prisma.outfit.findFirst({
-      where: { ownerId: userId },
-      orderBy: { updatedAt: "desc" },
-      include: { items: { include: { item: true } } },
-    }),
   ]);
-  const latestRender = latestOutfit
-    ? await getOutfitRender(userId, latestOutfit.id)
-    : { url: null };
 
   // "On this day" — items added on the same calendar day in past years.
   // SQLite supports strftime through Prisma's $queryRaw.
@@ -100,8 +77,6 @@ export default async function Dashboard() {
     ORDER BY createdAt DESC
     LIMIT 6
   `;
-
-  const dailyPick = pickOfTheDay(allActive, now);
 
   // Drop a single dormancy nudge if it's been a while. Idempotent —
   // safe on every render.
@@ -146,71 +121,9 @@ export default async function Dashboard() {
               ? `${cToF(forecast.tempC)}°F · ${forecast.conditions} in ${forecast.city} (high ${cToF(forecast.highC)}°, low ${cToF(forecast.lowC)}°)`
               : null
           }
+          mannequinSrc={mannequin.url}
+          landmarks={mannequin.landmarks}
         />
-      )}
-
-      {/* Styled on you — preview of the latest outfit on the user's mannequin */}
-      {latestOutfit && latestOutfit.items.length > 0 && (
-        <section>
-          <div className="mb-3 flex items-end justify-between gap-2">
-            <div>
-              <h2 className="font-display text-2xl text-stone-800">Styled on you</h2>
-              <p className="text-xs text-stone-500">
-                {mannequin.url
-                  ? `Your latest outfit, on your mannequin.`
-                  : "Your latest outfit. Set a custom mannequin in Settings to see it on you."}
-              </p>
-            </div>
-            <Link
-              href={`/outfits/${latestOutfit.id}/style`}
-              className="text-sm text-blush-600 hover:underline"
-            >
-              Open canvas →
-            </Link>
-          </div>
-          <Link href={`/outfits/${latestOutfit.id}/style`} className="card block overflow-hidden tile-bg transition hover:shadow-md">
-            <OutfitMiniCanvas
-              items={latestOutfit.items.map((oi) => ({
-                id: oi.item.id,
-                imagePath: oi.item.imagePath,
-                imageBgRemovedPath: oi.item.imageBgRemovedPath,
-                category: oi.item.category,
-                subType: oi.item.subType,
-              }))}
-              layoutJson={latestOutfit.layoutJson}
-              mannequinSrc={mannequin.url}
-              landmarks={mannequin.landmarks}
-              renderedSrc={latestRender.url}
-              className="mx-auto max-h-[60vh] w-full max-w-xs"
-            />
-            <div className="px-4 py-3 text-center">
-              <p className="truncate font-display text-lg text-stone-800">{latestOutfit.name}</p>
-              <p className="truncate text-xs text-stone-500">
-                {[latestOutfit.activity, latestOutfit.season].filter(Boolean).join(" • ") || "Tap to dress this look"}
-              </p>
-            </div>
-          </Link>
-        </section>
-      )}
-
-      {/* Today's pick — a deterministic-per-day rediscovery card */}
-      {dailyPick && (
-        <section>
-          <div className="mb-3 flex items-end justify-between">
-            <div>
-              <h2 className="font-display text-2xl text-stone-800">Today&apos;s pick</h2>
-              <p className="text-xs text-stone-500">A piece worth wearing again.</p>
-            </div>
-            <Link href={`/wardrobe/${dailyPick.id}`} className="text-sm text-blush-600 hover:underline">
-              See it →
-            </Link>
-          </div>
-          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
-            <div className="col-span-1">
-              <ItemCard item={dailyPick} href={`/wardrobe/${dailyPick.id}`} />
-            </div>
-          </div>
-        </section>
       )}
 
       {/* Alert cards */}
@@ -277,23 +190,6 @@ export default async function Dashboard() {
                   }}
                   href={`/wardrobe/${item.id}`}
                 />
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Favorites */}
-      {favorites.length > 0 && (
-        <section>
-          <div className="mb-3 flex items-end justify-between">
-            <h2 className="font-display text-2xl text-stone-800">Favorites</h2>
-            <Link href="/wardrobe?fav=1" className="text-sm text-blush-600 hover:underline">See all</Link>
-          </div>
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
-            {favorites.map((item) => (
-              <div key={item.id} className="w-32 shrink-0">
-                <ItemCard item={item} href={`/wardrobe/${item.id}`} />
               </div>
             ))}
           </div>
