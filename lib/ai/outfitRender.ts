@@ -81,16 +81,27 @@ async function callOnce(
     .join("; ");
 
   const prompt = [
-    "You are styling a personal wardrobe outfit illustration.",
-    "Image 1 is the model — a fashion-illustration mannequin in soft watercolor style.",
-    `The remaining images are individual clothing pieces from her closet (${itemSummary}).`,
-    "Generate a single illustration of the model wearing all of these pieces together.",
-    "Preserve the model's exact face, hair, skin tone, and pose.",
-    "Match the model's existing illustration style — soft watercolor washes, pencil outlines, plain warm cream background.",
-    "Place the clothing on the body as if styled in real life: correct scale, natural drape, layered properly (e.g. outerwear over tops, bottoms below tops, shoes on feet).",
-    "Re-illustrate the clothing pieces in the same watercolor style as the model so the composition feels cohesive — not a photo collage.",
-    "Keep the original colors, patterns, and silhouettes of the clothing pieces faithfully.",
-    "Composition: full body, head to toe, centered, with comfortable margin.",
+    "TASK: Take Image 1 (the model) and add the clothing pieces from Images 2-N onto her, producing one composed illustration of her wearing the outfit.",
+    `Item images: ${itemSummary}.`,
+    "",
+    "ABSOLUTE PRESERVATION (Image 1 is the source of truth — do NOT alter):",
+    "- The model's face: face shape, jawline, eye color, eye shape, eyebrows, nose, lips, chin — IDENTICAL to Image 1.",
+    "- The model's hair: color, length, texture, parting, style — IDENTICAL to Image 1.",
+    "- The model's skin tone — IDENTICAL to Image 1.",
+    "- The model's body: weight, height, proportions, build — IDENTICAL to Image 1. Do not slim, lengthen, or stylize the figure.",
+    "- The model's pose, stance, and arm position — IDENTICAL to Image 1.",
+    "- The illustration style and background of Image 1 — IDENTICAL.",
+    "Treat Image 1 as a fixed canvas. Your only job is to add clothing on top.",
+    "",
+    "CLOTHING PLACEMENT:",
+    "- Place each garment on the body anatomically: tops on torso, bottoms on legs, shoes on feet, outerwear over tops, etc.",
+    "- Correct scale and natural drape against this specific body.",
+    "- Preserve each garment's color, pattern, fabric, and silhouette faithfully — do not invent details or swap colors.",
+    "- Re-illustrate the garments in the same soft pencil + watercolor style as Image 1 so the composition feels cohesive (not a photo collage).",
+    "",
+    "OUTPUT:",
+    "- One illustration. Full body, head to toe, centered with comfortable margin.",
+    "- The person in the output must be unmistakably the same person as in Image 1 — same face, same hair, same body. Only the clothing is new.",
   ].join(" ");
 
   parts.push({ text: prompt });
@@ -113,6 +124,9 @@ async function callOnce(
     contents: [{ role: "user", parts }],
     generationConfig: {
       responseModalities: ["IMAGE"],
+      // Same low-variance setting as the mannequin generator — lean
+      // hard on the input images instead of "improving" them.
+      temperature: 0.15,
     },
   };
 

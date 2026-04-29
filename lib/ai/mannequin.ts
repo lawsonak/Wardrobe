@@ -19,13 +19,25 @@ const FALLBACK_MODELS = [
 ];
 
 const PROMPT = [
-  "Generate a clean editorial fashion-illustration croquis (mannequin).",
-  "Match the person's hair color, hair style, skin tone, and approximate body type.",
-  "Style: soft watercolor washes with gentle pencil outlines, on a plain warm cream background — like a high-end fashion sketch.",
-  "Pose: standing, facing forward, arms slightly out from body, neutral expression, full body visible head to toe.",
-  "Clothing: dressed in simple form-fitting neutral-colored undergarments only (so outfits can be layered on top later).",
-  "Composition: subject centered, head near top, feet near bottom, with comfortable margin around the figure.",
-  "Important: produce an illustration, not a photo — abstract enough to be charming, specific enough to feel like the person.",
+  // Identity preservation comes first — every later instruction is
+  // conditional on faithfulness to the source photo.
+  "TASK: Faithfully illustrate the specific person in this photo. This is a portrait — not a generic mannequin.",
+  "PRESERVE EXACTLY (do not alter, idealize, slim, age, or stylize):",
+  "- Face: face shape, jawline, cheekbones, eye color, eye shape and spacing, eyebrow shape, nose shape, lip shape, chin.",
+  "- Hair: exact color, length, texture, hairline, parting, and style as in the photo.",
+  "- Skin tone and undertone exactly as in the photo.",
+  "- Body: weight, height, proportions, shoulder width, hip width, and overall build — do not thin, lengthen, or 'fashion-model' the figure.",
+  "- Approximate age as visible in the photo.",
+  "POSE / FRAMING:",
+  "- Standing, facing forward, arms slightly out from body, neutral expression, full body visible head to toe, centered, with small margin.",
+  "CLOTHING:",
+  "- Plain, form-fitting neutral undergarments only (so outfits can layer on top later).",
+  "STYLE (apply ONLY to rendering, NEVER to features):",
+  "- Soft pencil outlines with light watercolor washes, on a plain warm cream background.",
+  "- The watercolor is just the medium — features themselves must remain recognizably this person.",
+  "OUTPUT:",
+  "- One illustration. No text. No background scenery. No props.",
+  "- The result should look unmistakably like the person in the photo, drawn in soft watercolor.",
 ].join(" ");
 
 export async function generateMannequinImage(
@@ -95,6 +107,10 @@ async function callOnce(
       // Some image-out models require this; others ignore it. Setting
       // it is harmless either way.
       responseModalities: ["IMAGE"],
+      // Lower variance so the model leans on the source photo instead
+      // of "improving" it. Image-out preview models accept this
+      // inconsistently — harmless when ignored.
+      temperature: 0.15,
     },
   };
 
