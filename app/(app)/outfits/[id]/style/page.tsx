@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import StyleCanvas, { type CanvasItem } from "@/components/StyleCanvas";
+import { getMannequinForUser } from "@/lib/mannequin";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,8 @@ export default async function StyleCanvasPage({
     },
   });
   if (!outfit) notFound();
+
+  const mannequin = await getMannequinForUser(userId);
 
   const items: CanvasItem[] = outfit.items.map((oi) => ({
     id: oi.item.id,
@@ -48,7 +51,12 @@ export default async function StyleCanvasPage({
           This outfit has no pieces to layout.
         </div>
       ) : (
-        <StyleCanvas outfitId={outfit.id} items={items} initialLayoutJson={outfit.layoutJson} />
+        <StyleCanvas
+          outfitId={outfit.id}
+          items={items}
+          initialLayoutJson={outfit.layoutJson}
+          mannequinSrc={mannequin.url}
+        />
       )}
     </div>
   );
