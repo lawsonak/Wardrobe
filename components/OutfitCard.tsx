@@ -34,13 +34,11 @@ export default function OutfitCard({
   slotsOrder,
   mannequinSrc,
   landmarks,
-  renderedSrc,
 }: {
   outfit: Outfit;
   slotsOrder: string[];
   mannequinSrc?: string | null;
   landmarks?: Landmarks | null;
-  renderedSrc?: string | null;
 }) {
   const router = useRouter();
   const [fav, setFav] = useState(outfit.isFavorite);
@@ -98,7 +96,6 @@ export default function OutfitCard({
           layoutJson={outfit.layoutJson}
           mannequinSrc={mannequinSrc}
           landmarks={landmarks}
-          renderedSrc={renderedSrc}
           className="mx-auto max-h-[60vh] w-full"
         />
       </Link>
