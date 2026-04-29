@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { CATEGORIES, type Category } from "@/lib/constants";
 import ItemCard from "@/components/ItemCard";
-import { firstNameFromUser, possessiveTitle } from "@/lib/userName";
+import { firstNameFromUser } from "@/lib/userName";
 import SmartSearchBar from "./SmartSearchBar";
 import { lastWearISO, daysSince } from "@/lib/wear";
 
@@ -72,7 +72,7 @@ export default async function WardrobePage({
       })
     : items;
 
-  const title = possessiveTitle("Closet", firstName);
+  const title = "Closet";
   const activeFilters: { label: string; href: string }[] = [];
   if (category) activeFilters.push({ label: category, href: dropParam(sp, "category") });
   if (color) activeFilters.push({ label: color, href: dropParam(sp, "color") });

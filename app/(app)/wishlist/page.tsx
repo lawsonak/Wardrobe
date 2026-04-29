@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
-import { firstNameFromUser, possessiveTitle } from "@/lib/userName";
+import { firstNameFromUser } from "@/lib/userName";
 import WishlistCard from "./WishlistCard";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,7 @@ export default async function WishlistPage() {
   const active = items.filter((i) => !i.purchased);
   const purchased = items.filter((i) => i.purchased);
 
-  const title = possessiveTitle("Wishlist", firstName);
+  const title = "Wishlist";
 
   const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
   const sortedActive = [...active].sort(
