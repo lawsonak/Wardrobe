@@ -71,6 +71,14 @@ const OUTFIT_SCHEMA = {
   required: ["itemIds"],
 };
 
+const NOTES_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    notes: { type: "STRING" },
+  },
+  required: ["notes"],
+};
+
 function makeGemini(): TagProvider {
   const key = process.env.GEMINI_API_KEY;
   return {
@@ -211,6 +219,97 @@ function makeGemini(): TagProvider {
         const detail = err instanceof Error ? err.message : String(err);
         console.warn("Gemini call failed", err);
         return { suggestions: {}, debug: { status: httpStatus, error: detail, rawText: rawText.slice(0, 400) } };
+      }
+    },
+
+    async describeItem({ image, labelImage, context }) {
+      if (!key) return { notes: "", debug: { error: "GEMINI_API_KEY not set" } };
+      try {
+        const mainBuf = Buffer.from(await image.arrayBuffer());
+        const mainMime = image.type || "image/jpeg";
+        const labelBuf = labelImage ? Buffer.from(await labelImage.arrayBuffer()) : null;
+        const labelMime = labelImage?.type || "image/jpeg";
+
+        const known: string[] = [];
+        if (context?.category) known.push(`category=${context.category}`);
+        if (context?.subType) known.push(`type=${context.subType}`);
+        if (context?.color) known.push(`color=${context.color}`);
+        if (context?.brand) known.push(`brand=${context.brand}`);
+        if (context?.size) known.push(`size=${context.size}`);
+        if (context?.seasons?.length) known.push(`seasons=${context.seasons.join(", ")}`);
+        if (context?.activities?.length) known.push(`activities=${context.activities.join(", ")}`);
+
+        const prompt =
+          `Write 1-3 short, specific sentences describing this clothing item for a personal ` +
+          `wardrobe app's notes field. Cover the visual style (cut, drape, length, neckline, ` +
+          `silhouette, fabric feel) and what occasions it suits or what pieces pair well with it. ` +
+          `Be concrete and useful — not flowery. Avoid restating the obvious facts already known: ` +
+          `${known.join(", ") || "(no other tags yet)"}.` +
+          (context?.existingNotes ? ` Existing notes already say: "${context.existingNotes.slice(0, 200)}". Don't duplicate, complement.` : "");
+
+        const parts: Array<Record<string, unknown>> = [
+          { text: prompt },
+          { inlineData: { mimeType: mainMime, data: mainBuf.toString("base64") } },
+        ];
+        if (labelBuf) {
+          parts.push({ inlineData: { mimeType: labelMime, data: labelBuf.toString("base64") } });
+        }
+
+        const body = {
+          contents: [{ role: "user", parts }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: NOTES_SCHEMA,
+            temperature: 0.5,
+          },
+        };
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+          GEMINI_MODEL,
+        )}:generateContent?key=${encodeURIComponent(key)}`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const responseText = await res.text();
+        if (!res.ok) {
+          let detail = `HTTP ${res.status}`;
+          try {
+            const e = JSON.parse(responseText) as { error?: { message?: string } };
+            if (e.error?.message) detail = `HTTP ${res.status}: ${e.error.message}`;
+          } catch {
+            detail = `HTTP ${res.status}: ${responseText.slice(0, 200)}`;
+          }
+          return { notes: "", debug: { status: res.status, error: detail, rawText: responseText.slice(0, 400) } };
+        }
+        const data = JSON.parse(responseText) as {
+          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+          usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+        };
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+        if (!text) return { notes: "", debug: { status: 200, error: "Empty response", rawText: responseText.slice(0, 400) } };
+        const cleaned = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(cleaned);
+        } catch {
+          // If the model didn't honour JSON mode for any reason, treat
+          // the whole text as the notes.
+          return { notes: cleaned.slice(0, 600) };
+        }
+        const r = parsed as { notes?: unknown };
+        return {
+          notes: typeof r.notes === "string" ? r.notes.slice(0, 600).trim() : "",
+          debug: {
+            status: 200,
+            rawText: cleaned.slice(0, 400),
+            promptTokens: data.usageMetadata?.promptTokenCount,
+            responseTokens: data.usageMetadata?.candidatesTokenCount,
+          },
+        };
+      } catch (err) {
+        return { notes: "", debug: { error: err instanceof Error ? err.message : String(err) } };
       }
     },
 

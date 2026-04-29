@@ -62,6 +62,66 @@ export default function EditItemForm({ item }: { item: Item }) {
   const [saved, setSaved] = useState(false);
   const [autoTagState, setAutoTagState] = useState<"idle" | "running" | "done" | "disabled" | "error">("idle");
   const [autoTagMessage, setAutoTagMessage] = useState<string | null>(null);
+  const [notesState, setNotesState] = useState<"idle" | "running" | "error">("idle");
+  const [notesError, setNotesError] = useState<string | null>(null);
+
+  async function generateNotes() {
+    if (notesState === "running") return;
+    setNotesState("running");
+    setNotesError(null);
+    try {
+      // Pull the saved photos off the server. Fast for the user — they
+      // already exist on disk.
+      const r = await fetch(`/api/uploads/${item.imagePath}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status} loading photo`);
+      const blob = await r.blob();
+      const fd = new FormData();
+      fd.append("image", new File([blob], "item.jpg", { type: blob.type || "image/jpeg" }));
+      if (item.labelImagePath) {
+        try {
+          const lr = await fetch(`/api/uploads/${item.labelImagePath}`);
+          if (lr.ok) {
+            const lblob = await lr.blob();
+            fd.append("labelImage", new File([lblob], "label.jpg", { type: lblob.type || "image/jpeg" }));
+          }
+        } catch {
+          /* best-effort */
+        }
+      }
+      fd.append(
+        "context",
+        JSON.stringify({
+          category,
+          subType: subType || undefined,
+          color: color || undefined,
+          brand: brand || undefined,
+          size: size || undefined,
+          seasons,
+          activities,
+          existingNotes: notes || undefined,
+        }),
+      );
+      const res = await fetch("/api/ai/notes", { method: "POST", body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (data?.enabled === false) {
+        setNotesError(data.message ?? "AI is disabled.");
+        setNotesState("error");
+        return;
+      }
+      const generated = String(data?.notes ?? "").trim();
+      if (!generated) {
+        setNotesError(data?.debug?.error ?? "Couldn't generate notes.");
+        setNotesState("error");
+        return;
+      }
+      setNotes((prev) => (prev.trim() ? `${prev.trim()}\n\n${generated}` : generated));
+      setNotesState("idle");
+    } catch (err) {
+      console.error(err);
+      setNotesError(err instanceof Error ? err.message : "Notes failed.");
+      setNotesState("error");
+    }
+  }
 
   async function autoTag() {
     if (autoTagState === "running") return;
@@ -263,8 +323,20 @@ export default function EditItemForm({ item }: { item: Item }) {
       </div>
 
       <div>
-        <label className="label">Notes</label>
+        <div className="mb-1 flex items-center justify-between">
+          <label className="label !mb-0">Notes</label>
+          <button
+            type="button"
+            onClick={generateNotes}
+            disabled={notesState === "running"}
+            className="text-xs text-blush-600 hover:underline disabled:cursor-not-allowed disabled:text-stone-400"
+            title="Generate styling notes from the photo"
+          >
+            {notesState === "running" ? "Writing…" : "✨ Generate"}
+          </button>
+        </div>
         <textarea className="input min-h-[64px]" value={notes} onChange={(e) => setNotes(e.target.value)} />
+        {notesError && <p className="mt-1 text-xs text-blush-700">{notesError}</p>}
       </div>
 
       <div className="flex items-center justify-between">

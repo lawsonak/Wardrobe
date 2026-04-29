@@ -46,6 +46,23 @@ export interface TagProvider {
     labelImage?: Blob;
     existingBrands?: string[];
   }): Promise<TagResult>;
+  /** Write 1-3 short, specific sentences describing the piece for the
+   *  notes field. Aware of any existing metadata so it doesn't repeat
+   *  the obvious. */
+  describeItem?(input: {
+    image: Blob;
+    labelImage?: Blob;
+    context?: Partial<{
+      category: string;
+      subType: string;
+      color: string;
+      brand: string;
+      size: string;
+      seasons: string[];
+      activities: string[];
+      existingNotes: string;
+    }>;
+  }): Promise<NotesResult>;
   /** Pick items from a closet for a free-text occasion. Returns a list of
    *  itemIds the user already owns plus an optional outfit name and
    *  reasoning. Implementations that can't do this should leave it
@@ -63,6 +80,11 @@ export interface TagProvider {
     }>;
   }): Promise<OutfitSuggestion>;
 }
+
+export type NotesResult = {
+  notes: string;
+  debug?: TagDebug;
+};
 
 export type OutfitSuggestion = {
   itemIds: string[];

@@ -56,6 +56,8 @@ export default function AddItemForm() {
   const [savedToast, setSavedToast] = useState<string | null>(null);
   const [autoTagState, setAutoTagState] = useState<"idle" | "running" | "done" | "disabled" | "error">("idle");
   const [autoTagMessage, setAutoTagMessage] = useState<string | null>(null);
+  const [notesState, setNotesState] = useState<"idle" | "running" | "error">("idle");
+  const [notesError, setNotesError] = useState<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -101,6 +103,50 @@ export default function AddItemForm() {
     if (!original) return;
     resetBackgroundRemover();
     await runBgRemoval(original);
+  }
+
+  async function generateNotes() {
+    if (!original || notesState === "running") return;
+    setNotesState("running");
+    setNotesError(null);
+    try {
+      const fd = new FormData();
+      fd.append("image", original);
+      if (labelPhoto) fd.append("labelImage", labelPhoto);
+      fd.append(
+        "context",
+        JSON.stringify({
+          category,
+          subType: subType || undefined,
+          color: color || undefined,
+          brand: brand || undefined,
+          size: size || undefined,
+          seasons,
+          activities,
+          existingNotes: notes || undefined,
+        }),
+      );
+      const res = await fetch("/api/ai/notes", { method: "POST", body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (data?.enabled === false) {
+        setNotesError(data.message ?? "AI is disabled.");
+        setNotesState("error");
+        return;
+      }
+      const generated = String(data?.notes ?? "").trim();
+      if (!generated) {
+        setNotesError(data?.debug?.error ?? "Couldn't generate notes.");
+        setNotesState("error");
+        return;
+      }
+      // Append if there's already text, otherwise replace.
+      setNotes((prev) => (prev.trim() ? `${prev.trim()}\n\n${generated}` : generated));
+      setNotesState("idle");
+    } catch (err) {
+      console.error(err);
+      setNotesError(err instanceof Error ? err.message : "Notes failed.");
+      setNotesState("error");
+    }
   }
 
   async function autoTag() {
@@ -451,8 +497,20 @@ export default function AddItemForm() {
         </div>
 
         <div>
-          <label className="label">Notes</label>
+          <div className="mb-1 flex items-center justify-between">
+            <label className="label !mb-0">Notes</label>
+            <button
+              type="button"
+              onClick={generateNotes}
+              disabled={!original || notesState === "running"}
+              className="text-xs text-blush-600 hover:underline disabled:cursor-not-allowed disabled:text-stone-400"
+              title={original ? "Generate styling notes from the photo" : "Add a photo first"}
+            >
+              {notesState === "running" ? "Writing…" : "✨ Generate"}
+            </button>
+          </div>
           <textarea className="input min-h-[64px]" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Material, fit notes, where you got it…" />
+          {notesError && <p className="mt-1 text-xs text-blush-700">{notesError}</p>}
         </div>
 
         <label className="flex items-center gap-2 text-sm text-stone-700">
