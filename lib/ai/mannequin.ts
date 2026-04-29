@@ -1,16 +1,22 @@
 // Generates a stylized fashion-illustration mannequin from a user's
-// photo using Gemini's image-out model (Nano Banana / Flash Image).
+// photo using Gemini's image-out model.
 //
-// We keep this separate from the main `lib/ai/provider.ts` because:
-//   - Image generation uses a different model than text/vision tagging.
-//   - It's optional, off by default, and degrades gracefully — if the
-//     call fails, the upload UI surfaces the error and the user keeps
-//     the default silhouette.
-//
-// Model name is configurable via GEMINI_IMAGE_MODEL; default is the
-// current image-output Flash preview.
+// Model selection: Google's image-output preview models have churned
+// a lot — names rename, get gated, and disappear. Rather than pin a
+// single model, we try a fallback chain. Override with
+// GEMINI_IMAGE_MODEL to force a specific one.
 
-const DEFAULT_MODEL = "gemini-2.5-flash-image-preview";
+export type GenerateResult =
+  | { ok: true; png: Buffer; modelUsed: string }
+  | { ok: false; error: string; status?: number; tried: string[] };
+
+const FALLBACK_MODELS = [
+  "gemini-2.5-flash-image",
+  "gemini-2.5-flash-image-preview",
+  "gemini-2.0-flash-preview-image-generation",
+  "gemini-2.0-flash-exp-image-generation",
+  "gemini-2.0-flash-exp",
+];
 
 const PROMPT = [
   "Generate a clean editorial fashion-illustration croquis (mannequin).",
@@ -22,17 +28,50 @@ const PROMPT = [
   "Important: produce an illustration, not a photo — abstract enough to be charming, specific enough to feel like the person.",
 ].join(" ");
 
-export type GenerateResult =
-  | { ok: true; png: Buffer }
-  | { ok: false; error: string; status?: number };
-
 export async function generateMannequinImage(
   source: { buffer: Buffer; mime: string },
 ): Promise<GenerateResult> {
   const key = process.env.GEMINI_API_KEY;
-  if (!key) return { ok: false, error: "GEMINI_API_KEY not set" };
+  if (!key) return { ok: false, error: "GEMINI_API_KEY not set", tried: [] };
 
-  const model = process.env.GEMINI_IMAGE_MODEL || DEFAULT_MODEL;
+  // If the user pinned a model, try only that. Otherwise walk the
+  // fallback chain and stop at the first one that yields an image.
+  const override = process.env.GEMINI_IMAGE_MODEL;
+  const candidates = override ? [override] : FALLBACK_MODELS;
+
+  const tried: string[] = [];
+  let lastError = "No image-output model reachable.";
+  let lastStatus: number | undefined;
+
+  for (const model of candidates) {
+    tried.push(model);
+    const result = await callOnce(key, model, source);
+    if (result.ok) return { ok: true, png: result.png, modelUsed: model };
+    lastError = result.error;
+    lastStatus = result.status;
+    // 404 / 400 → model unavailable to this key, try the next one.
+    // Other errors (429, 5xx, safety blocks) → stop early so we don't
+    // burn through quota on a real failure.
+    if (result.status !== 404 && result.status !== 400) break;
+  }
+
+  return {
+    ok: false,
+    error: `${lastError}${tried.length > 1 ? ` (tried: ${tried.join(", ")})` : ""}`,
+    status: lastStatus,
+    tried,
+  };
+}
+
+type SingleResult =
+  | { ok: true; png: Buffer }
+  | { ok: false; error: string; status?: number };
+
+async function callOnce(
+  key: string,
+  model: string,
+  source: { buffer: Buffer; mime: string },
+): Promise<SingleResult> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     model,
   )}:generateContent?key=${encodeURIComponent(key)}`;
@@ -53,8 +92,8 @@ export async function generateMannequinImage(
       },
     ],
     generationConfig: {
-      // Some SDK variants want responseModalities, others responseMimeType.
-      // Both are tolerated; the model picks the right one.
+      // Some image-out models require this; others ignore it. Setting
+      // it is harmless either way.
       responseModalities: ["IMAGE"],
     },
   };
@@ -117,13 +156,16 @@ export async function generateMannequinImage(
     }
   }
 
-  // The model occasionally returns text-only when it refuses or when a
-  // model name without image output is used. Surface that explicitly.
+  // The model returned text-only — usually a refusal or a model that
+  // doesn't actually support image output. Caller treats this as a
+  // soft failure and tries the next candidate.
   const textOnly = parts.find((p) => p.text)?.text;
   return {
     ok: false,
     error: textOnly
       ? `Model returned text instead of an image: ${textOnly.slice(0, 200)}`
       : `No image in response (finishReason=${data.candidates?.[0]?.finishReason ?? "?"})`,
+    // Treat as 400-like so the caller skips to the next candidate.
+    status: 400,
   };
 }
