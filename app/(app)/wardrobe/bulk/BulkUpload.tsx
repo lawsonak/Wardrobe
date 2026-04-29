@@ -7,6 +7,12 @@ import { CATEGORIES, type Category } from "@/lib/constants";
 import { removeBackground, resetBackgroundRemover } from "@/lib/bgRemoval";
 import { heicToJpeg, isHeic } from "@/lib/heic";
 
+// Sentinel for the "Let AI decide" option. The bulk endpoint accepts
+// this and stores a placeholder category until AI tagging fills the
+// real one in.
+const AUTO_CATEGORY = "__auto__" as const;
+type DefaultCategory = Category | typeof AUTO_CATEGORY;
+
 // Two-phase pipeline:
 //   1. Upload — every picked photo goes to /api/items/bulk in a single
 //      multipart POST. Each becomes an Item with status=needs_review.
@@ -33,7 +39,7 @@ let nextId = 1;
 export default function BulkUpload() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [defaultCategory, setDefaultCategory] = useState<Category>("Tops");
+  const [defaultCategory, setDefaultCategory] = useState<DefaultCategory>(AUTO_CATEGORY);
   const [defaultStatus, setDefaultStatus] = useState<"needs_review" | "active">("needs_review");
   const [removeBg, setRemoveBg] = useState(true);
   const [aiTag, setAiTag] = useState(true);
@@ -261,13 +267,18 @@ export default function BulkUpload() {
             <select
               className="input"
               value={defaultCategory}
-              onChange={(e) => setDefaultCategory(e.target.value as Category)}
+              onChange={(e) => setDefaultCategory(e.target.value as DefaultCategory)}
             >
+              <option value={AUTO_CATEGORY}>✨ Let AI decide</option>
               {CATEGORIES.map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
-            <p className="mt-1 text-xs text-stone-500">Per-item edits happen in Needs Review.</p>
+            <p className="mt-1 text-xs text-stone-500">
+              {defaultCategory === AUTO_CATEGORY
+                ? "AI will read each photo and assign the right category."
+                : "Every photo in this batch becomes a " + defaultCategory + " — edit individuals later."}
+            </p>
           </div>
           <div>
             <label className="label">After upload</label>
@@ -316,6 +327,13 @@ export default function BulkUpload() {
         <div className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-700 ring-1 ring-amber-200">
           Tip: don&apos;t mix label / tag close-ups into a bulk upload — each photo becomes its own
           item. Add label photos from the item&apos;s detail page after.
+        </div>
+      )}
+
+      {defaultCategory === AUTO_CATEGORY && !aiTag && (
+        <div className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-700 ring-1 ring-amber-200">
+          &ldquo;Let AI decide&rdquo; needs Auto-tag turned on. Either enable Auto-tag above, or pick a
+          specific category — otherwise every item lands as a placeholder you&apos;ll have to fix in Needs Review.
         </div>
       )}
 
