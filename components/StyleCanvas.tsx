@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import MannequinSilhouette from "@/components/MannequinSilhouette";
 import { CATEGORY_TO_SLOT, type Category, type Slot } from "@/lib/constants";
+import { confirmDialog } from "@/components/ConfirmDialog";
+import { toast } from "@/lib/toast";
 
 export type CanvasItem = {
   id: string;
@@ -52,13 +55,20 @@ export default function StyleCanvas({
   items,
   initialLayoutJson,
   mannequinSrc,
+  renderedSrc: initialRenderedSrc,
 }: {
   outfitId?: string;
   items: CanvasItem[];
   initialLayoutJson?: string | null;
   mannequinSrc?: string | null;
+  renderedSrc?: string | null;
 }) {
+  const router = useRouter();
   const canvasRef = useRef<HTMLDivElement>(null);
+  const [renderedSrc, setRenderedSrc] = useState<string | null>(initialRenderedSrc ?? null);
+  const [renderState, setRenderState] = useState<"idle" | "running" | "error">("idle");
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const [showRendered, setShowRendered] = useState<boolean>(!!initialRenderedSrc);
 
   // Build initial layers, restoring any saved layout for items that still
   // belong to this outfit.
@@ -230,18 +240,105 @@ export default function StyleCanvas({
     );
   }
 
+  async function generateRendered() {
+    if (!outfitId || renderState === "running") return;
+    setRenderState("running");
+    setRenderError(null);
+    try {
+      const res = await fetch(`/api/outfits/${outfitId}/render`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+      setRenderedSrc(data.url ?? null);
+      setShowRendered(true);
+      setRenderState("idle");
+      toast("Styled photo ready");
+      router.refresh();
+    } catch (err) {
+      console.error(err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setRenderError(msg);
+      setRenderState("error");
+      toast("Couldn't generate styled photo", "error");
+    }
+  }
+
+  async function clearRendered() {
+    if (!outfitId || !renderedSrc) return;
+    const ok = await confirmDialog({
+      title: "Remove the styled photo?",
+      body: "Goes back to the editable layout. You can regenerate any time.",
+      confirmText: "Remove",
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      const res = await fetch(`/api/outfits/${outfitId}/render`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setRenderedSrc(null);
+      setShowRendered(false);
+      toast("Styled photo removed");
+      router.refresh();
+    } catch (err) {
+      console.error(err);
+      toast("Couldn't remove styled photo", "error");
+    }
+  }
+
   // Keep the canvas square-ish on big screens, full width on mobile.
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between text-xs text-stone-500">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-stone-500">
         <span>
           {saveState === "saving" && "Saving…"}
           {saveState === "saved" && <span className="text-sage-600">✓ Saved</span>}
           {saveState === "error" && <span className="text-blush-700">Save failed — retry by editing again.</span>}
           {saveState === "idle" && "Auto-saves as you edit."}
         </span>
-        <button type="button" onClick={resetAll} className="btn-ghost text-xs">Reset all</button>
+        <div className="flex flex-wrap items-center gap-2">
+          {renderedSrc && (
+            <label className="chip chip-off cursor-pointer">
+              <input
+                type="checkbox"
+                className="mr-1"
+                checked={showRendered}
+                onChange={(e) => setShowRendered(e.target.checked)}
+              />
+              Show styled photo
+            </label>
+          )}
+          {outfitId && (
+            <button
+              type="button"
+              onClick={generateRendered}
+              disabled={renderState === "running"}
+              className="btn-secondary text-xs"
+              title={renderedSrc ? "Re-run the AI on this outfit" : "AI-compose this outfit on your mannequin (10-30s)"}
+            >
+              {renderState === "running"
+                ? "✨ Styling…"
+                : renderedSrc
+                  ? "✨ Regenerate styled photo"
+                  : "✨ Generate styled photo"}
+            </button>
+          )}
+          {renderedSrc && (
+            <button type="button" onClick={clearRendered} className="btn-ghost text-xs text-stone-500">
+              Remove
+            </button>
+          )}
+          <button type="button" onClick={resetAll} className="btn-ghost text-xs">Reset all</button>
+        </div>
       </div>
+      {renderError && (
+        <div className="rounded-xl bg-blush-50 px-3 py-2 text-xs text-blush-800 ring-1 ring-blush-200">
+          {renderError}
+        </div>
+      )}
+      {renderState === "running" && (
+        <p className="text-xs text-stone-500">
+          Composing your outfit on the mannequin — this can take 10–30 seconds.
+        </p>
+      )}
       <div className="card p-2">
         <div
           ref={canvasRef}
@@ -252,7 +349,16 @@ export default function StyleCanvas({
           onClick={() => setSelectedId(null)}
         >
           <MannequinSilhouette src={mannequinSrc} className="absolute inset-0 h-full w-full" />
-          {sorted.map((l) =>
+          {showRendered && renderedSrc && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={renderedSrc}
+              alt="AI-styled outfit"
+              className="pointer-events-none absolute inset-0 h-full w-full object-contain"
+              draggable={false}
+            />
+          )}
+          {(showRendered && renderedSrc ? [] : sorted).map((l) =>
             l.hidden ? null : (
               <div
                 key={l.id}

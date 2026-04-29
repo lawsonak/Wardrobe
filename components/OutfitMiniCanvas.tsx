@@ -47,13 +47,31 @@ export default function OutfitMiniCanvas({
   items,
   layoutJson,
   mannequinSrc,
+  renderedSrc,
   className,
 }: {
   items: Item[];
   layoutJson?: string | null;
   mannequinSrc?: string | null;
+  /** When set, render this single composed image instead of the layered
+   *  cutouts. Used by the AI "styled photo" feature. */
+  renderedSrc?: string | null;
   className?: string;
 }) {
+  if (renderedSrc) {
+    return (
+      <div className={"relative aspect-[1/2] overflow-hidden " + (className ?? "")}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={renderedSrc}
+          alt="Styled outfit"
+          className="absolute inset-0 h-full w-full object-contain"
+          draggable={false}
+        />
+      </div>
+    );
+  }
+
   const saved: Record<string, LayoutLayer> = {};
   if (layoutJson) {
     try {

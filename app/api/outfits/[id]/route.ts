@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { SLOTS, type Slot } from "@/lib/constants";
+import { clearOutfitRender } from "@/lib/outfitRender";
 
 export const runtime = "nodejs";
 
@@ -82,5 +83,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const existing = await prisma.outfit.findFirst({ where: { id, ownerId: userId }, select: { id: true } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
   await prisma.outfit.delete({ where: { id } });
+  await clearOutfitRender(userId, id);
   return NextResponse.json({ ok: true });
 }

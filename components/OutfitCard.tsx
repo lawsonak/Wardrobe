@@ -31,10 +31,12 @@ export default function OutfitCard({
   outfit,
   slotsOrder,
   mannequinSrc,
+  renderedSrc,
 }: {
   outfit: Outfit;
   slotsOrder: string[];
   mannequinSrc?: string | null;
+  renderedSrc?: string | null;
 }) {
   const router = useRouter();
   const [fav, setFav] = useState(outfit.isFavorite);
@@ -89,6 +91,7 @@ export default function OutfitCard({
           items={items}
           layoutJson={outfit.layoutJson}
           mannequinSrc={mannequinSrc}
+          renderedSrc={renderedSrc}
           className="mx-auto max-h-[60vh] w-full"
         />
       </Link>
