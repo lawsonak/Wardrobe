@@ -23,16 +23,10 @@ type Suggestion = {
   weather?: string | null;
 };
 
-// "Plan today's look" — one-tap outfit-of-the-day that renders the
-// pick directly on the mannequin in the card. Only fires AI on click.
-//
-// Two-stage render:
-//   1. As soon as items are picked, show the slot-based overlay so
-//      the user gets immediate feedback.
-//   2. In the background, ask /api/ai/render-items to compose the
-//      items onto the mannequin in a single AI image. When that
-//      finishes (10–30s), swap the overlay for the polished image.
-//      Cached on disk by item-set hash so re-mounts are free.
+// "Plan today's look" — one-tap outfit-of-the-day. AI picks the items
+// from the closet, then we lay them on the user's mannequin using the
+// same landmark-derived slot positions as the Style canvas. No AI
+// compose step here — keeps the mannequin's identity intact.
 export default function TodaysOutfitCard({
   homeCity,
   weatherSummary,
@@ -48,13 +42,10 @@ export default function TodaysOutfitCard({
   const [busy, setBusy] = useState(false);
   const [picked, setPicked] = useState<Suggestion | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [renderedSrc, setRenderedSrc] = useState<string | null>(null);
-  const [polishing, setPolishing] = useState(false);
 
   async function pick(again = false) {
     setBusy(true);
     setError(null);
-    setRenderedSrc(null);
     try {
       const day = new Date().toLocaleDateString(undefined, { weekday: "long" });
       const occasion = again ? `Outfit for ${day} (try another)` : `Outfit for ${day}`;
@@ -82,36 +73,11 @@ export default function TodaysOutfitCard({
         weather: data.weather,
       });
       haptic("success");
-      // Fire-and-forget: compose onto the mannequin in the background.
-      void polishOutfit(ids);
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Today's outfit failed.");
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function polishOutfit(itemIds: string[]) {
-    if (!mannequinSrc) return; // No mannequin → no polish step.
-    setPolishing(true);
-    try {
-      const res = await fetch("/api/ai/render-items", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemIds }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data?.ok || !data?.url) {
-        // Quietly keep the slot overlay. The user still gets a usable preview.
-        return;
-      }
-      setRenderedSrc(data.url as string);
-      haptic("tap");
-    } catch {
-      /* silent — overlay stays visible */
-    } finally {
-      setPolishing(false);
     }
   }
 
@@ -157,21 +123,13 @@ export default function TodaysOutfitCard({
       </div>
 
       {picked && picked.pickedItems.length > 0 && (
-        <div className="mt-4 flex flex-col items-center">
-          <div className="relative w-full max-w-[14rem]">
-            <OutfitMiniCanvas
-              items={picked.pickedItems}
-              mannequinSrc={mannequinSrc}
-              landmarks={landmarks}
-              renderedSrc={renderedSrc}
-              className="w-full"
-            />
-            {polishing && !renderedSrc && (
-              <div className="pointer-events-none absolute inset-x-0 bottom-2 mx-auto w-fit rounded-full bg-white/85 px-3 py-1 text-[11px] text-stone-600 shadow-card ring-1 ring-stone-100 backdrop-blur">
-                ✨ Polishing the look…
-              </div>
-            )}
-          </div>
+        <div className="mt-4 flex justify-center">
+          <OutfitMiniCanvas
+            items={picked.pickedItems}
+            mannequinSrc={mannequinSrc}
+            landmarks={landmarks}
+            className="w-full max-w-[14rem]"
+          />
         </div>
       )}
 
