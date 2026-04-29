@@ -93,7 +93,7 @@ export default async function WardrobePage({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Link href="/wardrobe/new" className="btn-primary">+ Add</Link>
-          <Link href="/wardrobe/bulk" className="btn-secondary text-xs">Bulk</Link>
+          <Link href="/wardrobe/bulk" className="btn-secondary text-xs">Import</Link>
         </div>
       </div>
 
