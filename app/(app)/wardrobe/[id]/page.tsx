@@ -39,6 +39,31 @@ export default async function ItemDetail({
 
   // Default: read-only detail view.
   if (!editing) {
+    // Neighbor lookup. Closet ordering is createdAt desc (newest
+    // first), so:
+    //   "previous" = newer item       → createdAt > current, asc
+    //   "next"     = older item       → createdAt < current, desc
+    const [prevItem, nextItem] = await Promise.all([
+      prisma.item.findFirst({
+        where: {
+          ownerId: userId,
+          status: "active",
+          createdAt: { gt: item.createdAt },
+        },
+        orderBy: { createdAt: "asc" },
+        select: { id: true },
+      }),
+      prisma.item.findFirst({
+        where: {
+          ownerId: userId,
+          status: "active",
+          createdAt: { lt: item.createdAt },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      }),
+    ]);
+
     const detailOutfits = item.outfitItems.map((oi) => {
       // Sort companion items by canonical slot order so the thumbnail
       // strip looks like a real outfit (top → bottom → shoes), and
@@ -81,6 +106,8 @@ export default async function ItemDetail({
           status: item.status,
         }}
         outfits={detailOutfits}
+        prevId={prevItem?.id ?? null}
+        nextId={nextItem?.id ?? null}
       />
     );
   }
