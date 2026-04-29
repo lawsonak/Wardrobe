@@ -13,6 +13,7 @@ import { getForecast, cToF } from "@/lib/weather";
 import { pickOfTheDay } from "@/lib/dailyPick";
 import { maybeNudgeDormant } from "@/lib/dormancy";
 import { getMannequinForUser } from "@/lib/mannequin";
+import { getOutfitRender } from "@/lib/outfitRender";
 
 export const dynamic = "force-dynamic";
 
@@ -72,6 +73,9 @@ export default async function Dashboard() {
       include: { items: { include: { item: true } } },
     }),
   ]);
+  const latestRender = latestOutfit
+    ? await getOutfitRender(userId, latestOutfit.id)
+    : { url: null };
 
   // "On this day" — items added on the same calendar day in past years.
   // SQLite supports strftime through Prisma's $queryRaw.
@@ -175,6 +179,7 @@ export default async function Dashboard() {
               }))}
               layoutJson={latestOutfit.layoutJson}
               mannequinSrc={mannequin.url}
+              renderedSrc={latestRender.url}
               className="mx-auto max-h-[60vh] w-full max-w-xs"
             />
             <div className="px-4 py-3 text-center">

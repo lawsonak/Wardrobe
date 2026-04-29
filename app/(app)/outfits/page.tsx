@@ -5,6 +5,7 @@ import { ACTIVITIES, SEASONS, SLOTS } from "@/lib/constants";
 import OutfitCard from "@/components/OutfitCard";
 import { firstNameFromUser, possessiveTitle } from "@/lib/userName";
 import { getMannequinForUser } from "@/lib/mannequin";
+import { getOutfitRendersFor } from "@/lib/outfitRender";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,10 @@ export default async function OutfitsPage({
     }),
     getMannequinForUser(userId),
   ]);
+  const renders = await getOutfitRendersFor(
+    userId,
+    outfits.map((o) => o.id),
+  );
 
   const title = possessiveTitle("Outfits", firstName);
 
@@ -99,6 +104,7 @@ export default async function OutfitsPage({
               }
               slotsOrder={[...SLOTS]}
               mannequinSrc={mannequin.url}
+              renderedSrc={renders[o.id] ?? null}
             />
           ))}
         </div>
