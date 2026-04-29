@@ -4,7 +4,6 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import StyleCanvas, { type CanvasItem } from "@/components/StyleCanvas";
 import { getMannequinForUser } from "@/lib/mannequin";
-import { getOutfitRender } from "@/lib/outfitRender";
 
 export const dynamic = "force-dynamic";
 
@@ -27,10 +26,7 @@ export default async function StyleCanvasPage({
   });
   if (!outfit) notFound();
 
-  const [mannequin, render] = await Promise.all([
-    getMannequinForUser(userId),
-    getOutfitRender(userId, outfit.id),
-  ]);
+  const mannequin = await getMannequinForUser(userId);
 
   const items: CanvasItem[] = outfit.items.map((oi) => ({
     id: oi.item.id,
@@ -61,7 +57,6 @@ export default async function StyleCanvasPage({
           initialLayoutJson={outfit.layoutJson}
           mannequinSrc={mannequin.url}
           landmarks={mannequin.landmarks}
-          renderedSrc={render.url}
         />
       )}
     </div>
