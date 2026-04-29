@@ -20,10 +20,12 @@ import { parseFitDetails, serializeFitDetails } from "@/lib/fitDetails";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import { haptic } from "@/lib/haptics";
+import { fetchWithRetry, friendlyFetchError } from "@/lib/fetchRetry";
 
 type Item = {
   id: string;
   imagePath: string;
+  imageBgRemovedPath: string | null;
   labelImagePath: string | null;
   category: string;
   subType: string | null;
@@ -68,29 +70,40 @@ export default function EditItemForm({ item }: { item: Item }) {
   const [notesState, setNotesState] = useState<"idle" | "running" | "error">("idle");
   const [notesError, setNotesError] = useState<string | null>(null);
 
+  // Load the item's main photo (preferring the smaller bg-removed
+  // cutout) and the label photo if present. Uses fetchWithRetry so a
+  // dropped fetch on flaky LTE / iOS Safari gets one automatic retry
+  // instead of surfacing as an opaque "Load failed" error.
+  async function loadPhotosFormData(): Promise<FormData> {
+    // Prefer the bg-removed PNG: smaller upload, cleaner subject for
+    // the model. Fall back to the raw upload when no cutout exists.
+    const mainPath = item.imageBgRemovedPath ?? item.imagePath;
+    const r = await fetchWithRetry(`/api/uploads/${mainPath}`);
+    if (!r.ok) throw new Error(`Couldn't load photo (HTTP ${r.status}).`);
+    const blob = await r.blob();
+    const fd = new FormData();
+    fd.append("image", new File([blob], "item.jpg", { type: blob.type || "image/jpeg" }));
+
+    if (item.labelImagePath) {
+      try {
+        const lr = await fetchWithRetry(`/api/uploads/${item.labelImagePath}`);
+        if (lr.ok) {
+          const lblob = await lr.blob();
+          fd.append("labelImage", new File([lblob], "label.jpg", { type: lblob.type || "image/jpeg" }));
+        }
+      } catch {
+        /* best-effort — the model can still do its thing without the label */
+      }
+    }
+    return fd;
+  }
+
   async function generateNotes() {
     if (notesState === "running") return;
     setNotesState("running");
     setNotesError(null);
     try {
-      // Pull the saved photos off the server. Fast for the user — they
-      // already exist on disk.
-      const r = await fetch(`/api/uploads/${item.imagePath}`);
-      if (!r.ok) throw new Error(`HTTP ${r.status} loading photo`);
-      const blob = await r.blob();
-      const fd = new FormData();
-      fd.append("image", new File([blob], "item.jpg", { type: blob.type || "image/jpeg" }));
-      if (item.labelImagePath) {
-        try {
-          const lr = await fetch(`/api/uploads/${item.labelImagePath}`);
-          if (lr.ok) {
-            const lblob = await lr.blob();
-            fd.append("labelImage", new File([lblob], "label.jpg", { type: lblob.type || "image/jpeg" }));
-          }
-        } catch {
-          /* best-effort */
-        }
-      }
+      const fd = await loadPhotosFormData();
       fd.append(
         "context",
         JSON.stringify({
@@ -104,7 +117,11 @@ export default function EditItemForm({ item }: { item: Item }) {
           existingNotes: notes || undefined,
         }),
       );
-      const res = await fetch("/api/ai/notes", { method: "POST", body: fd });
+      const res = await fetchWithRetry(
+        "/api/ai/notes",
+        { method: "POST", body: fd },
+        { timeoutMs: 60_000 },
+      );
       const data = await res.json().catch(() => ({}));
       if (data?.enabled === false) {
         setNotesError(data.message ?? "AI is disabled.");
@@ -121,7 +138,7 @@ export default function EditItemForm({ item }: { item: Item }) {
       setNotesState("idle");
     } catch (err) {
       console.error(err);
-      setNotesError(err instanceof Error ? err.message : "Notes failed.");
+      setNotesError(friendlyFetchError(err, "Notes failed."));
       setNotesState("error");
     }
   }
@@ -131,25 +148,12 @@ export default function EditItemForm({ item }: { item: Item }) {
     setAutoTagState("running");
     setAutoTagMessage(null);
     try {
-      const r = await fetch(`/api/uploads/${item.imagePath}`);
-      if (!r.ok) throw new Error(`HTTP ${r.status} loading photo`);
-      const blob = await r.blob();
-      const fd = new FormData();
-      fd.append("image", new File([blob], "item.jpg", { type: blob.type || "image/jpeg" }));
-      // If we already have a label photo on file, send it too — Pro can
-      // OCR the brand / size / material / care text from the tag.
-      if (item.labelImagePath) {
-        try {
-          const lr = await fetch(`/api/uploads/${item.labelImagePath}`);
-          if (lr.ok) {
-            const lblob = await lr.blob();
-            fd.append("labelImage", new File([lblob], "label.jpg", { type: lblob.type || "image/jpeg" }));
-          }
-        } catch {
-          /* best-effort */
-        }
-      }
-      const res = await fetch("/api/ai/tag", { method: "POST", body: fd });
+      const fd = await loadPhotosFormData();
+      const res = await fetchWithRetry(
+        "/api/ai/tag",
+        { method: "POST", body: fd },
+        { timeoutMs: 60_000 },
+      );
       const data = await res.json().catch(() => ({}));
       if (data?.enabled === false) {
         setAutoTagState("disabled");
@@ -217,7 +221,7 @@ export default function EditItemForm({ item }: { item: Item }) {
     } catch (err) {
       console.error(err);
       setAutoTagState("error");
-      setAutoTagMessage(err instanceof Error ? err.message : "Auto-tag failed.");
+      setAutoTagMessage(friendlyFetchError(err, "Auto-tag failed."));
     }
   }
 
