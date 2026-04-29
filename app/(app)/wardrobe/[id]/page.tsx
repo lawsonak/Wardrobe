@@ -40,9 +40,9 @@ export default async function ItemDetail({
       <div className="grid gap-5 sm:grid-cols-2">
         {/* Images column */}
         <div className="space-y-3">
-          <div className="tile-bg grid aspect-square w-full place-items-center overflow-hidden rounded-2xl">
+          <div className="tile-bg flex aspect-square w-full items-center justify-center overflow-hidden rounded-2xl p-6">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={src} alt={item.subType ?? item.category} className="h-full w-full object-contain p-4" />
+            <img src={src} alt={item.subType ?? item.category} className="h-full w-full object-contain" />
           </div>
 
           {labelSrc && (
