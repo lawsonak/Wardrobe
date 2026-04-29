@@ -36,10 +36,13 @@ export default function BulkUpload() {
   const [defaultCategory, setDefaultCategory] = useState<Category>("Tops");
   const [defaultStatus, setDefaultStatus] = useState<"needs_review" | "active">("needs_review");
   const [removeBg, setRemoveBg] = useState(true);
+  const [aiTag, setAiTag] = useState(true);
+  const [promoteAtConfidence, setPromoteAtConfidence] = useState(0.85);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [running, setRunning] = useState(false);
   const [showWarning, setShowWarning] = useState(false);
   const [phase, setPhase] = useState<"idle" | "uploading" | "tagging" | "done">("idle");
+  const [aiBanner, setAiBanner] = useState<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -165,7 +168,38 @@ export default function BulkUpload() {
     setPhase("done");
     router.refresh();
 
-    // Phase 2: bg removal, only if asked for. Page must stay open here.
+    // Phase 2a: AI auto-tag, fire-and-forget on the server. The handler
+    // keeps running after the response flushes (Node always-on), so the
+    // user can close the tab and a notification fires when done.
+    const uploadedIds = (jobsRef.current ?? [])
+      .filter((j) => j.state === "uploaded" && j.itemId)
+      .map((j) => j.itemId!) as string[];
+    if (aiTag && uploadedIds.length > 0) {
+      try {
+        const res = await fetch("/api/ai/tag-bulk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            itemIds: uploadedIds,
+            promoteAtConfidence,
+            background: true,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data?.enabled === false) {
+          setAiBanner(data.message ?? "AI tagging is disabled — set AI_PROVIDER in .env.");
+        } else if (data?.queued) {
+          setAiBanner(
+            `AI is tagging ${data.count} item${data.count === 1 ? "" : "s"} in the background — close this tab any time, you'll get a notification when it's done.`,
+          );
+        }
+      } catch (err) {
+        console.error(err);
+        setAiBanner("Couldn't start AI tagging.");
+      }
+    }
+
+    // Phase 2b: bg removal, only if asked for. Page must stay open here.
     if (removeBg) {
       await runBgRemoval();
     }
@@ -251,10 +285,30 @@ export default function BulkUpload() {
           <input type="checkbox" checked={removeBg} onChange={(e) => setRemoveBg(e.target.checked)} />
           Remove backgrounds after upload (keep this tab open for that part)
         </label>
+        <label className="flex flex-wrap items-center gap-2 text-sm text-stone-700">
+          <input type="checkbox" checked={aiTag} onChange={(e) => setAiTag(e.target.checked)} />
+          Auto-tag with AI
+          {aiTag && (
+            <span className="text-xs text-stone-500">
+              auto-promote at
+              <input
+                type="number"
+                min={0.5}
+                max={1}
+                step={0.05}
+                value={promoteAtConfidence}
+                onChange={(e) => setPromoteAtConfidence(Number(e.target.value))}
+                className="ml-1 w-14 rounded border border-stone-200 px-1 text-xs"
+              />
+              confidence
+            </span>
+          )}
+        </label>
         <p className="text-xs text-stone-500">
           Uploads finish in one round trip — once you see &ldquo;Uploaded&rdquo; below, the photos are
-          saved server-side and you can close this tab. Background removal then keeps running
-          in this tab if you leave it open. You can re-run it any time from the item detail page.
+          saved server-side and you can close this tab. AI tagging then runs on the server in the
+          background — you&apos;ll get a notification when it&apos;s done. Background removal keeps
+          running in this tab if you leave it open; re-run any time from the item detail page.
         </p>
       </div>
 
@@ -318,6 +372,12 @@ export default function BulkUpload() {
       {phase === "done" && counts.uploaded === 0 && counts.error === 0 && counts.done > 0 && (
         <div className="rounded-xl bg-sage-200/40 px-3 py-2 text-sm text-sage-600 ring-1 ring-sage-200">
           ✓ All done. You can close this tab.
+        </div>
+      )}
+
+      {aiBanner && (
+        <div className="rounded-xl bg-blush-100/60 px-3 py-2 text-sm text-blush-800 ring-1 ring-blush-200">
+          🤖 {aiBanner}
         </div>
       )}
 
