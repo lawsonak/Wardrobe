@@ -81,6 +81,19 @@ export async function POST(req: NextRequest) {
     enabled: true,
     provider: provider.name,
     itemIds: result.itemIds,
+    // Enriched: full picked items so callers (e.g. the dashboard's
+    // "Plan today's look" card) can render them inline on the
+    // mannequin without a follow-up round trip.
+    pickedItems: result.itemIds
+      .map((id) => items.find((it) => it.id === id))
+      .filter((it): it is (typeof items)[number] => !!it)
+      .map((it) => ({
+        id: it.id,
+        imagePath: it.imagePath,
+        imageBgRemovedPath: it.imageBgRemovedPath,
+        category: it.category,
+        subType: it.subType,
+      })),
     name: result.name,
     reasoning: result.reasoning,
     weather: weatherLine || null,
