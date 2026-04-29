@@ -141,7 +141,7 @@ export default async function SettingsPage() {
           </li>
           <li>
             <Link href="/capsules" className="text-blush-600 hover:underline">
-              Capsules
+              Collections
             </Link>
             <span className="text-stone-500"> — group items into pack lists, capsule wardrobes, themes.</span>
           </li>

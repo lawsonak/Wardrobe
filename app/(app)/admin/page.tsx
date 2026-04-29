@@ -44,7 +44,7 @@ export default async function AdminPage() {
           <Stat label="Outfits" value={outfits} />
           <Stat label="Wishlist" value={wishlist} />
           <Stat label="Brands" value={brands} />
-          <Stat label="Capsules" value={capsules} />
+          <Stat label="Collections" value={capsules} />
           <Stat label="Drafts" value={drafts} />
           <Stat label="Needs review" value={needsReview} />
         </dl>

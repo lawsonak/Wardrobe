@@ -18,6 +18,7 @@ import { heicToJpeg, isHeic } from "@/lib/heic";
 import { normalizeSize } from "@/lib/size";
 import { serializeFitDetails } from "@/lib/fitDetails";
 import { toast } from "@/lib/toast";
+import { haptic } from "@/lib/haptics";
 
 export default function AddItemForm() {
   const router = useRouter();
@@ -311,6 +312,7 @@ export default function AddItemForm() {
     try {
       const res = await fetch("/api/items", { method: "POST", body: fd });
       if (!res.ok) throw new Error(await res.text());
+      haptic("success");
       if (addAnother || batchMode) {
         // Reset form for next item
         setOriginal(null);

@@ -22,7 +22,7 @@ export default async function CapsulesPage() {
     },
   });
 
-  const title = possessiveTitle("Capsules", firstName);
+  const title = possessiveTitle("Collections", firstName);
 
   return (
     <div className="space-y-5">
@@ -38,9 +38,9 @@ export default async function CapsulesPage() {
       {capsules.length === 0 ? (
         <div className="card p-10 text-center">
           <div className="text-5xl" aria-hidden>🎒</div>
-          <p className="mt-3 font-display text-2xl text-blush-700">No capsules yet</p>
+          <p className="mt-3 font-display text-2xl text-blush-700">No collections yet</p>
           <p className="mt-1 text-stone-600">Group pieces around a trip, season, or vibe — Paris, Summer, Date night.</p>
-          <Link href="/capsules/new" className="btn-primary mt-4 inline-flex">Build your first capsule</Link>
+          <Link href="/capsules/new" className="btn-primary mt-4 inline-flex">Build your first collection</Link>
         </div>
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2">

@@ -19,6 +19,7 @@ import { normalizeSize } from "@/lib/size";
 import { parseFitDetails, serializeFitDetails } from "@/lib/fitDetails";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
+import { haptic } from "@/lib/haptics";
 
 type Item = {
   id: string;
@@ -248,6 +249,7 @@ export default function EditItemForm({ item }: { item: Item }) {
       return;
     }
     setSaved(true);
+    haptic("success");
     toast("Changes saved");
     router.refresh();
     setTimeout(() => setSaved(false), 2000);
@@ -255,6 +257,7 @@ export default function EditItemForm({ item }: { item: Item }) {
 
   async function markWorn() {
     setBusy(true);
+    haptic("tap");
     const res = await fetch(`/api/items/${item.id}/wear`, { method: "POST" });
     setBusy(false);
     if (res.ok) {
@@ -268,7 +271,7 @@ export default function EditItemForm({ item }: { item: Item }) {
   async function remove() {
     const ok = await confirmDialog({
       title: "Delete this item?",
-      body: "It will be removed from your closet, outfits, and capsules.",
+      body: "It will be removed from your closet, outfits, and collections.",
       confirmText: "Delete",
       destructive: true,
     });

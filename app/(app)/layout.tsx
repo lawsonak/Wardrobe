@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth, signOut } from "@/auth";
 import { firstNameFromUser, possessiveTitle } from "@/lib/userName";
-import NotificationBell from "@/components/NotificationBell";
 import MobileNav from "@/components/MobileNav";
 import ToastHost from "@/components/Toast";
 import ConfirmDialogHost from "@/components/ConfirmDialog";
@@ -22,7 +21,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             {wardrobeLabel}
           </Link>
           <div className="flex items-center gap-1">
-            <NotificationBell />
             <nav className="hidden items-center gap-1 text-sm sm:flex" aria-label="Primary">
               <Link href="/wardrobe" className="btn-ghost">Closet</Link>
               <Link href="/outfits" className="btn-ghost">Outfits</Link>

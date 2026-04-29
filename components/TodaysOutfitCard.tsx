@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
 import OutfitMiniCanvas from "@/components/OutfitMiniCanvas";
 import type { Landmarks } from "@/lib/ai/mannequinLandmarks";
+import { haptic } from "@/lib/haptics";
 
 type PickedItem = {
   id: string;
@@ -69,6 +70,7 @@ export default function TodaysOutfitCard({
         reasoning: data.reasoning,
         weather: data.weather,
       });
+      haptic("success");
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Today's outfit failed.");
@@ -86,6 +88,7 @@ export default function TodaysOutfitCard({
 
   async function markWornAndOpen() {
     if (!picked) return;
+    haptic("tap");
     try {
       await Promise.all(
         picked.itemIds.map((id) =>

@@ -14,6 +14,7 @@ import {
 import ItemCard from "@/components/ItemCard";
 import { cn } from "@/lib/cn";
 import { toast } from "@/lib/toast";
+import { haptic } from "@/lib/haptics";
 
 type BuilderItem = {
   id: string;
@@ -145,6 +146,7 @@ export default function OutfitBuilder({
   }
 
   function togglePick(slot: Slot, item: BuilderItem) {
+    haptic("selection");
     setPicks((prev) => {
       const next: Picks = { top: [...prev.top], bottom: [...prev.bottom], dress: [...prev.dress], outerwear: [...prev.outerwear], shoes: [...prev.shoes], accessory: [...prev.accessory], bag: [...prev.bag] };
       const list = next[slot];
@@ -176,6 +178,7 @@ export default function OutfitBuilder({
   }, [shouldAutoShuffle, items]);
 
   function surprise() {
+    haptic("tap");
     const sample = (arr: BuilderItem[]) => arr[Math.floor(Math.random() * arr.length)];
     const next: Picks = emptyPicks();
     if (itemsBySlot.dress.length > 0 && Math.random() < 0.4) {
@@ -229,6 +232,7 @@ export default function OutfitBuilder({
         ),
       );
     }
+    haptic("success");
     toast(initial ? "Outfit saved" : wearToday ? "Outfit saved · marked worn today" : "Outfit saved");
     router.push("/outfits");
     router.refresh();

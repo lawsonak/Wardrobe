@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
+import { haptic } from "@/lib/haptics";
 
 type WishlistItem = {
   id: string;
@@ -34,6 +35,7 @@ export default function WishlistCard({ item }: { item: WishlistItem }) {
 
   async function togglePurchased() {
     setBusy(true);
+    haptic("tap");
     const next = !item.purchased;
     const res = await fetch(`/api/wishlist/${item.id}`, {
       method: "PATCH",
