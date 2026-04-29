@@ -60,6 +60,7 @@ export default async function StyleCanvasPage({
           items={items}
           initialLayoutJson={outfit.layoutJson}
           mannequinSrc={mannequin.url}
+          landmarks={mannequin.landmarks}
           renderedSrc={render.url}
         />
       )}

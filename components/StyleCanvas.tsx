@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import MannequinSilhouette from "@/components/MannequinSilhouette";
 import { CATEGORY_TO_SLOT, type Category, type Slot } from "@/lib/constants";
+import { slotDefaults, type SlotPlacement } from "@/lib/slots";
+import type { Landmarks } from "@/lib/ai/mannequinLandmarks";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
 
@@ -29,17 +31,6 @@ type Layer = {
   label: string;
 };
 
-// Default placement and size by slot (percent of canvas).
-const SLOT_DEFAULTS: Record<Slot, { x: number; y: number; w: number; z: number }> = {
-  top:       { x: 50, y: 32, w: 56, z: 4 },
-  dress:     { x: 50, y: 44, w: 60, z: 3 },
-  bottom:    { x: 50, y: 58, w: 50, z: 4 },
-  outerwear: { x: 50, y: 38, w: 70, z: 5 },
-  shoes:     { x: 50, y: 92, w: 30, z: 6 },
-  accessory: { x: 50, y: 22, w: 24, z: 7 },
-  bag:       { x: 78, y: 50, w: 24, z: 8 },
-};
-
 function slotFor(category: string): Slot {
   return CATEGORY_TO_SLOT[category as Category] ?? "accessory";
 }
@@ -55,12 +46,14 @@ export default function StyleCanvas({
   items,
   initialLayoutJson,
   mannequinSrc,
+  landmarks,
   renderedSrc: initialRenderedSrc,
 }: {
   outfitId?: string;
   items: CanvasItem[];
   initialLayoutJson?: string | null;
   mannequinSrc?: string | null;
+  landmarks?: Landmarks | null;
   renderedSrc?: string | null;
 }) {
   const router = useRouter();
@@ -69,6 +62,13 @@ export default function StyleCanvas({
   const [renderState, setRenderState] = useState<"idle" | "running" | "error">("idle");
   const [renderError, setRenderError] = useState<string | null>(null);
   const [showRendered, setShowRendered] = useState<boolean>(!!initialRenderedSrc);
+
+  // Per-mannequin slot placements derived from landmarks (or hardcoded
+  // silhouette defaults when no calibration exists yet).
+  const SLOT_DEFAULTS: Record<Slot, SlotPlacement> = useMemo(
+    () => slotDefaults(landmarks ?? null),
+    [landmarks],
+  );
 
   // Build initial layers, restoring any saved layout for items that still
   // belong to this outfit.

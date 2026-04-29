@@ -179,6 +179,7 @@ export default async function Dashboard() {
               }))}
               layoutJson={latestOutfit.layoutJson}
               mannequinSrc={mannequin.url}
+              landmarks={mannequin.landmarks}
               renderedSrc={latestRender.url}
               className="mx-auto max-h-[60vh] w-full max-w-xs"
             />

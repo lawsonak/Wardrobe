@@ -104,6 +104,7 @@ export default async function OutfitsPage({
               }
               slotsOrder={[...SLOTS]}
               mannequinSrc={mannequin.url}
+              landmarks={mannequin.landmarks}
               renderedSrc={renders[o.id] ?? null}
             />
           ))}

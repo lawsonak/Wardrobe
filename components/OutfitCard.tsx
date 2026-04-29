@@ -7,6 +7,7 @@ import { cn } from "@/lib/cn";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import OutfitMiniCanvas from "@/components/OutfitMiniCanvas";
+import type { Landmarks } from "@/lib/ai/mannequinLandmarks";
 
 type Outfit = {
   id: string;
@@ -31,11 +32,13 @@ export default function OutfitCard({
   outfit,
   slotsOrder,
   mannequinSrc,
+  landmarks,
   renderedSrc,
 }: {
   outfit: Outfit;
   slotsOrder: string[];
   mannequinSrc?: string | null;
+  landmarks?: Landmarks | null;
   renderedSrc?: string | null;
 }) {
   const router = useRouter();
@@ -91,6 +94,7 @@ export default function OutfitCard({
           items={items}
           layoutJson={outfit.layoutJson}
           mannequinSrc={mannequinSrc}
+          landmarks={landmarks}
           renderedSrc={renderedSrc}
           className="mx-auto max-h-[60vh] w-full"
         />
