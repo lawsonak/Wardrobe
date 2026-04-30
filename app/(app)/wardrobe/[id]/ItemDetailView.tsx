@@ -12,6 +12,7 @@ import {
 import type { Category } from "@/lib/constants";
 import { FavoriteToggle, WoreTodayButton, DeleteItemButton } from "./ItemActions";
 import ItemNav from "./ItemNav";
+import ItemAngles, { type Angle } from "./ItemAngles";
 
 type DetailItem = {
   id: string;
@@ -65,11 +66,13 @@ function formatLastWorn(iso: string | null): string {
 export default function ItemDetailView({
   item,
   outfits,
+  angles,
   prevId,
   nextId,
 }: {
   item: DetailItem;
   outfits: DetailOutfit[];
+  angles: Angle[];
   prevId: string | null;
   nextId: string | null;
 }) {
@@ -116,6 +119,9 @@ export default function ItemDetailView({
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={src} alt={heading} className="h-full w-full object-contain" />
       </div>
+
+      {/* Additional angles, read-only on the detail view */}
+      {angles.length > 0 && <ItemAngles itemId={item.id} angles={angles} />}
 
       {/* Title bar */}
       <div className="flex items-start justify-between gap-3">

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { csvToList, SLOTS } from "@/lib/constants";
 import EditItemForm from "./EditItemForm";
 import ItemDetailView from "./ItemDetailView";
+import ItemAngles from "./ItemAngles";
 import ItemPhotoEditor from "@/components/ItemPhotoEditor";
 
 export const dynamic = "force-dynamic";
@@ -33,9 +34,19 @@ export default async function ItemDetail({
         },
         take: 6,
       },
+      photos: {
+        orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+      },
     },
   });
   if (!item) notFound();
+
+  const angles = item.photos.map((p) => ({
+    id: p.id,
+    imagePath: p.imagePath,
+    imageBgRemovedPath: p.imageBgRemovedPath,
+    label: p.label,
+  }));
 
   // Default: read-only detail view.
   if (!editing) {
@@ -106,6 +117,7 @@ export default async function ItemDetail({
           status: item.status,
         }}
         outfits={detailOutfits}
+        angles={angles}
         prevId={prevItem?.id ?? null}
         nextId={nextItem?.id ?? null}
       />
@@ -151,6 +163,10 @@ export default async function ItemDetail({
             hasBgRemoved={!!item.imageBgRemovedPath}
             hasLabelPhoto={!!labelSrc}
           />
+          <div className="border-t border-stone-100 pt-3">
+            <p className="label mb-2">Other angles</p>
+            <ItemAngles itemId={item.id} angles={angles} editing />
+          </div>
         </div>
 
         {/* Edit form column */}
