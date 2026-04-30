@@ -6,6 +6,8 @@ import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import { heicToJpeg, isHeic } from "@/lib/heic";
 import { haptic } from "@/lib/haptics";
+import ProgressBar from "@/components/ProgressBar";
+import { useTimedProgress } from "@/lib/progress";
 
 type Info = {
   url: string | null;
@@ -31,6 +33,8 @@ export default function MannequinUpload({ initial }: { initial: Info }) {
   const [info, setInfo] = useState<Info>(initial);
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<"idle" | "preparing" | "generating" | "calibrating">("idle");
+  const generationProgress = useTimedProgress(phase === "generating", 25);
+  const calibrationProgress = useTimedProgress(phase === "calibrating", 8);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -195,15 +199,6 @@ export default function MannequinUpload({ initial }: { initial: Info }) {
     }
   }
 
-  const phaseLabel =
-    phase === "preparing"
-      ? "Preparing photo…"
-      : phase === "generating"
-        ? "Drawing your mannequin… (this can take 10-30 seconds)"
-        : phase === "calibrating"
-          ? "Calibrating fit…"
-          : "";
-
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-start gap-4">
@@ -297,8 +292,16 @@ export default function MannequinUpload({ initial }: { initial: Info }) {
             Reset to default
           </button>
         )}
-        {phaseLabel && <span className="text-xs text-stone-500">{phaseLabel}</span>}
       </div>
+      {phase === "generating" && (
+        <ProgressBar value={generationProgress} label="Drawing your mannequin…" hint="usually 10–30s" />
+      )}
+      {phase === "calibrating" && (
+        <ProgressBar value={calibrationProgress} label="Calibrating fit…" />
+      )}
+      {phase === "preparing" && (
+        <p className="text-xs text-stone-500">Preparing photo…</p>
+      )}
 
       {error && (
         <div className="rounded-xl bg-blush-50 px-3 py-2 text-sm text-blush-800 ring-1 ring-blush-200">

@@ -7,6 +7,7 @@ import { heicToJpeg, isHeic } from "@/lib/heic";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import { haptic } from "@/lib/haptics";
+import ProgressBar from "@/components/ProgressBar";
 
 export type Angle = {
   id: string;
@@ -33,6 +34,8 @@ export default function ItemAngles({
   const cameraRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<string | null>(null);
+  const [bgProgress, setBgProgress] = useState(0);
+  const [bgPhase, setBgPhase] = useState<"fetch" | "compute" | "other" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function add(picked: File) {
@@ -44,12 +47,21 @@ export default function ItemAngles({
         setStage("Converting HEIC…");
         file = await heicToJpeg(picked);
       }
-      setStage("Removing background…");
+      setStage(null);
+      setBgProgress(0);
       let bgBlob: Blob | null = null;
       try {
-        bgBlob = await removeBackground(file);
+        bgBlob = await removeBackground(file, {
+          onProgress: (p) => {
+            setBgPhase(p.phase);
+            setBgProgress(p.fraction);
+          },
+        });
+        setBgProgress(1);
       } catch (err) {
         console.error("bg removal failed", err);
+      } finally {
+        setBgPhase(null);
       }
       setStage("Saving…");
       const fd = new FormData();
@@ -179,26 +191,37 @@ export default function ItemAngles({
             >
               From library
             </button>
-            {(busy || error) && (
-              <p className="text-xs text-stone-500">
-                {busy && stage}
-                {error && (
-                  <span className="text-blush-700">
-                    {error}{" "}
-                    <button
-                      onClick={() => {
-                        resetBackgroundRemover();
-                        setError(null);
-                      }}
-                      className="underline"
-                    >
-                      retry
-                    </button>
-                  </span>
-                )}
+            {error && (
+              <p className="text-xs text-blush-700">
+                {error}{" "}
+                <button
+                  onClick={() => {
+                    resetBackgroundRemover();
+                    setError(null);
+                  }}
+                  className="underline"
+                >
+                  retry
+                </button>
               </p>
             )}
           </div>
+          {busy && bgPhase && (
+            <ProgressBar
+              value={bgProgress}
+              label={
+                bgPhase === "fetch"
+                  ? "Loading model…"
+                  : bgPhase === "compute"
+                    ? "Removing background…"
+                    : "Preparing…"
+              }
+              hint={`${Math.round(bgProgress * 100)}%`}
+            />
+          )}
+          {busy && !bgPhase && stage && (
+            <p className="text-xs text-stone-500">{stage}</p>
+          )}
         </>
       )}
     </div>

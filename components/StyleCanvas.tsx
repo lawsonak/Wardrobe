@@ -7,6 +7,8 @@ import { slotDefaults, type SlotPlacement } from "@/lib/slots";
 import type { Landmarks } from "@/lib/ai/mannequinLandmarks";
 import { toast } from "@/lib/toast";
 import { haptic } from "@/lib/haptics";
+import ProgressBar from "@/components/ProgressBar";
+import { useTimedProgress } from "@/lib/progress";
 
 export type CanvasItem = {
   id: string;
@@ -233,6 +235,7 @@ export default function StyleCanvas({
   }
 
   const [fitState, setFitState] = useState<"idle" | "running" | "error">("idle");
+  const fitProgress = useTimedProgress(fitState === "running", 20);
 
   // Ask AI for per-item placement on the user's mannequin and replace
   // the local layer positions with the result. The auto-save effect
@@ -297,6 +300,9 @@ export default function StyleCanvas({
           <button type="button" onClick={resetAll} className="btn-ghost text-xs">Reset all</button>
         </div>
       </div>
+      {fitState === "running" && (
+        <ProgressBar value={fitProgress} label="Fitting clothes to your mannequin…" />
+      )}
       <div className="card p-2">
         <div
           ref={canvasRef}

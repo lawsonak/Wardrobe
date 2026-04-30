@@ -6,6 +6,8 @@ import { toast } from "@/lib/toast";
 import OutfitMiniCanvas from "@/components/OutfitMiniCanvas";
 import type { Landmarks } from "@/lib/ai/mannequinLandmarks";
 import { haptic } from "@/lib/haptics";
+import ProgressBar from "@/components/ProgressBar";
+import { useTimedProgress } from "@/lib/progress";
 
 type PickedItem = {
   id: string;
@@ -73,6 +75,8 @@ export default function TodaysOutfitCard({
   const [busy, setBusy] = useState(false);
   const [picked, setPicked] = useState<Suggestion | null>(initialPick ?? null);
   const [error, setError] = useState<string | null>(null);
+  // Pick + AI fit pass take ~25-35s combined.
+  const pickProgress = useTimedProgress(busy, 30);
 
   async function pick(again = false) {
     setBusy(true);
@@ -167,6 +171,16 @@ export default function TodaysOutfitCard({
 
       {picked && picked.reasoning && (
         <p className="mt-3 text-sm italic text-stone-600">&ldquo;{picked.reasoning}&rdquo;</p>
+      )}
+
+      {busy && (
+        <div className="mt-3">
+          <ProgressBar
+            value={pickProgress}
+            label={picked ? "Picking your next look…" : "Picking + fitting your look…"}
+            hint="usually 20–40s"
+          />
+        </div>
       )}
 
       {error && <p className="mt-3 text-xs text-blush-700">{error}</p>}

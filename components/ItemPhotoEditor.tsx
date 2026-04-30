@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { removeBackground, resetBackgroundRemover } from "@/lib/bgRemoval";
 import { heicToJpeg, isHeic } from "@/lib/heic";
+import ProgressBar from "@/components/ProgressBar";
 
 // Two stacked controls for the item-detail page:
 // 1. Replace the main photo (re-runs HEIC + bg removal + saves both
@@ -30,6 +31,8 @@ export default function ItemPhotoEditor({
 
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<string | null>(null);
+  const [bgProgress, setBgProgress] = useState(0);
+  const [bgPhase, setBgPhase] = useState<"fetch" | "compute" | "other" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function replaceMain(picked: File) {
@@ -41,13 +44,22 @@ export default function ItemPhotoEditor({
         setStage("Converting HEIC…");
         file = await heicToJpeg(picked);
       }
-      setStage("Removing background…");
+      setStage(null);
+      setBgProgress(0);
       let bgBlob: Blob | null = null;
       try {
-        bgBlob = await removeBackground(file);
+        bgBlob = await removeBackground(file, {
+          onProgress: (p) => {
+            setBgPhase(p.phase);
+            setBgProgress(p.fraction);
+          },
+        });
+        setBgProgress(1);
       } catch (err) {
         console.error("bg removal failed", err);
         bgBlob = null;
+      } finally {
+        setBgPhase(null);
       }
       setStage("Saving…");
       const fd = new FormData();
@@ -121,8 +133,16 @@ export default function ItemPhotoEditor({
       const r = await fetch(`/api/uploads/${imagePath}`);
       if (!r.ok) throw new Error(`HTTP ${r.status} loading photo`);
       const blob = await r.blob();
-      setStage("Removing background…");
-      const out = await removeBackground(blob);
+      setStage(null);
+      setBgProgress(0);
+      const out = await removeBackground(blob, {
+        onProgress: (p) => {
+          setBgPhase(p.phase);
+          setBgProgress(p.fraction);
+        },
+      });
+      setBgProgress(1);
+      setBgPhase(null);
       setStage("Saving…");
       const fd = new FormData();
       fd.append("which", "bg");
@@ -198,10 +218,28 @@ export default function ItemPhotoEditor({
         )}
       </div>
 
-      {(busy || error) && (
-        <p className="text-xs text-stone-500">
-          {busy && stage}
-          {error && <span className="text-blush-700">{error} <button onClick={() => { resetBackgroundRemover(); setError(null); }} className="underline">retry</button></span>}
+      {busy && bgPhase && (
+        <ProgressBar
+          value={bgProgress}
+          label={
+            bgPhase === "fetch"
+              ? "Loading model…"
+              : bgPhase === "compute"
+                ? "Removing background…"
+                : "Preparing…"
+          }
+          hint={`${Math.round(bgProgress * 100)}%`}
+        />
+      )}
+      {busy && !bgPhase && stage && (
+        <p className="text-xs text-stone-500">{stage}</p>
+      )}
+      {error && (
+        <p className="text-xs text-blush-700">
+          {error}{" "}
+          <button onClick={() => { resetBackgroundRemover(); setError(null); }} className="underline">
+            retry
+          </button>
         </p>
       )}
     </div>
