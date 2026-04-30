@@ -15,6 +15,7 @@ import ItemCard from "@/components/ItemCard";
 import { cn } from "@/lib/cn";
 import { toast } from "@/lib/toast";
 import { haptic } from "@/lib/haptics";
+import { itemMatchesActivity } from "@/lib/activities";
 
 type BuilderItem = {
   id: string;
@@ -116,8 +117,9 @@ export default function OutfitBuilder({
   const filtered = useMemo(() => {
     return items.filter((it) => {
       const seasons = csvToList(it.seasons);
-      const acts = csvToList(it.activities);
-      if (activity && acts.length > 0 && !acts.includes(activity)) return false;
+      // Activity filter pulls in inferred categories so e.g. "beach"
+      // surfaces every Swimwear item even when no one tagged it.
+      if (activity && !itemMatchesActivity(it, activity)) return false;
       if (season && seasons.length > 0 && !seasons.includes(season)) return false;
       if (favOnly && !it.isFavorite) return false;
       return true;

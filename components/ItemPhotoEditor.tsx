@@ -185,11 +185,11 @@ export default function ItemPhotoEditor({
         )}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" disabled={busy} onClick={() => labelCameraRef.current?.click()} className="btn-secondary text-xs">
+        <button type="button" disabled={busy} onClick={() => labelFileRef.current?.click()} className="btn-secondary text-xs">
           🏷️ {hasLabelPhoto ? "Replace label" : "Add label / tag"}
         </button>
-        <button type="button" disabled={busy} onClick={() => labelFileRef.current?.click()} className="btn-ghost text-xs">
-          From library
+        <button type="button" disabled={busy} onClick={() => labelCameraRef.current?.click()} className="btn-ghost text-xs">
+          📷 Take photo
         </button>
         {hasLabelPhoto && (
           <button type="button" disabled={busy} onClick={clearLabel} className="btn-ghost text-xs text-stone-400">
