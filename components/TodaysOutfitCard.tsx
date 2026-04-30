@@ -15,22 +15,47 @@ type PickedItem = {
   subType: string | null;
 };
 
+type LayoutEntry = {
+  itemId: string;
+  x: number;
+  y: number;
+  w: number;
+  rotation: number;
+};
+
 type Suggestion = {
   itemIds: string[];
   pickedItems: PickedItem[];
   name: string | null;
   reasoning: string | null;
   weather: string | null;
+  /** Serialized {layers:[…]} JSON forwarded to OutfitMiniCanvas. */
+  layoutJson: string | null;
 };
+
+// Build a layoutJson string from the AI fit result.
+function layoutToJson(layout: LayoutEntry[]): string | null {
+  if (!layout || layout.length === 0) return null;
+  const layers = layout.map((l, idx) => ({
+    id: l.itemId,
+    x: l.x,
+    y: l.y,
+    w: l.w,
+    rotation: l.rotation,
+    z: 4 + idx * 0.001,
+    hidden: false,
+  }));
+  return JSON.stringify({ layers });
+}
 
 // "Plan today's look".
 //
-// AI picks the items from the closet; the rendering uses the landmark
-// overlay path — the user's mannequin pixels are never touched, items
-// are positioned on top via slot defaults derived from anatomical
-// anchor points. The pick itself is server-persisted (see /api/ai/
-// outfit/today) so it survives reloads until the calendar day rolls
-// over or the user taps "Try another".
+// AI picks the items from the closet, then asks AI again for per-item
+// placement on the user's mannequin. Mannequin pixels are never
+// touched — we just render the items via the calibrated landmark
+// overlay using the AI-computed positions when available, falling
+// back to slot defaults otherwise. The pick + layout are server-
+// persisted; reloads paint instantly with no extra AI calls.
 export default function TodaysOutfitCard({
   homeCity,
   weatherSummary,
@@ -69,12 +94,14 @@ export default function TodaysOutfitCard({
         setError(data?.debug?.error ?? "Couldn't pick an outfit.");
         return;
       }
+      const layout = (data.layout ?? null) as LayoutEntry[] | null;
       setPicked({
         itemIds: ids,
         pickedItems: enriched,
         name: data.name ?? null,
         reasoning: data.reasoning ?? null,
         weather: data.weather ?? null,
+        layoutJson: layout ? layoutToJson(layout) : null,
       });
       haptic("success");
     } catch (err) {
@@ -132,6 +159,7 @@ export default function TodaysOutfitCard({
             items={picked.pickedItems}
             mannequinSrc={mannequinSrc}
             landmarks={landmarks}
+            layoutJson={picked.layoutJson}
             className="w-full max-w-[14rem]"
           />
         </div>

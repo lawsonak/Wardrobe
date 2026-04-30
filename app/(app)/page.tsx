@@ -71,6 +71,7 @@ export default async function Dashboard() {
         name: string | null;
         reasoning: string | null;
         weather: string | null;
+        layoutJson: string | null;
       }
     | null = null;
   if (savedPick) {
@@ -86,12 +87,28 @@ export default async function Dashboard() {
       .map((id) => byId.get(id))
       .filter((x): x is (typeof pickedItemRows)[number] => !!x);
     if (ordered.length > 0) {
+      // Serialize the AI fit (when present) into the same layoutJson
+      // shape that StyleCanvas / OutfitMiniCanvas already understand.
+      let layoutJson: string | null = null;
+      if (savedPick.layout && savedPick.layout.length > 0) {
+        const layers = savedPick.layout.map((l, idx) => ({
+          id: l.itemId,
+          x: l.x,
+          y: l.y,
+          w: l.w,
+          rotation: l.rotation,
+          z: 4 + idx * 0.001,
+          hidden: false,
+        }));
+        layoutJson = JSON.stringify({ layers });
+      }
       initialPick = {
         itemIds: savedPick.itemIds,
         pickedItems: ordered,
         name: savedPick.name,
         reasoning: savedPick.reasoning,
         weather: savedPick.weather,
+        layoutJson,
       };
     }
   }
