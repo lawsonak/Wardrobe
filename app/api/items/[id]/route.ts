@@ -75,6 +75,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     data.status = body.status;
   }
+  // Link or unlink from a matching set. Validates that the set
+  // belongs to the same user.
+  if (body.setId === null) {
+    data.setId = null;
+  } else if (typeof body.setId === "string" && body.setId) {
+    const found = await prisma.itemSet.findFirst({ where: { id: body.setId, ownerId: userId } });
+    if (!found) {
+      return NextResponse.json({ error: "Set not found" }, { status: 400 });
+    }
+    data.setId = found.id;
+  }
 
   const updated = await prisma.item.update({ where: { id }, data });
   return NextResponse.json({ item: updated });

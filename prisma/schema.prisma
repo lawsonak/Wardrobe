@@ -21,6 +21,7 @@ model User {
   brands        Brand[]
   capsules      Capsule[]
   notifications Notification[]
+  itemSets      ItemSet[]
 }
 
 model Item {
@@ -52,12 +53,36 @@ model Item {
   activities         String   @default("")
   notes              String?
   isFavorite         Boolean  @default(false)
+  // Optional link to a "matching set" — e.g. a swimsuit's top + bottom
+  // bought together. Items in a set still belong to the closet
+  // independently and can be mixed and matched in any outfit.
+  setId              String?
+  set                ItemSet? @relation(fields: [setId], references: [id], onDelete: SetNull)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   outfitItems  OutfitItem[]
   capsuleItems CapsuleItem[]
   photos       ItemPhoto[]
+}
+
+// A "matching set" of items that came together — like a swimsuit
+// top + bottom, or a pajama top + bottoms. Items keep their
+// independence in the closet (you can wear just the top with
+// different bottoms); the set is a soft link for "these go together
+// when you want them to."
+model ItemSet {
+  id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id])
+  name      String
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items     Item[]
+
+  @@index([ownerId])
 }
 
 // Additional photo angles for an item (front already lives on Item
