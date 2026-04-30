@@ -6,6 +6,7 @@ import ItemCard from "@/components/ItemCard";
 import { firstNameFromUser } from "@/lib/userName";
 import SmartSearchBar from "./SmartSearchBar";
 import { lastWearISO, daysSince } from "@/lib/wear";
+import { inferredCategoriesFor } from "@/lib/activities";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,24 @@ export default async function WardrobePage({
   const activity = sp.activity?.trim() || undefined;
   const dormantOnly = sp.dormant === "1";
 
+  // Activity filter pulls in categories that strongly imply that
+  // activity — e.g. "beach" surfaces every Swimwear item even when
+  // no one has tagged it explicitly.
+  const activityClause = activity
+    ? (() => {
+        const inferred = inferredCategoriesFor(activity);
+        if (inferred.length === 0) {
+          return { activities: { contains: activity } };
+        }
+        return {
+          OR: [
+            { activities: { contains: activity } },
+            { category: { in: inferred } },
+          ],
+        };
+      })()
+    : null;
+
   const items = await prisma.item.findMany({
     where: {
       ownerId: userId,
@@ -46,7 +65,7 @@ export default async function WardrobePage({
       ...(statusFilter ? { status: statusFilter } : { status: "active" }),
       ...(color ? { color } : {}),
       ...(season ? { seasons: { contains: season } } : {}),
-      ...(activity ? { activities: { contains: activity } } : {}),
+      ...(activityClause ?? {}),
       ...(q
         ? {
             OR: [

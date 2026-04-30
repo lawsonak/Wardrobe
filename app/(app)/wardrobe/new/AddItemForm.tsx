@@ -576,11 +576,11 @@ export default function AddItemForm() {
           aria-label="Take tag photo with camera"
         />
         <div className="flex gap-2">
-          <button type="button" className="btn-secondary text-xs" onClick={() => labelCameraRef.current?.click()}>
-            📷 Take photo
+          <button type="button" className="btn-secondary text-xs" onClick={() => labelFileRef.current?.click()}>
+            🖼️ Choose from library
           </button>
-          <button type="button" className="btn-ghost text-xs" onClick={() => labelFileRef.current?.click()}>
-            Choose
+          <button type="button" className="btn-ghost text-xs" onClick={() => labelCameraRef.current?.click()}>
+            📷 Take photo
           </button>
           {labelPhoto && (
             <button type="button" className="btn-ghost text-xs text-stone-400" onClick={() => { setLabelPhoto(null); if (labelUrl) URL.revokeObjectURL(labelUrl); setLabelUrl(null); }}>

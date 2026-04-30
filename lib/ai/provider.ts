@@ -116,6 +116,14 @@ function makeGemini(): TagProvider {
                 .join(", ")}.`
             : "";
 
+        const activityHint =
+          ` Activities should match the garment type. ALWAYS include the obvious activity for the category: ` +
+          `Swimwear → "beach"; Activewear → "workout"; Loungewear → "lounge"; ` +
+          `formal gowns / cocktail dresses / blazers / suits → "formal"; ` +
+          `simple everyday tops / jeans / sneakers → "casual". ` +
+          `An item can have multiple activities (e.g. a sundress can be "casual" + "beach" + "travel"). ` +
+          `Be generous: if the piece could plausibly suit an activity, include it.`;
+
         const prompt = labelBuf
           ? `You are tagging a single piece of clothing or accessory in a personal wardrobe app. ` +
             `You're given two images: the FIRST is the garment itself, the SECOND is a close-up of its brand/size/care label. ` +
@@ -123,12 +131,12 @@ function makeGemini(): TagProvider {
             `Use the garment image for category, subType, color, seasons, activities. ` +
             `Use the enumerated values for category / color / seasons / activities — pick the CLOSEST match even if imperfect. ` +
             `Always return at least: category and color (snap color to the nearest enum value — for example a maroon item is "burgundy", a beige item is "tan"). ` +
-            `Fill in as many other fields as you reasonably can. Only leave a field empty if the image is genuinely unreadable.${brandHint}`
+            `Fill in as many other fields as you reasonably can. Only leave a field empty if the image is genuinely unreadable.${activityHint}${brandHint}`
           : `You are tagging a single piece of clothing or accessory in a personal wardrobe app. ` +
             `Look at the image and fill in as many fields of the response schema as you can. ` +
             `Use the enumerated values for category / color / seasons / activities — pick the CLOSEST match even if imperfect. ` +
             `Always return at least: category and color (snap color to the nearest enum value — for example a maroon item is "burgundy", a beige item is "tan"). ` +
-            `Fill in as many other fields as you reasonably can. Only leave a field empty if the image is genuinely unreadable.${brandHint}`;
+            `Fill in as many other fields as you reasonably can. Only leave a field empty if the image is genuinely unreadable.${activityHint}${brandHint}`;
 
         const parts: Array<Record<string, unknown>> = [
           { text: prompt },
@@ -352,6 +360,12 @@ function makeGemini(): TagProvider {
         `usually shoes, and only add outerwear/accessories/bags/jewelry if they fit the occasion. ` +
         `Try not to combine clashing colors or wildly mismatched formality. ` +
         `Pick a short outfit name (3-5 words) and a one-sentence reasoning. ` +
+        `Match the occasion to the right category: ` +
+        `BEACH / pool / swim → prefer Swimwear (and shorts, sandals, sundresses, sun hats). ` +
+        `WORKOUT / gym / running → prefer Activewear. ` +
+        `LOUNGE / sleep / pajama → prefer Loungewear. ` +
+        `FORMAL / black-tie / wedding → prefer Dresses (cocktail/gown/formal subtypes), Outerwear blazers, Shoes heels. ` +
+        `Don't skip Swimwear/Activewear/Loungewear when the occasion calls for them, even if those items have no activities tagged. ` +
         `Catalog (JSON):\n${JSON.stringify(catalog)}`;
 
       const body = {
