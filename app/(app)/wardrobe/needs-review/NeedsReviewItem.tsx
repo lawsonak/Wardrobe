@@ -94,7 +94,7 @@ export default function NeedsReviewItem({ item }: { item: ReviewItem }) {
         )}
 
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Link href={`/wardrobe/${item.id}`} className="chip chip-off text-xs">
+          <Link href={`/wardrobe/${item.id}?edit=1`} className="chip chip-off text-xs">
             Edit details
           </Link>
           <button
