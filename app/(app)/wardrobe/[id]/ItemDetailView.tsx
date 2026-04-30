@@ -72,6 +72,15 @@ type Sister = {
   subType: string | null;
 };
 
+type Candidate = {
+  id: string;
+  imagePath: string;
+  imageBgRemovedPath: string | null;
+  category: string;
+  subType: string | null;
+  brand: string | null;
+};
+
 export default function ItemDetailView({
   item,
   outfits,
@@ -79,7 +88,7 @@ export default function ItemDetailView({
   setId,
   setName,
   sisters,
-  existingSets,
+  candidates,
   prevId,
   nextId,
 }: {
@@ -89,7 +98,7 @@ export default function ItemDetailView({
   setId: string | null;
   setName: string | null;
   sisters: Sister[];
-  existingSets: Array<{ id: string; name: string }>;
+  candidates: Candidate[];
   prevId: string | null;
   nextId: string | null;
 }) {
@@ -248,7 +257,7 @@ export default function ItemDetailView({
         setId={setId}
         setName={setName}
         sisters={sisters}
-        existingSets={existingSets}
+        candidates={candidates}
       />
 
       {/* Notes */}

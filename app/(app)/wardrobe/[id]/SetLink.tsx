@@ -1,13 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import { haptic } from "@/lib/haptics";
+import { cn } from "@/lib/cn";
 
-type SisterItem = {
+type Candidate = {
+  id: string;
+  imagePath: string;
+  imageBgRemovedPath: string | null;
+  category: string;
+  subType: string | null;
+  brand: string | null;
+};
+
+type Sister = {
   id: string;
   imagePath: string;
   imageBgRemovedPath: string | null;
@@ -15,36 +25,64 @@ type SisterItem = {
   subType: string | null;
 };
 
-type ExistingSet = {
-  id: string;
-  name: string;
-};
-
-// "Part of a set?" panel on the item detail page.
-//
-// When the item is in a set: shows the set name + small thumbnail
-// strip of sister items, with an Unlink button.
-// When the item is not in a set: shows a "Link to a set" control
-// with a small inline form that creates a new set or attaches to
-// an existing one.
+// Lets the user pick another item from the closet to link as part of
+// a matching set. The smart server-side helper at /api/sets/link
+// handles all the cases (create new set, extend existing, etc.) so
+// this component just sends two item IDs and refreshes.
 export default function SetLink({
   itemId,
   setId,
   setName,
   sisters,
-  existingSets,
+  candidates,
 }: {
   itemId: string;
   setId: string | null;
   setName: string | null;
-  sisters: SisterItem[];
-  existingSets: ExistingSet[];
+  sisters: Sister[];
+  /** Other closet items the user could link this one to. Already
+   *  excludes the current item and any current sisters. */
+  candidates: Candidate[];
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [pickedSetId, setPickedSetId] = useState<string>("");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return candidates;
+    return candidates.filter((c) => {
+      const blob = `${c.subType ?? ""} ${c.brand ?? ""} ${c.category}`.toLowerCase();
+      return blob.includes(q);
+    });
+  }, [candidates, search]);
+
+  async function linkTo(otherId: string) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/sets/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemAId: itemId, itemBId: otherId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error ?? `HTTP ${res.status}`);
+      }
+      haptic("success");
+      toast(setId ? "Added to set" : "Linked");
+      setPickerOpen(false);
+      setSearch("");
+      router.refresh();
+    } catch (err) {
+      console.error(err);
+      toast("Couldn't link", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function unlink() {
     const ok = await confirmDialog({
@@ -72,54 +110,73 @@ export default function SetLink({
     }
   }
 
-  async function attachExisting() {
-    if (!pickedSetId) return;
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/items/${itemId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ setId: pickedSetId }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      haptic("success");
-      toast("Linked to set");
-      setOpen(false);
-      router.refresh();
-    } catch (err) {
-      console.error(err);
-      toast("Couldn't link", "error");
-    } finally {
-      setBusy(false);
-    }
+  // ── Inline picker ──────────────────────────────────────────────
+  if (pickerOpen) {
+    return (
+      <section className="card space-y-3 p-4">
+        <div className="flex items-center justify-between gap-2">
+          <p className="label mb-0">Pick the matching piece</p>
+          <button
+            type="button"
+            onClick={() => { setPickerOpen(false); setSearch(""); }}
+            className="text-xs text-stone-400 hover:text-stone-600"
+          >
+            Cancel
+          </button>
+        </div>
+        <input
+          autoFocus
+          type="text"
+          placeholder="Search closet…"
+          className="input"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          aria-label="Search closet"
+        />
+        {filtered.length === 0 ? (
+          <p className="px-2 py-6 text-center text-sm text-stone-500">
+            {candidates.length === 0
+              ? "No other items in your closet to link to."
+              : "No matches — try clearing the search."}
+          </p>
+        ) : (
+          <ul className="grid max-h-[60vh] grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4">
+            {filtered.map((c) => {
+              const src = c.imageBgRemovedPath
+                ? `/api/uploads/${c.imageBgRemovedPath}`
+                : `/api/uploads/${c.imagePath}`;
+              return (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => linkTo(c.id)}
+                    className={cn(
+                      "tile-bg block aspect-square w-full overflow-hidden rounded-xl ring-1 ring-stone-100 transition",
+                      "hover:ring-2 hover:ring-blush-300 disabled:opacity-50",
+                    )}
+                    title={c.subType ?? c.category}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={src}
+                      alt={c.subType ?? c.category}
+                      className="h-full w-full object-contain p-1"
+                    />
+                  </button>
+                  <p className="mt-1 truncate px-1 text-[11px] text-stone-500">
+                    {c.subType ?? c.category}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+    );
   }
 
-  async function createNew() {
-    const trimmed = newName.trim();
-    if (!trimmed) return;
-    setBusy(true);
-    try {
-      const res = await fetch("/api/sets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: trimmed, itemIds: [itemId] }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
-      haptic("success");
-      toast(`Created "${trimmed}"`);
-      setOpen(false);
-      setNewName("");
-      router.refresh();
-    } catch (err) {
-      console.error(err);
-      toast("Couldn't create set", "error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // Linked: show sisters + unlink.
+  // ── Linked: sisters + add another ──────────────────────────────
   if (setId) {
     return (
       <section className="card p-4">
@@ -156,10 +213,17 @@ export default function SetLink({
           </ul>
         ) : (
           <p className="mt-3 text-xs text-stone-500">
-            No other pieces yet. Open the set to link more.
+            No other pieces yet. Add one below.
           </p>
         )}
-        <div className="mt-3">
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            className="btn-secondary text-xs"
+          >
+            + Add another piece
+          </button>
           <button
             type="button"
             onClick={unlink}
@@ -173,82 +237,22 @@ export default function SetLink({
     );
   }
 
-  // Unlinked: link control.
-  if (!open) {
-    return (
-      <section className="card flex items-center justify-between gap-3 p-4">
-        <div>
-          <p className="label mb-0">Matching set</p>
-          <p className="text-xs text-stone-500">
-            Link this piece to a top + bottom set, pajamas, etc.
-          </p>
-        </div>
-        <button type="button" onClick={() => setOpen(true)} className="btn-secondary text-xs">
-          + Link
-        </button>
-      </section>
-    );
-  }
-
+  // ── Unlinked: + Link CTA ───────────────────────────────────────
   return (
-    <section className="card space-y-3 p-4">
-      <p className="label mb-0">Link to a set</p>
-      {existingSets.length > 0 && (
-        <div className="space-y-1">
-          <p className="text-xs text-stone-500">Use an existing set</p>
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={pickedSetId}
-              onChange={(e) => setPickedSetId(e.target.value)}
-              className="input flex-1 min-w-[10rem]"
-              aria-label="Existing set"
-            >
-              <option value="">— pick —</option>
-              {existingSets.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={attachExisting}
-              disabled={busy || !pickedSetId}
-              className="btn-secondary text-xs"
-            >
-              Add
-            </button>
-          </div>
-        </div>
-      )}
-      <div className="space-y-1">
-        <p className="text-xs text-stone-500">Or start a new set</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder='e.g. "Black bikini set"'
-            className="input flex-1 min-w-[10rem]"
-            onKeyDown={(e) => { if (e.key === "Enter") createNew(); }}
-            aria-label="New set name"
-          />
-          <button
-            type="button"
-            onClick={createNew}
-            disabled={busy || !newName.trim()}
-            className="btn-primary text-xs"
-          >
-            Create
-          </button>
-        </div>
+    <section className="card flex items-center justify-between gap-3 p-4">
+      <div className="min-w-0">
+        <p className="label mb-0">Matching set</p>
+        <p className="text-xs text-stone-500">
+          Link this piece to its match — swimsuit top + bottom, pajama set, etc.
+        </p>
       </div>
-      <div>
-        <button
-          type="button"
-          onClick={() => { setOpen(false); setNewName(""); setPickedSetId(""); }}
-          className="text-xs text-stone-400 hover:text-stone-600"
-        >
-          Cancel
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={() => setPickerOpen(true)}
+        className="btn-secondary shrink-0 text-xs"
+      >
+        + Link
+      </button>
     </section>
   );
 }
