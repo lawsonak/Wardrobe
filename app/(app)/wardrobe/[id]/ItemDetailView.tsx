@@ -12,7 +12,8 @@ import {
 import type { Category } from "@/lib/constants";
 import { FavoriteToggle, WoreTodayButton, DeleteItemButton } from "./ItemActions";
 import ItemNav from "./ItemNav";
-import ItemAngles, { type Angle } from "./ItemAngles";
+import { type Angle } from "./ItemAngles";
+import ItemPhotoCarousel, { type CarouselPhoto } from "@/components/ItemPhotoCarousel";
 import SetLink from "./SetLink";
 
 type DetailItem = {
@@ -122,6 +123,20 @@ export default function ItemDetailView({
 
   const heading = item.subType ?? item.category;
 
+  // Hero + extra angles, combined into a single Instagram-style swipe
+  // carousel. Main photo always renders first; angles fall back to the
+  // raw upload when no bg-removed variant exists.
+  const photos: CarouselPhoto[] = [
+    { id: "main", src, label: null },
+    ...angles.map((a) => ({
+      id: a.id,
+      src: a.imageBgRemovedPath
+        ? `/api/uploads/${a.imageBgRemovedPath}`
+        : `/api/uploads/${a.imagePath}`,
+      label: a.label,
+    })),
+  ];
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-2">
@@ -140,14 +155,8 @@ export default function ItemDetailView({
         </div>
       </div>
 
-      {/* Hero photo */}
-      <div className="tile-bg flex aspect-square w-full items-center justify-center overflow-hidden rounded-2xl p-6">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src} alt={heading} className="h-full w-full object-contain" />
-      </div>
-
-      {/* Additional angles, read-only on the detail view */}
-      {angles.length > 0 && <ItemAngles itemId={item.id} angles={angles} />}
+      {/* Hero + angles in a single swipeable carousel with dot pager */}
+      <ItemPhotoCarousel photos={photos} alt={heading} />
 
       {/* Title bar */}
       <div className="flex items-start justify-between gap-3">
