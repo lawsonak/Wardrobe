@@ -5,6 +5,8 @@ import MannequinSilhouette from "@/components/MannequinSilhouette";
 import { CATEGORY_TO_SLOT, type Category, type Slot } from "@/lib/constants";
 import { slotDefaults, type SlotPlacement } from "@/lib/slots";
 import type { Landmarks } from "@/lib/ai/mannequinLandmarks";
+import { toast } from "@/lib/toast";
+import { haptic } from "@/lib/haptics";
 
 export type CanvasItem = {
   id: string;
@@ -230,6 +232,46 @@ export default function StyleCanvas({
     );
   }
 
+  const [fitState, setFitState] = useState<"idle" | "running" | "error">("idle");
+
+  // Ask AI for per-item placement on the user's mannequin and replace
+  // the local layer positions with the result. The auto-save effect
+  // then persists the new layout server-side. Mannequin pixels are
+  // not touched.
+  async function autoFit() {
+    if (!outfitId || fitState === "running") return;
+    setFitState("running");
+    try {
+      const res = await fetch(`/api/outfits/${outfitId}/fit`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+      const parsed = JSON.parse(data.layoutJson) as { layers?: Array<{ id: string; x: number; y: number; w: number; rotation: number; hidden?: boolean }> };
+      const byId = new Map((parsed.layers ?? []).map((l) => [l.id, l]));
+      setLayers((prev) =>
+        prev.map((l) => {
+          const next = byId.get(l.id);
+          if (!next) return l;
+          return {
+            ...l,
+            x: next.x,
+            y: next.y,
+            w: next.w,
+            rotation: next.rotation,
+            hidden: next.hidden ?? false,
+          };
+        }),
+      );
+      haptic("success");
+      toast("Fitted to your mannequin");
+      setFitState("idle");
+    } catch (err) {
+      console.error(err);
+      const msg = err instanceof Error ? err.message : String(err);
+      toast(msg, "error");
+      setFitState("error");
+    }
+  }
+
   // Keep the canvas square-ish on big screens, full width on mobile.
   return (
     <div className="space-y-3">
@@ -240,7 +282,20 @@ export default function StyleCanvas({
           {saveState === "error" && <span className="text-blush-700">Save failed — retry by editing again.</span>}
           {saveState === "idle" && "Auto-saves as you edit."}
         </span>
-        <button type="button" onClick={resetAll} className="btn-ghost text-xs">Reset all</button>
+        <div className="flex flex-wrap items-center gap-2">
+          {outfitId && (
+            <button
+              type="button"
+              onClick={autoFit}
+              disabled={fitState === "running"}
+              className="btn-ghost text-xs text-blush-600"
+              title="Ask AI to position each piece on your mannequin"
+            >
+              {fitState === "running" ? "Fitting…" : "✨ Auto-fit"}
+            </button>
+          )}
+          <button type="button" onClick={resetAll} className="btn-ghost text-xs">Reset all</button>
+        </div>
       </div>
       <div className="card p-2">
         <div

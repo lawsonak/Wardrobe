@@ -223,6 +223,23 @@ export default function OutfitBuilder({
       setError("Couldn't save that outfit.");
       return;
     }
+    // Pull the outfit id back so we can kick off the AI fit pass for
+    // newly-created outfits. We skip on edit so we don't overwrite a
+    // user's manual drag-drop layout.
+    let savedOutfitId: string | null = initial?.id ?? null;
+    if (!initial) {
+      try {
+        const data = (await res.clone().json()) as { outfit?: { id?: string } };
+        if (typeof data.outfit?.id === "string") savedOutfitId = data.outfit.id;
+      } catch {
+        /* ignore — fit pass just won't fire if we can't resolve the id */
+      }
+    }
+    if (!initial && savedOutfitId) {
+      // Fire-and-forget. The Style canvas opens with the calibrated
+      // layout already saved by the time the user navigates there.
+      fetch(`/api/outfits/${savedOutfitId}/fit`, { method: "POST" }).catch(() => null);
+    }
     if (wearToday) {
       // Best-effort: bump "worn today" on each item. Quietly ignore errors —
       // the outfit is already saved, we don't want to block on this.
