@@ -57,6 +57,26 @@ model Item {
 
   outfitItems  OutfitItem[]
   capsuleItems CapsuleItem[]
+  photos       ItemPhoto[]
+}
+
+// Additional photo angles for an item (front already lives on Item
+// itself as imagePath/imageBgRemovedPath; this is for back / side /
+// detail / etc.). Each angle optionally has its own bg-removed
+// cutout and a free-text label.
+model ItemPhoto {
+  id                 String   @id @default(cuid())
+  itemId             String
+  item               Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  imagePath          String
+  imageBgRemovedPath String?
+  // Free-form label, e.g. "back", "side", "detail of the buttons".
+  label              String?
+  // Lower numbers render first in the thumbnail strip.
+  position           Int      @default(0)
+  createdAt          DateTime @default(now())
+
+  @@index([itemId])
 }
 
 model Outfit {
