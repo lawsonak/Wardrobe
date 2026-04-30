@@ -243,6 +243,51 @@ export const CATEGORY_TO_SLOT: Record<Category, Slot> = {
   "Socks & Hosiery": "shoes",
 };
 
+// Sub-type overrides for categories whose items span multiple slots.
+// Activewear / Loungewear / Swimwear all contain bottoms, dresses,
+// and outerwear pieces alongside their tops, so a category-only
+// mapping bucketed everything under "top". Any subType in this map
+// wins over the category default.
+export const SUBTYPE_TO_SLOT: Record<string, Slot> = {
+  // ── Swimwear ──
+  "Bikini bottom": "bottom",
+  "Swim shorts": "bottom",
+  "One-piece": "dress",
+  "Swim dress": "dress",
+  "Cover-up": "outerwear",
+  "Tankini": "top",
+  "Bikini top": "top",
+  "Rash guard": "top",
+
+  // ── Activewear ──
+  "Athletic bottoms": "bottom",
+  "Workout shorts": "bottom",
+  "Yoga pants": "bottom",
+  "Tennis skirt": "bottom",
+  "Athletic dress": "dress",
+  "Track jacket": "outerwear",
+
+  // ── Loungewear ──
+  "Pajama bottoms": "bottom",
+  "Sleep shorts": "bottom",
+  "Robe": "outerwear",
+  "Nightgown": "dress",
+  "Pajama set": "dress", // a one-piece pajama set covers full body
+};
+
+// Resolve the right slot for an item using its subType when an
+// override exists; falls back to the category-level default.
+export function slotForItem(
+  category: string | null | undefined,
+  subType: string | null | undefined,
+): Slot {
+  if (subType && SUBTYPE_TO_SLOT[subType]) return SUBTYPE_TO_SLOT[subType];
+  if (category && (CATEGORIES as readonly string[]).includes(category)) {
+    return CATEGORY_TO_SLOT[category as Category];
+  }
+  return "accessory";
+}
+
 export const COLOR_PALETTE = [
   { name: "white", hex: "#ffffff" },
   { name: "cream", hex: "#f8f1e7" },

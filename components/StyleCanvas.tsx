@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import MannequinSilhouette from "@/components/MannequinSilhouette";
-import { CATEGORY_TO_SLOT, type Category, type Slot } from "@/lib/constants";
+import { slotForItem, type Slot } from "@/lib/constants";
 import { slotDefaults, type SlotPlacement } from "@/lib/slots";
 import type { Landmarks } from "@/lib/ai/mannequinLandmarks";
 import { toast } from "@/lib/toast";
@@ -30,8 +30,8 @@ type Layer = {
   label: string;
 };
 
-function slotFor(category: string): Slot {
-  return CATEGORY_TO_SLOT[category as Category] ?? "accessory";
+function slotFor(item: { category: string; subType: string | null }): Slot {
+  return slotForItem(item.category, item.subType);
 }
 
 function srcFor(item: CanvasItem) {
@@ -77,7 +77,7 @@ export default function StyleCanvas({
       }
     }
     return items.map((it, idx) => {
-      const slot = slotFor(it.category);
+      const slot = slotFor(it);
       const d = SLOT_DEFAULTS[slot];
       const fromSaved = saved[it.id];
       return {

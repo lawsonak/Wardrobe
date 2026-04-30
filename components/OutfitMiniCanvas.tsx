@@ -7,7 +7,7 @@
 // canvas is portrait (aspect-[1/2]) to match the editor's geometry.
 
 import MannequinSilhouette from "@/components/MannequinSilhouette";
-import { CATEGORY_TO_SLOT, type Category, type Slot } from "@/lib/constants";
+import { slotForItem, type Slot } from "@/lib/constants";
 import { slotDefaults } from "@/lib/slots";
 import type { Landmarks } from "@/lib/ai/mannequinLandmarks";
 
@@ -64,7 +64,7 @@ export default function OutfitMiniCanvas({
 
   const layers = items
     .map((it, idx) => {
-      const slot = (CATEGORY_TO_SLOT[it.category as Category] ?? "accessory") as Slot;
+      const slot: Slot = slotForItem(it.category, it.subType);
       const d = defaults[slot];
       const fromSaved = saved[it.id];
       return {
