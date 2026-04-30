@@ -21,6 +21,8 @@ import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import { haptic } from "@/lib/haptics";
 import { fetchWithRetry, friendlyFetchError } from "@/lib/fetchRetry";
+import ProgressBar from "@/components/ProgressBar";
+import { useTimedProgress } from "@/lib/progress";
 
 type Item = {
   id: string;
@@ -67,6 +69,7 @@ export default function EditItemForm({ item }: { item: Item }) {
   const [saved, setSaved] = useState(false);
   const [autoTagState, setAutoTagState] = useState<"idle" | "running" | "done" | "disabled" | "error">("idle");
   const [autoTagMessage, setAutoTagMessage] = useState<string | null>(null);
+  const autoTagProgress = useTimedProgress(autoTagState === "running", 18);
 
   // Load the item's main photo (preferring the smaller bg-removed
   // cutout) and the label photo if present. Uses fetchWithRetry so a
@@ -405,7 +408,12 @@ export default function EditItemForm({ item }: { item: Item }) {
         >
           {autoTagState === "running" ? "Reading photo…" : "✨ Auto-tag"}
         </button>
-        {autoTagMessage && (
+        {autoTagState === "running" && (
+          <div className="flex-1 min-w-[10rem]">
+            <ProgressBar value={autoTagProgress} label="Reading photo…" />
+          </div>
+        )}
+        {autoTagState !== "running" && autoTagMessage && (
           <span className={"text-xs " + (autoTagState === "error" ? "text-blush-700" : "text-stone-500")}>
             {autoTagMessage}
           </span>

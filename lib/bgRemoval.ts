@@ -29,6 +29,18 @@ const CDN_PUBLIC_PATH = `https://staticimgly.com/@imgly/background-removal-data/
 const MAX_INPUT_DIM = 1280;
 const MODEL: "small" | "medium" = "small";
 
+type ProgressKey = `fetch:${string}` | `compute:${string}` | string;
+export type BgProgress = {
+  /** "fetch" while downloading model assets, "compute" while the model runs. */
+  phase: "fetch" | "compute" | "other";
+  /** Raw key from imgly, e.g. "fetch:model.onnx" or "compute:inference". */
+  key: ProgressKey;
+  /** 0..1 for this phase when knowable. */
+  fraction: number;
+  current: number;
+  total: number;
+};
+
 type RemoveOptions = {
   publicPath?: string;
   model?: "small" | "medium" | "large";
@@ -36,6 +48,7 @@ type RemoveOptions = {
   proxyToWorker?: boolean;
   output?: { format?: string; quality?: number; type?: string };
   debug?: boolean;
+  progress?: (key: string, current: number, total: number) => void;
 };
 
 type RemoveBackground = (input: Blob, config?: RemoveOptions) => Promise<Blob>;
@@ -131,13 +144,28 @@ async function downscale(input: Blob, maxDim = MAX_INPUT_DIM): Promise<Blob> {
 // race the ONNX session.
 let _queue: Promise<unknown> = Promise.resolve();
 
-export async function removeBackground(input: Blob): Promise<Blob> {
+export async function removeBackground(
+  input: Blob,
+  options: { onProgress?: (p: BgProgress) => void } = {},
+): Promise<Blob> {
+  const { onProgress } = options;
   const next = _queue.then(async () => {
     const remove = await getRemover();
     const publicPath = await pickPublicPath();
     const device = pickDevice();
     const small = await downscale(input);
-    const opts: RemoveOptions = { publicPath, model: MODEL, device };
+    const progress = onProgress
+      ? (key: string, current: number, total: number) => {
+          const phase = key.startsWith("fetch:")
+            ? "fetch"
+            : key.startsWith("compute:")
+              ? "compute"
+              : "other";
+          const fraction = total > 0 ? Math.max(0, Math.min(1, current / total)) : 0;
+          onProgress({ phase, key, fraction, current, total });
+        }
+      : undefined;
+    const opts: RemoveOptions = { publicPath, model: MODEL, device, progress };
     const start = typeof performance !== "undefined" ? performance.now() : Date.now();
     try {
       const out = await remove(small, opts);
@@ -150,12 +178,12 @@ export async function removeBackground(input: Blob): Promise<Blob> {
       if (publicPath === LOCAL_PUBLIC_PATH) {
         console.warn("Local bg removal failed, retrying via CDN:", err);
         _publicPath = CDN_PUBLIC_PATH;
-        return await remove(small, { ...opts, publicPath: CDN_PUBLIC_PATH });
+        return await remove(small, { ...opts, publicPath: CDN_PUBLIC_PATH, progress });
       }
       if (device === "gpu") {
         console.warn("GPU bg removal failed, retrying on CPU:", err);
         _device = "cpu";
-        return await remove(small, { ...opts, device: "cpu" });
+        return await remove(small, { ...opts, device: "cpu", progress });
       }
       throw err;
     }

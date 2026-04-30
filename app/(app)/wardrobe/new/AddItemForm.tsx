@@ -20,6 +20,8 @@ import { serializeFitDetails } from "@/lib/fitDetails";
 import { toast } from "@/lib/toast";
 import { haptic } from "@/lib/haptics";
 import { fetchWithRetry, friendlyFetchError } from "@/lib/fetchRetry";
+import ProgressBar from "@/components/ProgressBar";
+import { useTimedProgress } from "@/lib/progress";
 
 export default function AddItemForm() {
   const router = useRouter();
@@ -36,6 +38,8 @@ export default function AddItemForm() {
   const [bgRemoved, setBgRemoved] = useState<Blob | null>(null);
   const [bgUrl, setBgUrl] = useState<string | null>(null);
   const [bgState, setBgState] = useState<"idle" | "running" | "done" | "error">("idle");
+  const [bgProgress, setBgProgress] = useState<number>(0);
+  const [bgPhase, setBgPhase] = useState<"fetch" | "compute" | "other" | null>(null);
   const [bgError, setBgError] = useState<string | null>(null);
   const [useOriginal, setUseOriginal] = useState(false);
 
@@ -59,6 +63,7 @@ export default function AddItemForm() {
   const [reopenCamera, setReopenCamera] = useState(false);
   const [autoTagState, setAutoTagState] = useState<"idle" | "running" | "done" | "disabled" | "error">("idle");
   const [autoTagMessage, setAutoTagMessage] = useState<string | null>(null);
+  const autoTagProgress = useTimedProgress(autoTagState === "running", 18);
 
   useEffect(() => {
     return () => {
@@ -95,13 +100,21 @@ export default function AddItemForm() {
 
   async function runBgRemoval(file: File) {
     setBgState("running");
+    setBgProgress(0);
+    setBgPhase(null);
     setError(null);
     setBgError(null);
     try {
-      const out = await removeBackground(file);
+      const out = await removeBackground(file, {
+        onProgress: (p) => {
+          setBgPhase(p.phase);
+          setBgProgress(p.fraction);
+        },
+      });
       setBgRemoved(out);
       if (bgUrl) URL.revokeObjectURL(bgUrl);
       setBgUrl(URL.createObjectURL(out));
+      setBgProgress(1);
       setBgState("done");
     } catch (err) {
       console.error("Background removal failed", err);
@@ -425,7 +438,19 @@ export default function AddItemForm() {
             {original ? "Change" : "Choose from library"}
           </button>
           {bgState === "running" && (
-            <span className="text-sm text-stone-500">Processing…</span>
+            <div className="flex-1 min-w-[10rem]">
+              <ProgressBar
+                value={bgProgress}
+                label={
+                  bgPhase === "fetch"
+                    ? "Loading model…"
+                    : bgPhase === "compute"
+                      ? "Removing background…"
+                      : "Preparing…"
+                }
+                hint={`${Math.round(bgProgress * 100)}%`}
+              />
+            </div>
           )}
           {bgState === "done" && (
             <label className="chip chip-off cursor-pointer">
@@ -459,7 +484,12 @@ export default function AddItemForm() {
             >
               {autoTagState === "running" ? "Reading photo…" : "✨ Auto-tag"}
             </button>
-            {autoTagMessage && (
+            {autoTagState === "running" && (
+              <div className="flex-1 min-w-[10rem]">
+                <ProgressBar value={autoTagProgress} label="Reading photo…" />
+              </div>
+            )}
+            {autoTagState !== "running" && autoTagMessage && (
               <span className={"text-xs " + (autoTagState === "error" ? "text-blush-700" : "text-stone-500")}>
                 {autoTagMessage}
               </span>
