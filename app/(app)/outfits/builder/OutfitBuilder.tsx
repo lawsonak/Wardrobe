@@ -6,10 +6,9 @@ import {
   ACTIVITIES,
   SEASONS,
   SLOTS,
-  CATEGORY_TO_SLOT,
+  slotForItem,
   csvToList,
   type Slot,
-  type Category,
 } from "@/lib/constants";
 import ItemCard from "@/components/ItemCard";
 import { cn } from "@/lib/cn";
@@ -93,7 +92,7 @@ export default function OutfitBuilder({
     if (initial) {
       for (const oi of initial.items) {
         const it = byId.get(oi.itemId);
-        const slot = (oi.slot as Slot) || (it && CATEGORY_TO_SLOT[it.category as Category]);
+        const slot = (oi.slot as Slot) || (it && slotForItem(it.category, it.subType));
         if (it && slot && SLOTS.includes(slot)) p[slot].push(it);
       }
       return p;
@@ -102,7 +101,7 @@ export default function OutfitBuilder({
       for (const id of initialIdsParam.split(",").filter(Boolean)) {
         const it = byId.get(id);
         if (!it) continue;
-        const slot = CATEGORY_TO_SLOT[it.category as Category];
+        const slot = slotForItem(it.category, it.subType);
         if (slot) p[slot].push(it);
       }
     }
@@ -129,7 +128,7 @@ export default function OutfitBuilder({
   const itemsBySlot = useMemo(() => {
     const map: Picks = emptyPicks();
     for (const it of filtered) {
-      const slot = CATEGORY_TO_SLOT[it.category as Category];
+      const slot = slotForItem(it.category, it.subType);
       if (slot) map[slot].push(it);
     }
     return map;
