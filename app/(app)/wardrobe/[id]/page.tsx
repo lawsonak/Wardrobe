@@ -54,12 +54,30 @@ export default async function ItemDetail({
   if (!item) notFound();
 
   const sisters = item.set?.items ?? [];
-  // Existing sets (for the "link to existing set" picker).
-  const userSets = await prisma.itemSet.findMany({
-    where: { ownerId: userId },
-    select: { id: true, name: true },
-    orderBy: { name: "asc" },
+
+  // Other closet items the user could link this one to. Excludes
+  // the current item and anything already in this set. Capped at
+  // 200 — closets that big can use the picker's search box.
+  const sisterIds = new Set(sisters.map((s) => s.id));
+  const candidateRows = await prisma.item.findMany({
+    where: {
+      ownerId: userId,
+      status: "active",
+      id: { not: id },
+      ...(item.setId ? { setId: { not: item.setId } } : {}),
+    },
+    select: {
+      id: true,
+      imagePath: true,
+      imageBgRemovedPath: true,
+      category: true,
+      subType: true,
+      brand: true,
+    },
+    orderBy: { createdAt: "desc" },
+    take: 200,
   });
+  const candidates = candidateRows.filter((c) => !sisterIds.has(c.id));
 
   const angles = item.photos.map((p) => ({
     id: p.id,
@@ -141,7 +159,7 @@ export default async function ItemDetail({
         setId={item.setId ?? null}
         setName={item.set?.name ?? null}
         sisters={sisters}
-        existingSets={userSets.filter((s) => s.id !== item.setId)}
+        candidates={candidates}
         prevId={prevItem?.id ?? null}
         nextId={nextItem?.id ?? null}
       />
