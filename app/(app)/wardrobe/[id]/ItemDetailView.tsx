@@ -13,6 +13,7 @@ import type { Category } from "@/lib/constants";
 import { FavoriteToggle, WoreTodayButton, DeleteItemButton } from "./ItemActions";
 import ItemNav from "./ItemNav";
 import ItemAngles, { type Angle } from "./ItemAngles";
+import SetLink from "./SetLink";
 
 type DetailItem = {
   id: string;
@@ -63,16 +64,32 @@ function formatLastWorn(iso: string | null): string {
   return `Worn ${Math.round(d / 365)} yr ago`;
 }
 
+type Sister = {
+  id: string;
+  imagePath: string;
+  imageBgRemovedPath: string | null;
+  category: string;
+  subType: string | null;
+};
+
 export default function ItemDetailView({
   item,
   outfits,
   angles,
+  setId,
+  setName,
+  sisters,
+  existingSets,
   prevId,
   nextId,
 }: {
   item: DetailItem;
   outfits: DetailOutfit[];
   angles: Angle[];
+  setId: string | null;
+  setName: string | null;
+  sisters: Sister[];
+  existingSets: Array<{ id: string; name: string }>;
   prevId: string | null;
   nextId: string | null;
 }) {
@@ -224,6 +241,15 @@ export default function ItemDetailView({
           )}
         </section>
       )}
+
+      {/* Matching set */}
+      <SetLink
+        itemId={item.id}
+        setId={setId}
+        setName={setName}
+        sisters={sisters}
+        existingSets={existingSets}
+      />
 
       {/* Notes */}
       {cleanNotes && (

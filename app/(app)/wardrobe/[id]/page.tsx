@@ -37,9 +37,29 @@ export default async function ItemDetail({
       photos: {
         orderBy: [{ position: "asc" }, { createdAt: "asc" }],
       },
+      set: {
+        include: {
+          items: {
+            where: { id: { not: id } },
+            select: {
+              id: true, imagePath: true, imageBgRemovedPath: true,
+              category: true, subType: true,
+            },
+            orderBy: { createdAt: "asc" },
+          },
+        },
+      },
     },
   });
   if (!item) notFound();
+
+  const sisters = item.set?.items ?? [];
+  // Existing sets (for the "link to existing set" picker).
+  const userSets = await prisma.itemSet.findMany({
+    where: { ownerId: userId },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
 
   const angles = item.photos.map((p) => ({
     id: p.id,
@@ -118,6 +138,10 @@ export default async function ItemDetail({
         }}
         outfits={detailOutfits}
         angles={angles}
+        setId={item.setId ?? null}
+        setName={item.set?.name ?? null}
+        sisters={sisters}
+        existingSets={userSets.filter((s) => s.id !== item.setId)}
         prevId={prevItem?.id ?? null}
         nextId={nextItem?.id ?? null}
       />

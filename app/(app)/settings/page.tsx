@@ -146,6 +146,12 @@ export default async function SettingsPage() {
             <span className="text-stone-500"> — group items into pack lists, capsule wardrobes, themes.</span>
           </li>
           <li>
+            <Link href="/sets" className="text-blush-600 hover:underline">
+              Matching sets
+            </Link>
+            <span className="text-stone-500"> — link pieces that came together (swimsuit top + bottom, pajamas) without locking them into one outfit.</span>
+          </li>
+          <li>
             <Link href="/admin" className="text-blush-600 hover:underline">
               Maintenance
             </Link>
