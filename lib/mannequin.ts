@@ -25,6 +25,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { detectHeadBBox } from "@/lib/imageBg";
 
 const UPLOAD_ROOT = path.join(process.cwd(), "data", "uploads");
 const MANNEQUIN_FILENAME = "mannequin.png";
@@ -165,10 +166,15 @@ export async function saveRendered(userId: string, png: Buffer): Promise<UserMan
   const dir = userDir(userId);
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(path.join(dir, MANNEQUIN_FILENAME), png);
+  // Detect where the head sits on this specific mannequin so the
+  // overlay aligns with the chin/shoulders. Falls back to the static
+  // default later in saveStylizedHead if detection returns null.
+  const detected = detectHeadBBox(png);
   // Bump the id on every generation so try-on caches invalidate.
   const meta: Meta = {
     id: `user-${userId.slice(0, 8)}-${crypto.randomBytes(4).toString("hex")}`,
     createdAt: new Date().toISOString(),
+    ...(detected ? { headBBox: detected } : {}),
   };
   await fs.writeFile(path.join(dir, MANNEQUIN_META_FILENAME), JSON.stringify(meta, null, 2));
   return getUserMannequin(userId);
@@ -199,12 +205,20 @@ export async function saveStylizedHead(userId: string, png: Buffer): Promise<voi
   const dir = userDir(userId);
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(path.join(dir, MANNEQUIN_HEAD_FILENAME), png);
-  // Default bbox is good enough until/unless we add per-mannequin
-  // detection. Mannequin id stays the same — the head overlay isn't
-  // baked into the try-on PNG, it's CSS-stacked, so cached try-ons
-  // don't need to invalidate.
+  // Mannequin id stays the same — the head overlay isn't baked into
+  // the try-on PNG, it's CSS-stacked, so cached try-ons don't need to
+  // invalidate. If meta has no bbox yet (mannequin generated before
+  // detection landed), try detecting from the saved mannequin.png so
+  // existing users get the upgrade on their next regenerate-face.
   const meta = (await readMeta(userId)) ?? { id: `user-${userId.slice(0, 8)}`, createdAt: new Date().toISOString() };
-  if (!meta.headBBox) meta.headBBox = DEFAULT_HEAD_BBOX;
+  if (!meta.headBBox) {
+    try {
+      const mannequinPng = await fs.readFile(path.join(dir, MANNEQUIN_FILENAME));
+      meta.headBBox = detectHeadBBox(mannequinPng) ?? DEFAULT_HEAD_BBOX;
+    } catch {
+      meta.headBBox = DEFAULT_HEAD_BBOX;
+    }
+  }
   await fs.writeFile(path.join(dir, MANNEQUIN_META_FILENAME), JSON.stringify(meta, null, 2));
 }
 
@@ -229,7 +243,17 @@ async function readMeta(userId: string): Promise<Meta | null> {
     const raw = await fs.readFile(path.join(dir, MANNEQUIN_META_FILENAME), "utf8");
     const parsed = JSON.parse(raw) as Partial<Meta>;
     if (typeof parsed.id !== "string" || typeof parsed.createdAt !== "string") return null;
-    return { id: parsed.id, createdAt: parsed.createdAt };
+    const bbox = parsed.headBBox;
+    const headBBox =
+      bbox &&
+      typeof bbox === "object" &&
+      typeof bbox.x === "number" &&
+      typeof bbox.y === "number" &&
+      typeof bbox.w === "number" &&
+      typeof bbox.h === "number"
+        ? { x: bbox.x, y: bbox.y, w: bbox.w, h: bbox.h }
+        : undefined;
+    return { id: parsed.id, createdAt: parsed.createdAt, ...(headBBox ? { headBBox } : {}) };
   } catch {
     return null;
   }
