@@ -1,14 +1,12 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
-import { firstNameFromUser, possessiveTitle } from "@/lib/userName";
 
 export const dynamic = "force-dynamic";
 
 export default async function CollectionsPage() {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
-  const firstName = firstNameFromUser(session?.user);
 
   const collections = await prisma.collection.findMany({
     where: { ownerId: userId },
@@ -22,14 +20,12 @@ export default async function CollectionsPage() {
     },
   });
 
-  const title = possessiveTitle("Collections", firstName);
-
   return (
     <div className="space-y-5">
       <div className="flex items-end justify-between gap-3">
         <div>
           <Link href="/" className="text-sm text-blush-600 hover:underline">← Home</Link>
-          <h1 className="mt-1 font-display text-3xl text-blush-700">{title}</h1>
+          <h1 className="mt-1 font-display text-3xl text-blush-700">Collections</h1>
           <p className="text-sm text-stone-500">Trips and themed sets — destination, dates, activities, AI-curated packing.</p>
         </div>
         <Link href="/collections/new" className="btn-primary whitespace-nowrap">+ New</Link>
