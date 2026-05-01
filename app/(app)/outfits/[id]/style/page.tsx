@@ -4,7 +4,6 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { type CanvasItem } from "@/components/StyleCanvas";
 import TryOnView from "@/components/TryOnView";
-import { getUserMannequin } from "@/lib/mannequin";
 
 export const dynamic = "force-dynamic";
 
@@ -35,11 +34,6 @@ export default async function StyleCanvasPage({
     subType: oi.item.subType,
   }));
 
-  // Optional stylized head overlay — when the user has set one up in
-  // Settings → Your mannequin, the try-on view stacks it on top of
-  // the AI body via CSS positioning.
-  const mannequin = await getUserMannequin(userId);
-
   return (
     <div className="space-y-4">
       <div>
@@ -61,8 +55,6 @@ export default async function StyleCanvasPage({
           initialLayoutJson={outfit.layoutJson}
           initialTryOnImagePath={outfit.tryOnImagePath}
           initialTryOnGeneratedAt={outfit.tryOnGeneratedAt ? outfit.tryOnGeneratedAt.toISOString() : null}
-          headUrl={mannequin.headUrl}
-          headBBox={mannequin.headBBox}
         />
       )}
     </div>

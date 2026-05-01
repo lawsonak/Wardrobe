@@ -34,16 +34,10 @@ export default function TodaysOutfitCard({
   homeCity,
   weatherSummary,
   initialPick,
-  headUrl,
-  headBBox,
 }: {
   homeCity: string | null;
   weatherSummary: string | null;
   initialPick?: Suggestion | null;
-  /** Optional stylized head overlay served via /api/uploads/. */
-  headUrl?: string | null;
-  /** Where to place the head on the try-on image, normalized 0..1. */
-  headBBox?: { x: number; y: number; w: number; h: number } | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -144,23 +138,6 @@ export default function TodaysOutfitCard({
             alt={picked.name ?? "Today's outfit"}
             className={"h-full w-full object-contain transition " + (busy ? "opacity-50" : "")}
           />
-          {headUrl && headBBox && (
-            // Stylized head overlay (CSS-stacked, no AI in the merge).
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={headUrl}
-              alt=""
-              aria-hidden
-              draggable={false}
-              className={"pointer-events-none absolute object-contain transition " + (busy ? "opacity-50" : "")}
-              style={{
-                left: `${headBBox.x * 100}%`,
-                top: `${headBBox.y * 100}%`,
-                width: `${headBBox.w * 100}%`,
-                height: `${headBBox.h * 100}%`,
-              }}
-            />
-          )}
           {busy && (
             <div className="absolute inset-0 grid place-items-center bg-white/40 text-sm text-stone-700">
               <div className="rounded-full bg-white/80 px-3 py-1.5 shadow-card">
