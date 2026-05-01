@@ -126,11 +126,11 @@ export default function OutfitCard({
           </Link>
           <Link
             href={`/outfits/${outfit.id}/style`}
-            className="btn-ghost px-2 text-xs text-stone-500"
-            aria-label="Open style canvas"
-            title="Style canvas"
+            className="btn-ghost px-2 text-xs text-blush-600"
+            aria-label="Open AI try-on style canvas"
+            title="AI try-on / style canvas"
           >
-            Style
+            ✨ Style
           </Link>
           <button
             type="button"
