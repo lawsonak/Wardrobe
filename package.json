@@ -18,10 +18,12 @@
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
+    "@types/pngjs": "^6.0.5",
     "bcryptjs": "^2.4.3",
     "clsx": "^2.1.1",
     "next": "14.2.35",
     "next-auth": "5.0.0-beta.25",
+    "pngjs": "^7.0.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "tailwind-merge": "^2.5.4",
@@ -29,7 +31,6 @@
   },
   "devDependencies": {
     "@imgly/background-removal": "^1.6.0",
-    "heic2any": "^0.0.4",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
@@ -37,6 +38,7 @@
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",
     "eslint-config-next": "14.2.35",
+    "heic2any": "^0.0.4",
     "postcss": "^8.4.49",
     "prisma": "^5.22.0",
     "tailwindcss": "^3.4.14",
