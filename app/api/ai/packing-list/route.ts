@@ -45,6 +45,19 @@ export async function POST(req: NextRequest) {
     notes: typeof body.notes === "string" ? body.notes.trim().slice(0, 400) || undefined : undefined,
   };
 
+  // Sanitize per-category target counts. Reject anything wildly out of
+  // range so we don't propagate a buggy client into the prompt.
+  let targets: Record<string, number> | undefined;
+  if (body.targets && typeof body.targets === "object") {
+    const clean: Record<string, number> = {};
+    for (const [k, v] of Object.entries(body.targets)) {
+      if (typeof k !== "string" || !k.trim()) continue;
+      const n = typeof v === "number" ? v : Number(v);
+      if (Number.isFinite(n) && n >= 0 && n <= 50) clean[k] = Math.round(n);
+    }
+    if (Object.keys(clean).length > 0) targets = clean;
+  }
+
   const items = await prisma.item.findMany({
     where: { ownerId: userId, status: "active" },
     orderBy: { createdAt: "desc" },
@@ -56,6 +69,7 @@ export async function POST(req: NextRequest) {
 
   const result = await provider.buildPackingList({
     trip,
+    targets,
     items: items.map((i) => ({
       id: i.id,
       category: i.category,

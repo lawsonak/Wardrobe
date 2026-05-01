@@ -3,17 +3,24 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ACTIVITIES, SEASONS } from "@/lib/constants";
+import { ACTIVITIES, CATEGORIES, SEASONS, type Category } from "@/lib/constants";
 import { cn } from "@/lib/cn";
+import {
+  computePackingTargets,
+  fillMissingCategories,
+  totalCount,
+  type PackingTargets,
+} from "@/lib/packingTargets";
 import ItemPicker, { type Selectable } from "./ItemPicker";
 
 type Kind = "trip" | "general";
+type Step = 1 | 2 | 3 | 4;
 
 const STEPS = [
   { n: 1, label: "Trip" },
   { n: 2, label: "Activities" },
-  { n: 3, label: "Packing list" },
-  { n: 4, label: "Review" },
+  { n: 3, label: "Quantities" },
+  { n: 4, label: "Packing list" },
 ] as const;
 
 export default function CollectionWizard({ items }: { items: Selectable[] }) {
@@ -31,7 +38,6 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
   const [endDate, setEndDate] = useState("");
   const [name, setName] = useState("");
   const [nameTouched, setNameTouched] = useState(false);
-  // Legacy fields used only when kind === "general"
   const [occasion, setOccasion] = useState("");
   const [season, setSeason] = useState("");
 
@@ -41,7 +47,16 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
   const [suggestingActs, setSuggestingActs] = useState(false);
   const [actsAiHint, setActsAiHint] = useState<string | null>(null);
 
-  // Step 3
+  // Step 3 (Quantities). `targets` is initialized from a deterministic
+  // formula on first entry; the user can adjust each row with +/-.
+  // `targetsTouched` keeps a manual change from being clobbered by an
+  // auto-recompute when the user goes back and edits dates/activities.
+  const [targets, setTargets] = useState<PackingTargets>(() =>
+    fillMissingCategories(computePackingTargets(null, [])),
+  );
+  const [targetsTouched, setTargetsTouched] = useState(false);
+
+  // Step 4
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [reasoning, setReasoning] = useState<string | null>(null);
   const [packingNotes, setPackingNotes] = useState<string | null>(null);
@@ -49,11 +64,9 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
   const [generated, setGenerated] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [genHint, setGenHint] = useState<string | null>(null);
-
-  // Step 4
   const [tripNotes, setTripNotes] = useState("");
 
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [step, setStep] = useState<Step>(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,6 +81,13 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
 
   const nights = useMemo(() => tripNights(startDate, endDate), [startDate, endDate]);
   const inferredSeason = useMemo(() => seasonFromDate(startDate), [startDate]);
+
+  // Recompute target defaults from nights + activities until the user
+  // makes a manual edit. After that, leave their picks alone.
+  useEffect(() => {
+    if (targetsTouched) return;
+    setTargets(fillMissingCategories(computePackingTargets(nights, activities)));
+  }, [nights, activities, targetsTouched]);
 
   const canAdvance1 = name.trim().length > 0;
   const aiPayload = {
@@ -115,17 +135,37 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
     }
   }
 
+  function bumpTarget(c: Category, delta: number) {
+    setTargetsTouched(true);
+    setTargets((prev) => {
+      const cur = prev[c] ?? 0;
+      const next = Math.max(0, Math.min(50, cur + delta));
+      return { ...prev, [c]: next };
+    });
+  }
+
+  function resetTargets() {
+    setTargetsTouched(false);
+    setTargets(fillMissingCategories(computePackingTargets(nights, activities)));
+  }
+
   async function generatePackingList() {
     setGenerating(true);
     setGenHint(null);
     setError(null);
     try {
+      const cleanTargets: Record<string, number> = {};
+      for (const c of CATEGORIES) {
+        const n = targets[c] ?? 0;
+        if (n > 0) cleanTargets[c] = n;
+      }
       const res = await fetch("/api/ai/packing-list", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...aiPayload,
           activities,
+          targets: cleanTargets,
         }),
       });
       const d = (await res.json()) as {
@@ -203,10 +243,39 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
     .map((id) => itemsById.get(id))
     .filter((it): it is Selectable => !!it);
   const categoriesCovered = new Set(selectedItems.map((it) => it.category)).size;
+  const targetTotal = totalCount(targets);
+  const canSave = canAdvance1 && selectedItems.length > 0;
+
+  // The Quantities step explains *why* each count was picked. These
+  // tooltips live next to each row.
+  const targetReason: Partial<Record<Category, string>> = useMemo(() => {
+    const days = nights == null ? null : Math.max(1, nights);
+    const reasons: Partial<Record<Category, string>> = {};
+    if (days != null) {
+      reasons.Underwear = `${days} day${days === 1 ? "" : "s"} + 1 spare`;
+      reasons["Socks & Hosiery"] = `${days} day${days === 1 ? "" : "s"} + 1 spare`;
+      reasons.Bras = `1 per ~2 days`;
+      reasons.Tops = `with some rewearing`;
+      reasons.Bottoms = `bottoms rewear easily`;
+    }
+    if (activities.some((a) => /workout|gym|hik|run|yoga/i.test(a))) {
+      reasons.Activewear = `for workouts`;
+    }
+    if (activities.some((a) => /beach|swim|pool/i.test(a))) {
+      reasons.Swimwear = `for the beach / pool`;
+    }
+    if (activities.some((a) => /formal|date|wedding|dinner/i.test(a))) {
+      reasons.Dresses = `for formal nights`;
+    }
+    return reasons;
+  }, [nights, activities]);
 
   return (
-    <div className="space-y-5">
-      <Stepper step={step} onJump={(s) => s < step && setStep(s)} />
+    <div className="space-y-5 pb-24">
+      {/* Quick header so the user always knows what they're building. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Stepper step={step} onJump={(s) => s < step && setStep(s)} />
+      </div>
 
       {step === 1 && (
         <div className="card space-y-4 p-4">
@@ -371,29 +440,110 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
             <button type="button" className="btn-ghost" onClick={() => setStep(1)}>
               ← Back
             </button>
-            <div className="flex gap-2">
-              <button type="button" className="btn-ghost text-stone-500" onClick={() => setStep(3)}>
-                Skip — let AI decide
-              </button>
-              <button type="button" className="btn-primary" onClick={() => setStep(3)}>
-                Next: Packing list
-              </button>
-            </div>
+            <button type="button" className="btn-primary" onClick={() => setStep(3)}>
+              Next: Quantities
+            </button>
           </div>
         </div>
       )}
 
       {step === 3 && (
+        <div className="card space-y-4 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h2 className="font-display text-xl text-stone-800">How much of each?</h2>
+              <p className="text-sm text-stone-500">
+                {nights != null
+                  ? `For ${nights} night${nights === 1 ? "" : "s"}, here's what we recommend. Bump anything up or down.`
+                  : "Suggested counts. Bump anything up or down."}
+              </p>
+            </div>
+            {targetsTouched && (
+              <button type="button" className="btn-ghost text-blush-600 text-xs" onClick={resetTargets}>
+                ↺ Reset to recommended
+              </button>
+            )}
+          </div>
+
+          <ul className="divide-y divide-stone-100">
+            {CATEGORIES.map((c) => {
+              const n = targets[c] ?? 0;
+              const reason = targetReason[c];
+              return (
+                <li key={c} className="flex items-center justify-between gap-3 py-2">
+                  <div className="min-w-0">
+                    <p className={cn("text-sm", n > 0 ? "text-stone-800" : "text-stone-400")}>{c}</p>
+                    {n > 0 && reason && <p className="text-[11px] text-stone-400">{reason}</p>}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => bumpTarget(c, -1)}
+                      disabled={n <= 0}
+                      className="grid h-7 w-7 place-items-center rounded-full border border-stone-200 text-stone-600 transition hover:bg-stone-50 disabled:opacity-30"
+                      aria-label={`Decrease ${c}`}
+                    >
+                      −
+                    </button>
+                    <span className={cn("min-w-[1.5rem] text-center text-sm tabular-nums", n > 0 ? "font-semibold text-stone-800" : "text-stone-400")}>
+                      {n}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => bumpTarget(c, 1)}
+                      className="grid h-7 w-7 place-items-center rounded-full border border-stone-200 text-stone-600 transition hover:bg-stone-50"
+                      aria-label={`Increase ${c}`}
+                    >
+                      +
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+
+          <p className="text-xs text-stone-500">
+            Total: <span className="font-semibold text-stone-700">{targetTotal}</span> piece{targetTotal === 1 ? "" : "s"}
+          </p>
+
+          <div className="flex items-center justify-between">
+            <button type="button" className="btn-ghost" onClick={() => setStep(2)}>
+              ← Back
+            </button>
+            <button type="button" className="btn-primary" onClick={() => setStep(4)}>
+              Next: Packing list
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 4 && (
         <div className="space-y-4">
+          {/* Compact summary so the user knows what they're packing for. */}
+          <div className="card p-3 text-xs text-stone-600">
+            <span className="font-medium text-stone-800">{name || "Untitled"}</span>
+            {kind === "trip" && (destination || nights != null) && (
+              <>
+                {" · "}
+                {destination || "?"}
+                {nights != null ? ` · ${nights} night${nights === 1 ? "" : "s"}` : ""}
+              </>
+            )}
+            {activities.length > 0 && (
+              <>
+                {" · "}
+                {activities.slice(0, 3).map(capitalize).join(", ")}
+                {activities.length > 3 ? "…" : ""}
+              </>
+            )}
+          </div>
+
           <div className="card space-y-3 p-4">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <h2 className="font-display text-xl text-stone-800">AI packing list</h2>
+                <h2 className="font-display text-xl text-stone-800">Packing list</h2>
                 <p className="text-sm text-stone-500">
-                  Pulled from your wardrobe based on{" "}
-                  {kind === "trip" && destination ? <strong>{destination}</strong> : "this trip"}
-                  {nights !== null ? `, ${nights} night${nights === 1 ? "" : "s"}` : ""}
-                  {activities.length > 0 ? `, for ${activities.slice(0, 3).join(", ")}${activities.length > 3 ? "…" : ""}` : ""}.
+                  AI picks specific pieces from your closet to match the quantities you set.
                 </p>
               </div>
               <button
@@ -453,6 +603,7 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-stone-500">
               <span>
                 {selectedItems.length} piece{selectedItems.length === 1 ? "" : "s"}
+                {targetTotal > 0 ? ` of ${targetTotal} target` : ""}
                 {categoriesCovered > 0 ? ` · ${categoriesCovered} categor${categoriesCovered === 1 ? "y" : "ies"} covered` : ""}
               </span>
               <button
@@ -471,89 +622,39 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
             </div>
           )}
 
-          <div className="flex items-center justify-between">
-            <button type="button" className="btn-ghost" onClick={() => setStep(2)}>
-              ← Back
-            </button>
-            <button type="button" className="btn-primary" onClick={() => setStep(4)}>
-              Next: Review
-            </button>
+          <div className="card p-4">
+            <label className="label">Trip notes (optional)</label>
+            <textarea
+              className="input min-h-[60px]"
+              value={tripNotes}
+              onChange={(e) => setTripNotes(e.target.value)}
+              placeholder="Anything you want to remember while packing"
+            />
           </div>
+
+          {error && <p className="text-sm text-blush-700">{error}</p>}
         </div>
       )}
 
+      {/* Sticky action bar — Save is one tap away from anywhere on
+          step 4, no scrolling to the bottom. */}
       {step === 4 && (
-        <div className="space-y-4">
-          <div className="card space-y-3 p-4">
-            <h2 className="font-display text-xl text-stone-800">Review &amp; save</h2>
-            <dl className="grid grid-cols-3 gap-x-4 gap-y-1 text-sm">
-              <dt className="text-stone-500">Name</dt>
-              <dd className="col-span-2 text-stone-800">{name}</dd>
-              {kind === "trip" && (
-                <>
-                  <dt className="text-stone-500">Destination</dt>
-                  <dd className="col-span-2 text-stone-800">{destination || "—"}</dd>
-                  <dt className="text-stone-500">Dates</dt>
-                  <dd className="col-span-2 text-stone-800">
-                    {startDate || endDate ? `${startDate || "?"} → ${endDate || "?"}` : "—"}
-                    {nights !== null ? ` · ${nights} night${nights === 1 ? "" : "s"}` : ""}
-                  </dd>
-                </>
-              )}
-              {kind === "general" && (occasion || season) && (
-                <>
-                  <dt className="text-stone-500">Vibe</dt>
-                  <dd className="col-span-2 text-stone-800">
-                    {[occasion, season ? capitalize(season) : ""].filter(Boolean).join(" · ")}
-                  </dd>
-                </>
-              )}
-              <dt className="text-stone-500">Activities</dt>
-              <dd className="col-span-2 text-stone-800">
-                {activities.length > 0 ? activities.map(capitalize).join(", ") : "—"}
-              </dd>
-              <dt className="text-stone-500">Pieces</dt>
-              <dd className="col-span-2 text-stone-800">{selectedItems.length}</dd>
-            </dl>
-
-            <div>
-              <label className="label">Trip notes (optional)</label>
-              <textarea
-                className="input min-h-[60px]"
-                value={tripNotes}
-                onChange={(e) => setTripNotes(e.target.value)}
-                placeholder="Anything you want to remember while packing"
-              />
-            </div>
-          </div>
-
-          {selectedItems.length > 0 && (
-            <div className="card p-3">
-              <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
-                {selectedItems.map((it) => {
-                  const src = it.imageBgRemovedPath
-                    ? `/api/uploads/${it.imageBgRemovedPath}`
-                    : `/api/uploads/${it.imagePath}`;
-                  return (
-                    <li key={it.id} className="tile-bg flex aspect-square items-center justify-center rounded-2xl ring-1 ring-stone-100">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={src} alt={it.subType ?? it.category} className="h-full w-full object-contain p-2" />
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
-
-          {error && <p className="text-sm text-blush-700">{error}</p>}
-
-          <div className="flex items-center justify-between">
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200 bg-white/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-white/80">
+          <div className="mx-auto flex max-w-2xl items-center justify-between gap-2">
             <button type="button" className="btn-ghost" onClick={() => setStep(3)}>
               ← Back
             </button>
-            <div className="flex gap-2">
-              <Link href="/collections" className="btn-secondary">Cancel</Link>
-              <button type="button" className="btn-primary" onClick={save} disabled={busy}>
+            <div className="flex items-center gap-2">
+              <Link href="/collections" className="btn-ghost text-stone-500">
+                Cancel
+              </Link>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={save}
+                disabled={busy || !canSave}
+                title={!canSave ? "Pick at least one piece" : undefined}
+              >
                 {busy ? "Saving…" : "Save collection"}
               </button>
             </div>
@@ -564,9 +665,9 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
   );
 }
 
-function Stepper({ step, onJump }: { step: 1 | 2 | 3 | 4; onJump: (s: 1 | 2 | 3 | 4) => void }) {
+function Stepper({ step, onJump }: { step: Step; onJump: (s: Step) => void }) {
   return (
-    <ol className="flex items-center gap-2 text-xs">
+    <ol className="flex flex-1 items-center gap-2 text-xs">
       {STEPS.map((s, idx) => {
         const isPast = step > s.n;
         const isCurrent = step === s.n;
@@ -574,7 +675,7 @@ function Stepper({ step, onJump }: { step: 1 | 2 | 3 | 4; onJump: (s: 1 | 2 | 3 
           <li key={s.n} className="flex flex-1 items-center gap-2">
             <button
               type="button"
-              onClick={() => isPast && onJump(s.n as 1 | 2 | 3 | 4)}
+              onClick={() => isPast && onJump(s.n as Step)}
               disabled={!isPast}
               className={cn(
                 "grid h-7 w-7 shrink-0 place-items-center rounded-full font-semibold transition",

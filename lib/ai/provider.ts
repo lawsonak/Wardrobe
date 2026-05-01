@@ -463,7 +463,7 @@ function makeGemini(): TagProvider {
       }
     },
 
-    async buildPackingList({ trip, items }) {
+    async buildPackingList({ trip, targets, items }) {
       if (!key) return { itemIds: [], debug: { error: "GEMINI_API_KEY not set" } };
 
       const cap = 250;
@@ -481,10 +481,24 @@ function makeGemini(): TagProvider {
       const dateLine = trip.startDate || trip.endDate
         ? `Dates: ${trip.startDate ?? "?"} to ${trip.endDate ?? "?"}${nights ? ` (${nights} night${nights === 1 ? "" : "s"})` : ""}.`
         : "";
-      const target = nights ? `${Math.max(nights + 3, 6)}–${Math.max(Math.ceil(nights * 1.5), 8)}` : "8–14";
       const activitiesLine = trip.activities.length
         ? `Planned activities: ${trip.activities.join(", ")}.`
         : "Planned activities: not specified — pick a versatile, well-rounded set.";
+
+      // Per-category quantity targets dominate the prompt: the user has
+      // already decided "I want 6 underwear and 3 tops" so the model's job
+      // is to choose specific items, not negotiate counts.
+      const targetEntries = targets
+        ? Object.entries(targets).filter(([, n]) => typeof n === "number" && n > 0)
+        : [];
+      const totalTarget = targetEntries.reduce((s, [, n]) => s + n, 0);
+      const targetsLine = targetEntries.length
+        ? `TARGET COUNTS BY CATEGORY (please respect these closely — off by ±1 is fine):\n` +
+          targetEntries.map(([c, n]) => `  - ${c}: ${n}`).join("\n") +
+          `\nTOTAL pieces target: ${totalTarget}.`
+        : nights
+          ? `Aim for roughly ${Math.max(nights + 3, 6)}–${Math.max(Math.ceil(nights * 1.5), 8)} pieces.`
+          : "Aim for roughly 8–14 pieces.";
 
       const prompt =
         `You're a packing assistant for a personal wardrobe app. ` +
@@ -496,13 +510,16 @@ function makeGemini(): TagProvider {
         (trip.notes ? `User notes: ${trip.notes}. ` : "") +
         `Use general climate knowledge for the destination + dates to factor in weather (rain, heat, layering). ` +
         `Cover every planned activity, avoid redundancy (don't pick three near-identical white tees), ` +
-        `aim for roughly ${target} pieces, and prefer items tagged with matching seasons/activities when possible. ` +
+        `and prefer items tagged with matching seasons/activities when possible. ` +
+        `\n\n${targetsLine}\n\n` +
         `HARD RULES: ` +
-        `(1) Do include Underwear / Bras / Socks & Hosiery so the list reads as a real packing list (these are fine here even though we exclude them from outfits). ` +
-        `(2) Pair Swimwear with sandals + a cover-up for beach days; never with formal pieces. ` +
-        `(3) Match register: don't pack Activewear for a black-tie weekend, or formalwear for a yoga retreat. ` +
+        `(1) DO include Underwear / Bras / Socks & Hosiery — this is a packing list, so undergarments are required (different from the outfit-builder where we exclude them). ` +
+        `(2) Cover the full trip duration: enough underwear for every day (1 per day + 1 spare), enough socks for every day, and at least one bra rotation. ` +
+        `(3) Pair Swimwear with sandals + a cover-up for beach days; never with formal pieces. ` +
+        `(4) Match register: don't pack Activewear for a black-tie weekend, or formalwear for a yoga retreat. ` +
+        `(5) If a TARGET says 0 for a category, do NOT include items from that category. If a target is greater than the catalog has available, pick the closest equivalents and call out the gap in packingNotes. ` +
         `Return their ids in the response, plus a short one-sentence \`reasoning\` and a \`packingNotes\` ` +
-        `field with practical tips ("pack a light layer for evenings", "leave the umbrella — May is dry"). ` +
+        `field with practical tips ("pack a light layer for evenings", "leave the umbrella — May is dry", "no clean black trousers in the closet — consider laundry mid-trip"). ` +
         `Catalog (JSON):\n${JSON.stringify(catalog)}`;
 
       const body = {
