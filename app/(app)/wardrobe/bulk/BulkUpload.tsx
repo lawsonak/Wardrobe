@@ -7,6 +7,7 @@ import { CATEGORIES, type Category } from "@/lib/constants";
 import { removeBackground, resetBackgroundRemover } from "@/lib/bgRemoval";
 import { heicToJpeg, isHeic } from "@/lib/heic";
 import { normalizeOrientation } from "@/lib/imageOrientation";
+import ProgressBar from "@/components/ProgressBar";
 
 // Sentinel for the "Let AI decide" option. The bulk endpoint accepts
 // this and stores a placeholder category until AI tagging fills the
@@ -15,10 +16,13 @@ const AUTO_CATEGORY = "__auto__" as const;
 type DefaultCategory = Category | typeof AUTO_CATEGORY;
 
 // Two-phase pipeline:
-//   1. Upload — every picked photo goes to /api/items/bulk in a single
-//      multipart POST. Each becomes an Item with status=needs_review.
-//      The page can be closed safely after this step; the photos are
-//      durably saved on the server.
+//   1. Upload — every picked photo goes to /api/items/bulk in its OWN
+//      multipart POST, sequenced one at a time. Each becomes an Item
+//      with status=needs_review. This avoids the body-size limits that
+//      kill huge single-megaposts (Next API routes default to 1MB,
+//      reverse proxies similar) and gives us honest per-file progress.
+//      The page can be closed safely after each individual file
+//      completes; the photos are durably saved on the server.
 //   2. BG removal (optional, client-side) — once items exist on the
 //      server, this page walks them and POSTs each bg-removed cutout
 //      to /api/items/[id]/photo?which=bg. Page must stay open for this
@@ -31,7 +35,7 @@ type Job = {
   file: File;             // possibly HEIC-converted file we send to server
   previewUrl: string;
   bgUrl?: string;
-  state: "queued" | "processing-heic" | "uploaded" | "removing-bg" | "done" | "error";
+  state: "queued" | "processing-heic" | "uploading" | "uploaded" | "removing-bg" | "done" | "error";
   error?: string;
 };
 
@@ -99,8 +103,9 @@ export default function BulkUpload() {
   }
 
   // Phase 1: HEIC-convert (if needed) and ship every picked file to the
-  // server in one bulk POST. After this returns, the photos are durably
-  // saved as Items — the user can close the tab and walk away.
+  // server in its own POST. After each file completes, that photo is
+  // durably saved as an Item — closing the tab loses only any remaining
+  // queued files.
   async function uploadAll() {
     if (running) return;
     const pending = jobs.filter((j) => j.state === "queued" || j.state === "error");
@@ -108,11 +113,14 @@ export default function BulkUpload() {
     setRunning(true);
     setPhase("uploading");
 
-    // Pre-process HEIC sequentially so we don't blow up memory on a big
-    // batch of iPhone photos.
-    const ready: Job[] = [];
-    for (const j of pending) {
-      let working = j;
+    const uploadedIds: string[] = [];
+
+    for (const original of pending) {
+      let working = original;
+
+      // HEIC → JPEG, then EXIF orientation → physical pixels. Done per
+      // file (rather than batch up front) so progress reflects work
+      // actually completing, not a long invisible preprocessing phase.
       if (isHeic(working.file)) {
         update(working.id, { state: "processing-heic" });
         try {
@@ -127,7 +135,6 @@ export default function BulkUpload() {
           continue;
         }
       }
-      // EXIF orientation → physical pixels for every queued photo.
       try {
         const reoriented = await normalizeOrientation(working.file);
         if (reoriented !== working.file) {
@@ -139,48 +146,45 @@ export default function BulkUpload() {
       } catch (err) {
         console.warn("orientation normalize failed for bulk job", err);
       }
-      ready.push(working);
-    }
 
-    // One POST with every file attached.
-    try {
-      const fd = new FormData();
-      fd.append("category", defaultCategory);
-      fd.append("status", defaultStatus);
-      for (const j of ready) {
-        fd.append("images", j.file, j.file.name);
+      update(working.id, { state: "uploading" });
+      try {
+        const fd = new FormData();
+        fd.append("category", defaultCategory);
+        fd.append("status", defaultStatus);
+        fd.append("images", working.file, working.file.name);
+        const res = await fetch("/api/items/bulk", { method: "POST", body: fd });
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
+          throw new Error(detail || `HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as { created: Array<{ id: string; imagePath: string }> };
+        const created = data.created?.[0];
+        if (!created) throw new Error("Server returned no created item");
+        update(working.id, { itemId: created.id, state: "uploaded" });
+        uploadedIds.push(created.id);
+      } catch (err) {
+        console.error(err);
+        const message = err instanceof Error ? err.message : "Upload failed";
+        update(working.id, { state: "error", error: message.slice(0, 200) });
       }
-      const res = await fetch("/api/items/bulk", { method: "POST", body: fd });
-      if (!res.ok) throw new Error(await res.text());
-      const data = (await res.json()) as { created: Array<{ id: string; imagePath: string }> };
-      // Match server ids back to local jobs by index.
-      data.created.forEach((c, idx) => {
-        const j = ready[idx];
-        if (!j) return;
-        update(j.id, { itemId: c.id, state: "uploaded" });
-      });
-    } catch (err) {
-      console.error(err);
-      // Mark all the just-tried jobs as errored if the bulk POST failed.
-      for (const j of ready) update(j.id, { state: "error", error: "Upload failed" });
     }
 
     // Notification so the user knows it's safe to close the tab.
-    try {
-      const uploadedCount = ready.filter(
-        (j) => jobsRef.current?.find((x) => x.id === j.id)?.state === "uploaded",
-      ).length || ready.length;
-      await fetch("/api/notifications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: "Import complete",
-          body: `${uploadedCount} item${uploadedCount === 1 ? "" : "s"} saved${defaultStatus === "needs_review" ? " — waiting for review" : ""}.`,
-          href: defaultStatus === "needs_review" ? "/wardrobe/needs-review" : "/wardrobe",
-        }),
-      });
-    } catch {
-      /* ignore */
+    if (uploadedIds.length > 0) {
+      try {
+        await fetch("/api/notifications", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: "Import complete",
+            body: `${uploadedIds.length} item${uploadedIds.length === 1 ? "" : "s"} saved${defaultStatus === "needs_review" ? " — waiting for review" : ""}.`,
+            href: defaultStatus === "needs_review" ? "/wardrobe/needs-review" : "/wardrobe",
+          }),
+        });
+      } catch {
+        /* ignore */
+      }
     }
 
     setRunning(false);
@@ -190,9 +194,6 @@ export default function BulkUpload() {
     // Phase 2a: AI auto-tag, fire-and-forget on the server. The handler
     // keeps running after the response flushes (Node always-on), so the
     // user can close the tab and a notification fires when done.
-    const uploadedIds = (jobsRef.current ?? [])
-      .filter((j) => j.state === "uploaded" && j.itemId)
-      .map((j) => j.itemId!) as string[];
     if (aiTag && uploadedIds.length > 0) {
       try {
         const res = await fetch("/api/ai/tag-bulk", {
@@ -271,6 +272,31 @@ export default function BulkUpload() {
   const queuedCount = jobs.filter((j) => j.state === "queued" || j.state === "error").length;
   const uploadedNeedingBg = jobs.filter((j) => j.state === "uploaded").length;
 
+  // Real progress: count of jobs past the "queued" / "uploading" /
+  // "processing-heic" gate. During the bg-removal phase, factor in
+  // jobs that have reached "done".
+  const progressTotal = jobs.length;
+  const progressDone =
+    phase === "tagging"
+      ? jobs.filter((j) => j.state === "done" || j.state === "error").length
+      : jobs.filter(
+          (j) =>
+            j.state === "uploaded" ||
+            j.state === "removing-bg" ||
+            j.state === "done" ||
+            j.state === "error",
+        ).length;
+  const progressFraction = progressTotal === 0 ? 0 : progressDone / progressTotal;
+
+  const progressLabel =
+    phase === "uploading"
+      ? `Uploading ${progressDone} / ${progressTotal}`
+      : phase === "tagging"
+        ? `Removing backgrounds ${progressDone} / ${progressTotal}`
+        : phase === "done"
+          ? "Complete"
+          : "";
+
   return (
     <div className="space-y-5">
       <div className="card space-y-3 p-4">
@@ -329,10 +355,10 @@ export default function BulkUpload() {
           )}
         </label>
         <p className="text-xs text-stone-500">
-          Uploads finish in one round trip — once you see &ldquo;Uploaded&rdquo; below, the photos are
-          saved server-side and you can close this tab. AI tagging then runs on the server in the
-          background — you&apos;ll get a notification when it&apos;s done. Background removal keeps
-          running in this tab if you leave it open; re-run any time from the item detail page.
+          Photos upload one at a time so a big batch (50+) doesn&apos;t hit body-size limits.
+          Each photo is durably saved as soon as it finishes — close the tab any time. AI tagging
+          continues on the server in the background; background removal keeps running in this tab
+          if you leave it open.
         </p>
       </div>
 
@@ -399,6 +425,14 @@ export default function BulkUpload() {
           </span>
         )}
       </div>
+
+      {(running || phase === "done") && progressTotal > 0 && (
+        <ProgressBar
+          value={progressFraction}
+          label={progressLabel}
+          hint={phase === "uploading" ? "one photo at a time — safe to close after each completes" : undefined}
+        />
+      )}
 
       {phase === "done" && counts.uploaded === 0 && counts.error === 0 && counts.done > 0 && (
         <div className="rounded-xl bg-sage-200/40 px-3 py-2 text-sm text-sage-600 ring-1 ring-sage-200">
@@ -469,6 +503,7 @@ function labelFor(state: Job["state"]): string {
   switch (state) {
     case "queued": return "Queued";
     case "processing-heic": return "Converting HEIC…";
+    case "uploading": return "Uploading…";
     case "uploaded": return "Uploaded — safe to leave";
     case "removing-bg": return "Removing background…";
     case "done": return "Saved with cutout";
