@@ -79,6 +79,26 @@ const NOTES_SCHEMA = {
   required: ["notes"],
 };
 
+const TRIP_PLAN_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    outfits: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          name: { type: "STRING" },
+          activity: { type: "STRING", enum: [...ALLOWED_ACTIVITIES] },
+          itemIds: { type: "ARRAY", items: { type: "STRING" } },
+          reasoning: { type: "STRING" },
+        },
+        required: ["name", "activity", "itemIds"],
+      },
+    },
+  },
+  required: ["outfits"],
+};
+
 const SEARCH_SCHEMA = {
   type: "OBJECT",
   properties: {
@@ -442,6 +462,133 @@ function makeGemini(): TagProvider {
         };
       } catch (err) {
         return { itemIds: [], debug: { error: err instanceof Error ? err.message : String(err) } };
+      }
+    },
+
+    async planTrip({ destination, dateNeeded, weather, preferences, packListHint, targets, items }) {
+      if (!key) return { outfits: [], debug: { error: "GEMINI_API_KEY not set" } };
+
+      const cap = 250;
+      const catalog = items.slice(0, cap).map((it) => ({
+        id: it.id,
+        category: it.category,
+        subType: it.subType ?? undefined,
+        color: it.color ?? undefined,
+        brand: it.brand ?? undefined,
+        seasons: it.seasons?.length ? it.seasons : undefined,
+        activities: it.activities?.length ? it.activities : undefined,
+      }));
+
+      const totalCount = targets.reduce((sum, t) => sum + t.count, 0);
+      const targetLines = targets
+        .map((t) => `  - ${t.count} × "${t.label}" (activity: ${t.activity})`)
+        .join("\n");
+
+      const prefsLine = preferences && preferences.trim()
+        ? `User style preferences (always honor unless they directly contradict the occasion): ${preferences.trim().slice(0, 600)}. `
+        : "";
+      const packLine = packListHint && packListHint.trim()
+        ? `Aim for the user's pack list when picking pieces (don't reuse the same hero piece across many outfits): ${packListHint.trim()}. `
+        : "";
+      const tripLine = [
+        destination ? `Destination: ${destination}.` : "",
+        dateNeeded ? `Date: ${dateNeeded}.` : "",
+        weather ? `Weather context: ${weather}.` : "",
+      ].filter(Boolean).join(" ");
+
+      const prompt =
+        `You're planning a packing list of outfits for a trip / event. ` +
+        `${tripLine} ` +
+        `Build EXACTLY ${totalCount} distinct outfits, distributed like this:\n` +
+        `${targetLines}\n` +
+        `Each outfit must use ONLY items from this catalog (you may not invent items). ` +
+        `Outfits should be coherent and varied — try not to reuse the same hero piece across many outfits. ` +
+        `For each outfit, return: a 3-5 word name, the activity tag (must match one of the targets), the chosen itemIds, and a one-sentence reasoning. ` +
+        prefsLine +
+        packLine +
+        // Same hard rules as buildOutfit so trip outfits can't pair
+        // underwear with swim or treat one-pieces as regular dresses.
+        `HARD RULES: ` +
+        `(1) NEVER include any item from the Underwear or Bras categories — these are undergarments, not outfit pieces. ` +
+        `(2) NEVER pair Swimwear with Underwear, Activewear, Loungewear, or formal pieces. A swim outfit is Swimwear + sandals + maybe a cover-up + sunglasses. ` +
+        `(3) A Swimwear "One-piece" or "Swim dress" REPLACES the top + bottom — do not add a separate bottom. They are NOT regular dresses. ` +
+        `(4) Don't mix Activewear with Formal, Loungewear with Workwear, etc. Stay within one register per outfit. ` +
+        `(5) Every outfit must include either a dress OR a top+bottom; usually shoes; outerwear / accessories / bags only when they fit. ` +
+        `Catalog (JSON):\n${JSON.stringify(catalog)}`;
+
+      const body = {
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: TRIP_PLAN_SCHEMA,
+          temperature: 0.5,
+        },
+      };
+
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+          GEMINI_MODEL,
+        )}:generateContent?key=${encodeURIComponent(key)}`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const responseText = await res.text();
+        if (!res.ok) {
+          let detail = `HTTP ${res.status}`;
+          try {
+            const e = JSON.parse(responseText) as { error?: { message?: string } };
+            if (e.error?.message) detail = `HTTP ${res.status}: ${e.error.message}`;
+          } catch {
+            detail = `HTTP ${res.status}: ${responseText.slice(0, 200)}`;
+          }
+          return { outfits: [], debug: { status: res.status, error: detail, rawText: responseText.slice(0, 400) } };
+        }
+        const data = JSON.parse(responseText) as {
+          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+          usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+        };
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+        if (!text) {
+          return { outfits: [], debug: { status: 200, error: "Empty response", rawText: responseText.slice(0, 400) } };
+        }
+        const cleaned = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(cleaned);
+        } catch {
+          return { outfits: [], debug: { status: 200, error: "Model response wasn't valid JSON", rawText: cleaned.slice(0, 400) } };
+        }
+        const r = parsed as { outfits?: unknown };
+        if (!Array.isArray(r.outfits)) {
+          return { outfits: [], debug: { status: 200, error: "Missing outfits array", rawText: cleaned.slice(0, 400) } };
+        }
+        const ownedIds = new Set(items.map((i) => i.id));
+        const outfits: import("./types").TripPlannedOutfit[] = [];
+        for (const row of r.outfits) {
+          if (!row || typeof row !== "object") continue;
+          const o = row as Record<string, unknown>;
+          const name = typeof o.name === "string" ? o.name.slice(0, 80) : "";
+          const activity = typeof o.activity === "string" ? o.activity : "";
+          const ids = Array.isArray(o.itemIds)
+            ? o.itemIds.filter((x): x is string => typeof x === "string" && ownedIds.has(x))
+            : [];
+          if (!name || ids.length === 0) continue;
+          const reasoning = typeof o.reasoning === "string" ? o.reasoning.slice(0, 400) : undefined;
+          outfits.push({ name, activity, itemIds: ids, reasoning });
+        }
+        return {
+          outfits,
+          debug: {
+            status: 200,
+            rawText: cleaned.slice(0, 400),
+            promptTokens: data.usageMetadata?.promptTokenCount,
+            responseTokens: data.usageMetadata?.candidatesTokenCount,
+          },
+        };
+      } catch (err) {
+        return { outfits: [], debug: { error: err instanceof Error ? err.message : String(err) } };
       }
     },
 

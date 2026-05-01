@@ -34,7 +34,17 @@ export default async function NewCapsulePage() {
         <p className="text-sm text-stone-500">Pick the pieces you want grouped together.</p>
       </div>
       <CapsuleEditor
-        capsule={{ name: "", description: null, occasion: null, season: null, itemIds: [] }}
+        capsule={{
+          name: "",
+          description: null,
+          occasion: null,
+          season: null,
+          dateNeeded: null,
+          location: null,
+          targetCounts: {},
+          activityTargets: [],
+          itemIds: [],
+        }}
         items={selectable}
         mode="create"
       />
