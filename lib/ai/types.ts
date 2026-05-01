@@ -82,10 +82,44 @@ export interface TagProvider {
      *  Honored unless directly contradicted by the occasion. */
     preferences?: string;
   }): Promise<OutfitSuggestion>;
+
+  /** Generate multiple distinct outfits in one shot for a trip / event.
+   *  Each row of `targets` says "I want N outfits for {activity}". Returns
+   *  one result row per requested outfit. Implementations that don't
+   *  support this should leave the method undefined. */
+  planTrip?(input: {
+    destination?: string | null;
+    dateNeeded?: string | null;
+    weather?: string | null;
+    preferences?: string;
+    packListHint?: string;
+    targets: Array<{ activity: string; label: string; count: number }>;
+    items: Array<{
+      id: string;
+      category: string;
+      subType?: string | null;
+      color?: string | null;
+      brand?: string | null;
+      seasons?: string[];
+      activities?: string[];
+    }>;
+  }): Promise<TripPlanResult>;
 }
 
 export type NotesResult = {
   notes: string;
+  debug?: TagDebug;
+};
+
+export type TripPlannedOutfit = {
+  name: string;
+  activity: string;
+  itemIds: string[];
+  reasoning?: string;
+};
+
+export type TripPlanResult = {
+  outfits: TripPlannedOutfit[];
   debug?: TagDebug;
 };
 

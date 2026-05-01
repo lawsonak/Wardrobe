@@ -115,6 +115,11 @@ model Outfit {
   // Style-canvas layout, JSON-encoded. Optional — outfits without a saved
   // layout fall back to category-driven defaults at render time.
   layoutJson String?
+  // Optional back-link to the Capsule that generated this outfit (the
+  // trip planner). Keeps the detail page able to show "outfits in
+  // this collection" cleanly. Detached from a capsule = standalone outfit.
+  capsuleId  String?
+  capsule    Capsule? @relation(fields: [capsuleId], references: [id], onDelete: SetNull)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -161,10 +166,26 @@ model Capsule {
   description String?
   occasion    String?
   season      String?
+  // Trip-planning extras. All optional; the basic capsule keeps working
+  // exactly as before when none are set.
+  dateNeeded  DateTime?
+  // Free-form city / location string. Used to fetch a weather forecast
+  // around `dateNeeded` so the AI plan picks weather-appropriate pieces.
+  location    String?
+  // JSON-encoded `Record<string, number>` keyed by category name —
+  // e.g. `{"Tops": 3, "Bottoms": 4, "Underwear": 6}`. The detail page
+  // shows fulfilled vs target counts so the user can pack the right
+  // mix of pieces.
+  targetCounts   String?
+  // JSON-encoded array of `{ activity, label, count }` — e.g.
+  // `[{"activity":"formal","label":"Dinners","count":2}]`. Drives the
+  // AI plan: "give me 2 formal-dinner outfits, 3 lunches, 1 workout".
+  activityTargets String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  items CapsuleItem[]
+  items   CapsuleItem[]
+  outfits Outfit[]
 }
 
 model CapsuleItem {

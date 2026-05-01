@@ -8,6 +8,7 @@ import { cn } from "@/lib/cn";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import { haptic } from "@/lib/haptics";
+import type { ActivityTarget, TargetCounts } from "@/lib/capsulePlan";
 
 export type Selectable = {
   id: string;
@@ -27,6 +28,11 @@ export type CapsuleData = {
   description: string | null;
   occasion: string | null;
   season: string | null;
+  /** Date when the trip / event starts. ISO yyyy-mm-dd in the form. */
+  dateNeeded: string | null;
+  location: string | null;
+  targetCounts: TargetCounts;
+  activityTargets: ActivityTarget[];
   itemIds: string[];
 };
 
@@ -45,6 +51,10 @@ export default function CapsuleEditor({
   const [description, setDescription] = useState(capsule.description ?? "");
   const [occasion, setOccasion] = useState(capsule.occasion ?? "");
   const [season, setSeason] = useState(capsule.season ?? "");
+  const [dateNeeded, setDateNeeded] = useState(capsule.dateNeeded ?? "");
+  const [location, setLocation] = useState(capsule.location ?? "");
+  const [targetCounts, setTargetCounts] = useState<TargetCounts>(capsule.targetCounts);
+  const [activityTargets, setActivityTargets] = useState<ActivityTarget[]>(capsule.activityTargets);
   const [selected, setSelected] = useState<Set<string>>(new Set(capsule.itemIds));
 
   const [filterCategory, setFilterCategory] = useState<string>("");
@@ -104,6 +114,10 @@ export default function CapsuleEditor({
           description,
           occasion,
           season,
+          dateNeeded: dateNeeded || null,
+          location: location.trim() || null,
+          targetCounts,
+          activityTargets,
           itemIds: [...selected],
         }),
       });
@@ -167,6 +181,42 @@ export default function CapsuleEditor({
           <label className="label">Description</label>
           <textarea className="input min-h-[60px]" value={description} onChange={(e) => setDescription(e.target.value)} />
         </div>
+      </div>
+
+      {/* Trip planning — optional, blank by default. Used by the AI
+          plan button on the detail page to factor in weather + outfit
+          targets when picking pieces. */}
+      <div className="card space-y-3 p-4">
+        <div>
+          <p className="font-display text-lg text-stone-800">Trip planning</p>
+          <p className="text-xs text-stone-500">
+            Optional — gives the AI plan button a date, location, and pack list to work from.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="label">Date needed</label>
+            <input
+              type="date"
+              className="input"
+              value={dateNeeded}
+              onChange={(e) => setDateNeeded(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label">Location</label>
+            <input
+              type="text"
+              className="input"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="e.g. Paris, France"
+            />
+          </div>
+        </div>
+
+        <TargetCountsEditor counts={targetCounts} onChange={setTargetCounts} />
+        <ActivityTargetsEditor targets={activityTargets} onChange={setActivityTargets} />
       </div>
 
       <section>
@@ -261,3 +311,173 @@ export default function CapsuleEditor({
 
 // Re-export type for callers that need to construct selectable items.
 export type { Category };
+
+// ── Target counts (pack list) ──────────────────────────────────
+//
+// "How many of each category should this capsule contain?" Used to
+// surface a fulfilled-vs-target progress on the detail page and to
+// hint the AI plan ("aim for 3 tops, 4 bottoms…").
+function TargetCountsEditor({
+  counts,
+  onChange,
+}: {
+  counts: TargetCounts;
+  onChange: (next: TargetCounts) => void;
+}) {
+  // Show the most common 6 categories upfront; everything else is a
+  // single "+ Add another category" row to keep the form short.
+  const PRIMARY: Category[] = ["Tops", "Bottoms", "Dresses", "Shoes", "Underwear", "Outerwear"];
+  const extras = Object.keys(counts).filter((c) => !PRIMARY.includes(c as Category));
+
+  function setCount(category: string, n: number) {
+    const next: TargetCounts = { ...counts };
+    if (!Number.isFinite(n) || n <= 0) delete next[category];
+    else next[category] = Math.floor(n);
+    onChange(next);
+  }
+
+  const remainingCategories = (CATEGORIES as readonly string[]).filter(
+    (c) => !PRIMARY.includes(c as Category) && !(c in counts),
+  );
+
+  return (
+    <div>
+      <p className="label mb-1">Pack list — pieces I want to bring</p>
+      <p className="mb-2 text-xs text-stone-500">
+        e.g. 3 tops, 4 bottoms, 6 underwear. Leave at 0 to skip a category.
+      </p>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {PRIMARY.map((c) => (
+          <label key={c} className="flex items-center gap-2 text-sm">
+            <span className="flex-1 truncate text-stone-700">{c}</span>
+            <input
+              type="number"
+              min={0}
+              max={50}
+              className="input w-16 text-center"
+              value={counts[c] ?? ""}
+              onChange={(e) => setCount(c, Number(e.target.value))}
+              placeholder="0"
+            />
+          </label>
+        ))}
+        {extras.map((c) => (
+          <label key={c} className="flex items-center gap-2 text-sm">
+            <span className="flex-1 truncate text-stone-700">{c}</span>
+            <input
+              type="number"
+              min={0}
+              max={50}
+              className="input w-16 text-center"
+              value={counts[c] ?? ""}
+              onChange={(e) => setCount(c, Number(e.target.value))}
+              placeholder="0"
+            />
+          </label>
+        ))}
+      </div>
+      {remainingCategories.length > 0 && (
+        <select
+          className="input mt-2 w-auto text-xs"
+          value=""
+          onChange={(e) => {
+            if (!e.target.value) return;
+            setCount(e.target.value, 1);
+          }}
+        >
+          <option value="">+ Add another category…</option>
+          {remainingCategories.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
+
+// ── Activity targets ───────────────────────────────────────────
+//
+// "How many outfits do I need for each activity?" Drives the AI
+// plan: it'll generate exactly that many distinct outfits per row,
+// each tagged with the matching activity so they show up in the
+// builder's activity filter.
+function ActivityTargetsEditor({
+  targets,
+  onChange,
+}: {
+  targets: ActivityTarget[];
+  onChange: (next: ActivityTarget[]) => void;
+}) {
+  function update(idx: number, patch: Partial<ActivityTarget>) {
+    const next = targets.map((t, i) => (i === idx ? { ...t, ...patch } : t));
+    onChange(next);
+  }
+  function remove(idx: number) {
+    onChange(targets.filter((_, i) => i !== idx));
+  }
+  function add() {
+    onChange([
+      ...targets,
+      { activity: "casual", label: "Daytime outfits", count: 2 },
+    ]);
+  }
+
+  return (
+    <div>
+      <p className="label mb-1">Outfit targets</p>
+      <p className="mb-2 text-xs text-stone-500">
+        e.g. 2 formal dinners, 3 business-casual lunches, 2 workouts. Each row
+        becomes that many AI-picked outfits attached to this collection.
+      </p>
+      <ul className="space-y-2">
+        {targets.map((t, i) => (
+          <li key={i} className="flex flex-wrap items-center gap-2">
+            <input
+              type="number"
+              min={1}
+              max={20}
+              className="input w-16 text-center"
+              value={t.count}
+              onChange={(e) => update(i, { count: Math.max(1, Number(e.target.value) || 1) })}
+              aria-label="Count"
+            />
+            <input
+              type="text"
+              className="input flex-1 min-w-[8rem]"
+              value={t.label}
+              onChange={(e) => update(i, { label: e.target.value })}
+              placeholder="Label (e.g. Formal dinners)"
+              maxLength={80}
+              aria-label="Label"
+            />
+            <select
+              className="input w-auto"
+              value={t.activity}
+              onChange={(e) => update(i, { activity: e.target.value })}
+              aria-label="Activity"
+            >
+              {ACTIVITIES.map((a) => (
+                <option key={a} value={a}>
+                  {a[0].toUpperCase() + a.slice(1)}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => remove(i)}
+              className="btn-ghost text-xs text-stone-400 hover:text-blush-600"
+              aria-label="Remove row"
+            >
+              Remove
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button type="button" onClick={add} className="btn-secondary mt-2 text-xs">
+        + Add an outfit target
+      </button>
+    </div>
+  );
+}
