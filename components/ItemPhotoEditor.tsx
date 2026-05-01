@@ -24,10 +24,11 @@ export default function ItemPhotoEditor({
 }) {
   const router = useRouter();
 
+  // One <input> per slot; `accept="image/*"` lets the OS prompt show
+  // both "Take Photo" and "Photo Library" on mobile, so a separate
+  // camera button isn't needed.
   const mainFileRef = useRef<HTMLInputElement>(null);
-  const mainCameraRef = useRef<HTMLInputElement>(null);
   const labelFileRef = useRef<HTMLInputElement>(null);
-  const labelCameraRef = useRef<HTMLInputElement>(null);
 
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<string | null>(null);
@@ -181,19 +182,12 @@ export default function ItemPhotoEditor({
     <div className="space-y-3">
       <input ref={mainFileRef} type="file" accept="image/*,.heic,.heif" className="hidden"
              onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) replaceMain(f); }} />
-      <input ref={mainCameraRef} type="file" accept="image/*" capture="environment" className="hidden"
-             onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) replaceMain(f); }} />
       <input ref={labelFileRef} type="file" accept="image/*,.heic,.heif" className="hidden"
-             onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) replaceLabel(f); }} />
-      <input ref={labelCameraRef} type="file" accept="image/*" capture="environment" className="hidden"
              onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) replaceLabel(f); }} />
 
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" disabled={busy} onClick={() => mainCameraRef.current?.click()} className="btn-secondary text-xs">
+        <button type="button" disabled={busy} onClick={() => mainFileRef.current?.click()} className="btn-secondary text-xs">
           📸 Replace photo
-        </button>
-        <button type="button" disabled={busy} onClick={() => mainFileRef.current?.click()} className="btn-ghost text-xs">
-          From library
         </button>
         <button type="button" disabled={busy} onClick={rerunBgRemoval} className="btn-ghost text-xs text-blush-600">
           ✂️ {hasBgRemoved ? "Re-run bg removal" : "Remove background"}
@@ -207,9 +201,6 @@ export default function ItemPhotoEditor({
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" disabled={busy} onClick={() => labelFileRef.current?.click()} className="btn-secondary text-xs">
           🏷️ {hasLabelPhoto ? "Replace label" : "Add label / tag"}
-        </button>
-        <button type="button" disabled={busy} onClick={() => labelCameraRef.current?.click()} className="btn-ghost text-xs">
-          📷 Take photo
         </button>
         {hasLabelPhoto && (
           <button type="button" disabled={busy} onClick={clearLabel} className="btn-ghost text-xs text-stone-400">

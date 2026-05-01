@@ -12,7 +12,10 @@ import { haptic } from "@/lib/haptics";
 //   - Swipe LEFT (drag content right-to-left)  → next item
 //   - Swipe RIGHT (drag content left-to-right) → previous item
 // The threshold (60px horizontal AND clearly horizontal vs. vertical)
-// keeps page scrolling and pull-to-refresh untouched.
+// keeps page scrolling and pull-to-refresh untouched. Touches that
+// originate inside an element marked `data-no-item-swipe` (e.g. the
+// photo carousel) are ignored so internal horizontal scrolling
+// doesn't double as a page navigation.
 export default function ItemNav({
   prevId,
   nextId,
@@ -31,6 +34,11 @@ export default function ItemNav({
 
     function onStart(e: TouchEvent) {
       if (e.touches.length !== 1) return;
+      const target = e.target;
+      if (target instanceof Element && target.closest("[data-no-item-swipe]")) {
+        started = false;
+        return;
+      }
       const t = e.touches[0];
       startX = t.clientX;
       startY = t.clientY;
