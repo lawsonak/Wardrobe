@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { cn } from "@/lib/cn";
 import { haptic } from "@/lib/haptics";
+import { toast } from "@/lib/toast";
 
 export type ItemCardItem = {
   id: string;
@@ -53,14 +54,19 @@ export default function ItemCard({
     setFav(next);
     haptic("tap");
     try {
-      await fetch(`/api/items/${item.id}`, {
+      const res = await fetch(`/api/items/${item.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isFavorite: next }),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       onToggleFavorite?.(next);
     } catch {
+      // Revert the optimistic flip and surface the failure — silent
+      // revert is confusing because the heart "uncommits" with no hint
+      // why.
       setFav(!next);
+      toast("Couldn't save favorite. Try again.", "error");
     } finally {
       setBusy(false);
     }

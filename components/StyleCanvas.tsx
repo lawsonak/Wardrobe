@@ -100,13 +100,21 @@ export default function StyleCanvas({
 
   // Debounced autosave to /api/outfits/[id]. Skips the very first run so we
   // don't immediately re-write defaults on a fresh outfit.
+  //
+  // We also keep a ref to the latest layers so we can flush synchronously
+  // on unmount or tab close. Without that, a user dragging then quickly
+  // navigating away (or closing the tab) loses up to 600ms of edits.
   const skipNextSave = useRef(true);
+  const layersRef = useRef(layers);
+  const dirtyRef = useRef(false);
+  layersRef.current = layers;
   useEffect(() => {
     if (!outfitId) return;
     if (skipNextSave.current) {
       skipNextSave.current = false;
       return;
     }
+    dirtyRef.current = true;
     setSaveState("saving");
     const timer = setTimeout(async () => {
       try {
@@ -116,6 +124,7 @@ export default function StyleCanvas({
           body: JSON.stringify({ layoutJson: JSON.stringify({ layers }) }),
         });
         if (!res.ok) throw new Error(await res.text());
+        dirtyRef.current = false;
         setSaveState("saved");
         setTimeout(() => setSaveState((s) => (s === "saved" ? "idle" : s)), 1500);
       } catch (err) {
@@ -125,6 +134,32 @@ export default function StyleCanvas({
     }, 600);
     return () => clearTimeout(timer);
   }, [layers, outfitId]);
+
+  // Flush pending edits when the user closes the tab or navigates away.
+  // `keepalive: true` lets the PATCH survive unload (sendBeacon would be
+  // simpler but it's POST-only, and our route is PATCH).
+  useEffect(() => {
+    if (!outfitId) return;
+    function flush() {
+      if (!dirtyRef.current) return;
+      try {
+        fetch(`/api/outfits/${outfitId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ layoutJson: JSON.stringify({ layers: layersRef.current }) }),
+          keepalive: true,
+        });
+        dirtyRef.current = false;
+      } catch {
+        /* best effort — don't block unload either way */
+      }
+    }
+    window.addEventListener("beforeunload", flush);
+    return () => {
+      window.removeEventListener("beforeunload", flush);
+      flush();
+    };
+  }, [outfitId]);
 
   const sorted = useMemo(() => [...layers].sort((a, b) => a.z - b.z), [layers]);
 
