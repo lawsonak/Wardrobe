@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
+import ZoomableImage from "@/components/ZoomableImage";
 
 export type CarouselPhoto = {
   id: string;
@@ -59,8 +60,7 @@ export default function ItemPhotoCarousel({
     const only = photos[0];
     return (
       <div className="tile-bg flex aspect-square w-full items-center justify-center overflow-hidden rounded-2xl p-6">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
+        <ZoomableImage
           src={only.src}
           alt={only.label ?? alt}
           className="h-full w-full object-contain"
@@ -83,8 +83,7 @@ export default function ItemPhotoCarousel({
             key={p.id}
             className="tile-bg flex aspect-square w-full shrink-0 snap-center items-center justify-center p-6"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <ZoomableImage
               src={p.src}
               alt={p.label ?? alt}
               className="h-full w-full object-contain"
