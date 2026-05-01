@@ -151,11 +151,11 @@ const HEAD_PROMPT = [
   "Image 2: a stylized fashion-illustration mannequin (matte beige fabric, soft brushwork, no facial features, plain background).",
   "Redraw JUST the head of the person in image 1 in the same illustration style as image 2. Match the brushwork, color palette, soft shading, and overall aesthetic of the mannequin — painterly fashion illustration, not photoreal.",
   "Capture recognizable features (hair color and rough style, jawline shape, skin tone if natural for the style) but stylized.",
-  "Output:",
-  "- Head only. Crop just below the chin. No shoulders, no body, no neck below the jaw.",
-  "- Transparent background — true alpha around the head silhouette.",
-  "- Square framing; the head should fill most of the canvas with a small margin of breathing room.",
-  "- Single PNG with alpha. Do not output text.",
+  "Output requirements (CRITICAL):",
+  "- Head ONLY, cropped just below the chin. No shoulders, no body, no neck below the jaw.",
+  "- Background MUST be a single solid pure-white (#ffffff) — every pixel outside the head silhouette must be exactly white so it can be keyed out cleanly. Do NOT use off-white, cream, beige, gradient, or shadow on the background. Pure white only.",
+  "- Square framing. The head fills most of the canvas with a small margin.",
+  "- Single PNG. Do not output text.",
 ].join(" ");
 
 export async function generateStylizedHead(input: {

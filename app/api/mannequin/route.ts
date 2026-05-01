@@ -14,6 +14,7 @@ import {
   generateMannequinFromPhoto,
   generateStylizedHead,
 } from "@/lib/ai/mannequin";
+import { whiteToTransparent } from "@/lib/imageBg";
 import { prisma } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -52,7 +53,13 @@ async function tryGenerateHead(args: {
       mannequinMime: args.mannequinMime,
     });
     if (head.ok) {
-      await saveStylizedHead(args.userId, head.pngBuffer);
+      // Gemini's "transparent PNG" is unreliable — frequently returns
+      // a solid-white background. Chroma-key any white pixels to
+      // alpha=0 before saving so the overlay sits cleanly on the
+      // try-on without a visible white square. No-op when the model
+      // does honor the alpha channel request.
+      const cleaned = whiteToTransparent(head.pngBuffer);
+      await saveStylizedHead(args.userId, cleaned);
     } else {
       console.warn("stylized head generation failed:", head.error);
     }
