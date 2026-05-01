@@ -552,7 +552,7 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
                 onClick={generatePackingList}
                 disabled={generating}
               >
-                {generating ? "Curating…" : generated ? "🔄 Regenerate" : "✨ Generate packing list"}
+                {generating ? "Curating…" : generated ? "✨ Regenerate" : "✨ Generate packing list"}
               </button>
             </div>
 
