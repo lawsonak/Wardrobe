@@ -36,12 +36,13 @@ function passthrough(input: File | Blob, name: string | undefined): File {
   });
 }
 
-async function bitmapToJpegFile(
+async function bitmapToFile(
   bitmap: ImageBitmap,
   width: number,
   height: number,
   draw: (ctx: CanvasRenderingContext2D, b: ImageBitmap) => void,
   name: string,
+  mimeType: "image/jpeg" | "image/png" = "image/jpeg",
 ): Promise<File | null> {
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -50,10 +51,10 @@ async function bitmapToJpegFile(
   if (!ctx) return null;
   draw(ctx, bitmap);
   const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob((b) => resolve(b), "image/jpeg", JPEG_QUALITY),
+    canvas.toBlob((b) => resolve(b), mimeType, mimeType === "image/jpeg" ? JPEG_QUALITY : undefined),
   );
   if (!blob) return null;
-  return new File([blob], name, { type: "image/jpeg" });
+  return new File([blob], name, { type: mimeType });
 }
 
 // Apply EXIF orientation (if any) and return a new JPEG with the
@@ -77,7 +78,7 @@ export async function normalizeOrientation(
   }
 
   try {
-    const out = await bitmapToJpegFile(
+    const out = await bitmapToFile(
       bitmap,
       bitmap.width,
       bitmap.height,
@@ -91,12 +92,16 @@ export async function normalizeOrientation(
 }
 
 // Physically rotate an image by 0/90/180/270 degrees CLOCKWISE.
-// Used to apply the AI's right-side-up suggestion to label photos.
+// Used to apply the AI's right-side-up suggestion to label photos AND
+// for the manual rotate buttons on item detail. Pass
+// `mimeType: "image/png"` to preserve transparency on bg-removed cutouts.
 export async function rotateImage(
   input: File | Blob,
   degrees: 0 | 90 | 180 | 270,
-  name?: string,
+  options?: { name?: string; mimeType?: "image/jpeg" | "image/png" },
 ): Promise<File> {
+  const name = options?.name;
+  const mimeType = options?.mimeType ?? "image/jpeg";
   if (degrees === 0) return passthrough(input, name);
   if (typeof window === "undefined") return passthrough(input, name);
 
@@ -112,7 +117,8 @@ export async function rotateImage(
     const w = swap ? bitmap.height : bitmap.width;
     const h = swap ? bitmap.width : bitmap.height;
     const radians = (degrees * Math.PI) / 180;
-    const out = await bitmapToJpegFile(
+    const ext = mimeType === "image/png" ? "png" : "jpg";
+    const out = await bitmapToFile(
       bitmap,
       w,
       h,
@@ -121,7 +127,8 @@ export async function rotateImage(
         ctx.rotate(radians);
         ctx.drawImage(b, -b.width / 2, -b.height / 2);
       },
-      fileNameFor(input, name),
+      fileNameFor(input, name, ext),
+      mimeType,
     );
     return out ?? passthrough(input, name);
   } finally {

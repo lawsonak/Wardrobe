@@ -202,6 +202,7 @@ export default async function ItemDetail({
           <ItemPhotoEditor
             itemId={item.id}
             imagePath={item.imagePath}
+            imageBgRemovedPath={item.imageBgRemovedPath}
             hasBgRemoved={!!item.imageBgRemovedPath}
             hasLabelPhoto={!!labelSrc}
           />
