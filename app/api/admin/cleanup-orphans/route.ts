@@ -56,9 +56,19 @@ export async function POST() {
   }
   for (const o of outfits) if (o.tryOnImagePath) referenced.add(o.tryOnImagePath);
 
+  // The personal-mannequin files live by fixed name (mannequin.png,
+  // mannequin.json, mannequin-source.<ext>) — there's no DB row to
+  // join against, so whitelist the prefix instead of marking each one.
+  const mannequinFile = (name: string) =>
+    name === "mannequin.png" ||
+    name === "mannequin.json" ||
+    name === "todays-outfit.json" ||
+    name.startsWith("mannequin-source.");
+
   let deleted = 0;
   let bytes = 0;
   for (const e of entries) {
+    if (mannequinFile(e)) continue;
     const rel = path.posix.join(userId, e);
     if (referenced.has(rel)) continue;
     const full = path.join(userDir, e);
