@@ -74,6 +74,7 @@ export default async function OutfitsPage({
                 activity: o.activity,
                 season: o.season,
                 isFavorite: o.isFavorite,
+                tryOnImagePath: o.tryOnImagePath,
                 items: o.items.map((oi) => ({
                   slot: oi.slot,
                   item: {

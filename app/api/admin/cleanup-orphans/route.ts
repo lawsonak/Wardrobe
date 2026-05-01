@@ -25,7 +25,7 @@ export async function POST() {
     return NextResponse.json({ deleted: 0 });
   }
 
-  const [items, wishlist] = await Promise.all([
+  const [items, wishlist, outfits] = await Promise.all([
     prisma.item.findMany({
       where: { ownerId: userId },
       select: { imagePath: true, imageBgRemovedPath: true, labelImagePath: true },
@@ -33,6 +33,10 @@ export async function POST() {
     prisma.wishlistItem.findMany({
       where: { ownerId: userId },
       select: { imagePath: true },
+    }),
+    prisma.outfit.findMany({
+      where: { ownerId: userId },
+      select: { tryOnImagePath: true },
     }),
   ]);
   const referenced = new Set<string>();
@@ -42,6 +46,7 @@ export async function POST() {
     if (it.labelImagePath) referenced.add(it.labelImagePath);
   }
   for (const w of wishlist) if (w.imagePath) referenced.add(w.imagePath);
+  for (const o of outfits) if (o.tryOnImagePath) referenced.add(o.tryOnImagePath);
 
   let deleted = 0;
   let bytes = 0;

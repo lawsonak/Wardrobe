@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
-import StyleCanvas, { type CanvasItem } from "@/components/StyleCanvas";
+import { type CanvasItem } from "@/components/StyleCanvas";
+import TryOnView from "@/components/TryOnView";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +40,7 @@ export default async function StyleCanvasPage({
         <Link href="/outfits" className="text-sm text-blush-600 hover:underline">← Back to outfits</Link>
         <h1 className="mt-1 font-display text-3xl text-blush-700">{outfit.name}</h1>
         <p className="text-sm text-stone-500">
-          Drag to move, pinch the bottom-right to resize, twist the top-left to rotate. Saves automatically.
+          Generate an AI try-on, or switch to manual layout to drag pieces yourself.
         </p>
       </div>
 
@@ -48,7 +49,13 @@ export default async function StyleCanvasPage({
           This outfit has no pieces to layout.
         </div>
       ) : (
-        <StyleCanvas outfitId={outfit.id} items={items} initialLayoutJson={outfit.layoutJson} />
+        <TryOnView
+          outfitId={outfit.id}
+          items={items}
+          initialLayoutJson={outfit.layoutJson}
+          initialTryOnImagePath={outfit.tryOnImagePath}
+          initialTryOnGeneratedAt={outfit.tryOnGeneratedAt ? outfit.tryOnGeneratedAt.toISOString() : null}
+        />
       )}
     </div>
   );

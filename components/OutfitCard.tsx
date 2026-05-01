@@ -11,6 +11,7 @@ type Outfit = {
   activity: string | null;
   season: string | null;
   isFavorite: boolean;
+  tryOnImagePath?: string | null;
   items: Array<{
     slot: string;
     item: {
@@ -60,19 +61,30 @@ export default function OutfitCard({
 
   return (
     <div className="card overflow-hidden">
-      <div className="tile-bg grid grid-cols-3 gap-2 p-3">
-        {sorted.slice(0, 6).map(({ item }) => {
-          const src = item.imageBgRemovedPath
-            ? `/api/uploads/${item.imageBgRemovedPath}`
-            : `/api/uploads/${item.imagePath}`;
-          return (
-            <div key={item.id} className="flex aspect-square items-center justify-center rounded-xl bg-white/60 p-1">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={src} alt={item.subType ?? item.category} className="h-full w-full object-contain" />
-            </div>
-          );
-        })}
-      </div>
+      {outfit.tryOnImagePath ? (
+        <div className="tile-bg flex justify-center p-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`/api/uploads/${outfit.tryOnImagePath}`}
+            alt={outfit.name}
+            className="aspect-[1/2] max-h-80 w-auto rounded-xl object-contain"
+          />
+        </div>
+      ) : (
+        <div className="tile-bg grid grid-cols-3 gap-2 p-3">
+          {sorted.slice(0, 6).map(({ item }) => {
+            const src = item.imageBgRemovedPath
+              ? `/api/uploads/${item.imageBgRemovedPath}`
+              : `/api/uploads/${item.imagePath}`;
+            return (
+              <div key={item.id} className="flex aspect-square items-center justify-center rounded-xl bg-white/60 p-1">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={src} alt={item.subType ?? item.category} className="h-full w-full object-contain" />
+              </div>
+            );
+          })}
+        </div>
+      )}
       <div className="flex items-center justify-between gap-2 px-4 py-3">
         <div className="min-w-0">
           <p className="truncate font-display text-lg text-stone-800">{outfit.name}</p>

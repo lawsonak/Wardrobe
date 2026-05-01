@@ -63,6 +63,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       await tx.outfitItem.createMany({
         data: pendingItems.map((p) => ({ outfitId: id, slot: p.slot, itemId: p.itemId })),
       });
+      // Replacing the item set invalidates any cached try-on image. The
+      // file stays on disk until the next regeneration or orphan sweep —
+      // serving a stale-but-related image is better than a broken card.
+      data.tryOnHash = null;
     }
     return tx.outfit.update({
       where: { id },
