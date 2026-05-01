@@ -164,3 +164,63 @@ export function whiteToTransparent(input: Buffer): Buffer {
   rgba.copy(out.data);
   return PNG.sync.write(out);
 }
+
+// Tighten a transparent-bordered PNG to its visible silhouette. Gemini
+// often draws the head smaller than its canvas with empty margins, which
+// then makes the absolute-positioned `<img>` overlay look offset (the
+// face sits low or off-center inside its bbox). Cropping to the actual
+// silhouette means the bbox fed to CSS positions the head, not the head
+// PNG's incidental whitespace.
+//
+// Adds a small padding ring so the soft-edge feather isn't chopped.
+const CROP_ALPHA_THRESHOLD = 8;  // ignore noise from feather underflow
+const CROP_PADDING = 4;          // px of breathing room around the crop
+
+export function cropToSilhouette(input: Buffer): Buffer {
+  let png: PNG;
+  try {
+    png = PNG.sync.read(input);
+  } catch {
+    return input;
+  }
+
+  const { width, height, data } = png;
+  const channels = data.length / (width * height);
+  // Crop is alpha-driven; if there's no alpha channel there's nothing
+  // to tighten against.
+  if (channels !== 4) return input;
+
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const a = data[(y * width + x) * 4 + 3];
+      if (a > CROP_ALPHA_THRESHOLD) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) return input; // fully transparent — nothing to crop to
+
+  minX = Math.max(0, minX - CROP_PADDING);
+  minY = Math.max(0, minY - CROP_PADDING);
+  maxX = Math.min(width - 1, maxX + CROP_PADDING);
+  maxY = Math.min(height - 1, maxY + CROP_PADDING);
+
+  const cw = maxX - minX + 1;
+  const ch = maxY - minY + 1;
+  if (cw === width && ch === height) return input;
+
+  const out = new PNG({ width: cw, height: ch, colorType: 6, inputColorType: 6 });
+  for (let y = 0; y < ch; y++) {
+    const srcRow = (minY + y) * width + minX;
+    const dstRow = y * cw;
+    data.copy(out.data, dstRow * 4, srcRow * 4, (srcRow + cw) * 4);
+  }
+  return PNG.sync.write(out);
+}
