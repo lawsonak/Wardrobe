@@ -7,10 +7,12 @@ import { getPrefs } from "@/lib/userPrefs";
 import { describeForOutfit, getForecast } from "@/lib/weather";
 import { readSavedPick, writeSavedPick } from "@/lib/todayOutfit";
 import { todayISO } from "@/lib/dates";
+import { saveBuffer, unlinkUpload } from "@/lib/uploads";
+import { composeOutfitForItems, type ComposeItem } from "@/lib/ai/composeTryOn";
 
 export const runtime = "nodejs";
-// Pure text outfit pick — fast call, but allow headroom for slow models.
-export const maxDuration = 60;
+// Pick is fast; the try-on compose adds 5-15s. 90 buys headroom.
+export const maxDuration = 90;
 
 type EnrichedItem = {
   id: string;
@@ -18,6 +20,7 @@ type EnrichedItem = {
   imageBgRemovedPath: string | null;
   category: string;
   subType: string | null;
+  color: string | null;
 };
 
 async function rehydrate(userId: string, itemIds: string[]): Promise<EnrichedItem[]> {
@@ -26,12 +29,50 @@ async function rehydrate(userId: string, itemIds: string[]): Promise<EnrichedIte
     where: { ownerId: userId, id: { in: itemIds } },
     select: {
       id: true, imagePath: true, imageBgRemovedPath: true,
-      category: true, subType: true,
+      category: true, subType: true, color: true,
     },
   });
   // Preserve the order from itemIds (the AI's chosen sequence).
   const byId = new Map(items.map((i) => [i.id, i]));
   return itemIds.map((id) => byId.get(id)).filter((x): x is EnrichedItem => !!x);
+}
+
+// Try the AI try-on compose for the picked items; on success, write
+// the PNG to the user's upload dir and return the relative path. On
+// failure (no mannequin, Gemini error, no garments loaded), return
+// null and a hint — the dashboard falls back to the tile grid.
+async function composeAndPersist(
+  userId: string,
+  pickedItems: EnrichedItem[],
+  previousPath: string | null,
+): Promise<{ tryOnImagePath: string | null; tryOnError?: string }> {
+  if (pickedItems.length === 0) return { tryOnImagePath: null };
+  const composeItems: ComposeItem[] = pickedItems.map((it) => ({
+    id: it.id,
+    imagePath: it.imagePath,
+    imageBgRemovedPath: it.imageBgRemovedPath,
+    category: it.category,
+    subType: it.subType,
+    color: it.color,
+  }));
+  const result = await composeOutfitForItems({ userId, items: composeItems });
+  if (!result.ok) {
+    return { tryOnImagePath: null, tryOnError: result.error };
+  }
+  const ext = result.mimeType === "image/jpeg" ? "jpg" : "png";
+  // Date-stamped filename so two days in a row don't fight over the
+  // same path; old day rolls off via cleanup-orphans + the date check.
+  const newPath = await saveBuffer(
+    userId,
+    "todays-outfit",
+    result.pngBuffer,
+    `tryon-${todayISO()}`,
+    ext,
+  );
+  if (previousPath && previousPath !== newPath) {
+    await unlinkUpload(previousPath);
+  }
+  return { tryOnImagePath: newPath };
 }
 
 // GET /api/ai/outfit/today
@@ -53,15 +94,16 @@ export async function GET() {
       name: saved.name,
       reasoning: saved.reasoning,
       weather: saved.weather,
+      tryOnImagePath: saved.tryOnImagePath ?? null,
     },
   });
 }
 
 // POST /api/ai/outfit/today
-// Picks a fresh outfit for today, persists it for the rest of the day,
-// returns enriched items. The dashboard renders the items as a tile grid;
-// to see them composited on a mannequin, the user saves the outfit and
-// hits "Generate AI try-on" in the style canvas.
+// Picks a fresh outfit for today, asks Gemini to composite the
+// dressed-mannequin try-on for it, persists both for the rest of the
+// day, returns enriched items + tryOnImagePath. The dashboard auto-
+// fires this once per morning.
 export async function POST(req: NextRequest) {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id;
@@ -120,6 +162,18 @@ export async function POST(req: NextRequest) {
 
   const pickedItems = await rehydrate(userId, result.itemIds);
 
+  // Read the previous saved pick (if any) so we can replace the old
+  // tryon PNG on disk in lockstep with the new one.
+  const previous = await readSavedPick(userId);
+  const previousTryOn = previous?.tryOnImagePath ?? null;
+
+  // Try-on compose. Failure is non-fatal — the dashboard falls back
+  // to the item tile grid.
+  const compose =
+    pickedItems.length > 0
+      ? await composeAndPersist(userId, pickedItems, previousTryOn)
+      : { tryOnImagePath: null as string | null };
+
   if (result.itemIds.length > 0) {
     await writeSavedPick(userId, {
       date: todayISO(),
@@ -127,6 +181,7 @@ export async function POST(req: NextRequest) {
       name: result.name ?? null,
       reasoning: result.reasoning ?? null,
       weather: weatherLine || null,
+      tryOnImagePath: compose.tryOnImagePath,
     });
   }
 
@@ -138,6 +193,8 @@ export async function POST(req: NextRequest) {
     name: result.name,
     reasoning: result.reasoning,
     weather: weatherLine || null,
+    tryOnImagePath: compose.tryOnImagePath,
+    tryOnError: "tryOnError" in compose ? compose.tryOnError : undefined,
     debug: result.debug,
   });
 }

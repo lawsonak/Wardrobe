@@ -59,11 +59,14 @@ export async function POST() {
   // The personal-mannequin files live by fixed name (mannequin.png,
   // mannequin.json, mannequin-source.<ext>) — there's no DB row to
   // join against, so whitelist the prefix instead of marking each one.
+  // Today's-outfit files follow the same pattern: a JSON pick + a
+  // dated tryon PNG that's overwritten when the user re-picks.
   const mannequinFile = (name: string) =>
     name === "mannequin.png" ||
     name === "mannequin.json" ||
     name === "todays-outfit.json" ||
-    name.startsWith("mannequin-source.");
+    name.startsWith("mannequin-source.") ||
+    name.startsWith("todays-outfit-tryon-");
 
   let deleted = 0;
   let bytes = 0;

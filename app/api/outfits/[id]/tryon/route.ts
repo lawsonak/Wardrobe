@@ -6,55 +6,21 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { slotForItem } from "@/lib/constants";
 import { saveBuffer, unlinkUpload, UPLOAD_ROOT } from "@/lib/uploads";
+import { generateTryOn, TRY_ON_PROMPT_VERSION } from "@/lib/ai/tryon";
 import {
-  generateTryOn,
-  TRY_ON_PROMPT_VERSION,
-  type TryOnGarment,
-  type TryOnPiece,
-} from "@/lib/ai/tryon";
-import { readUserMannequinPng } from "@/lib/mannequin";
+  groupAndLoadGarments,
+  loadMannequinFor,
+  photoPathFor,
+  type ComposeItem,
+} from "@/lib/ai/composeTryOn";
 
 export const runtime = "nodejs";
 // Image generation can take 5-15s; 60s gives margin without dragging on.
 export const maxDuration = 60;
 
-const GLOBAL_MANNEQUIN_PNG = path.join(process.cwd(), "public", "mannequin", "base.png");
-const GLOBAL_MANNEQUIN_META = path.join(process.cwd(), "public", "mannequin", "base.json");
-
 // Single-process lock so two parallel calls for the same outfit don't both
 // burn a Gemini call. Sufficient for a single-server personal app.
 const inflight = new Set<string>();
-
-type ItemRow = {
-  id: string;
-  imagePath: string;
-  imageBgRemovedPath: string | null;
-  category: string;
-  subType: string | null;
-  color: string | null;
-};
-
-// Prefer the user's personal mannequin (uploaded photo → AI-stylized
-// illustration); fall back to the canonical one in public/mannequin.
-// The mannequin's `id` is included in the cache hash so swapping
-// between personal / global naturally invalidates cached try-ons.
-async function readMannequin(userId: string): Promise<{ buf: Buffer; id: string } | null> {
-  const personal = await readUserMannequinPng(userId);
-  if (personal) return personal;
-  try {
-    const buf = await fs.readFile(GLOBAL_MANNEQUIN_PNG);
-    let mqId = "mq-v1";
-    try {
-      const meta = JSON.parse(await fs.readFile(GLOBAL_MANNEQUIN_META, "utf8")) as { id?: string };
-      if (typeof meta.id === "string" && meta.id.trim()) mqId = meta.id;
-    } catch {
-      /* meta file is optional */
-    }
-    return { buf, id: mqId };
-  } catch {
-    return null;
-  }
-}
 
 async function statMtime(relPath: string): Promise<number | null> {
   try {
@@ -65,13 +31,9 @@ async function statMtime(relPath: string): Promise<number | null> {
   }
 }
 
-function photoPathFor(it: ItemRow): string {
-  return it.imageBgRemovedPath ?? it.imagePath;
-}
-
 async function buildHash(args: {
   mannequinId: string;
-  items: ItemRow[];
+  items: ComposeItem[];
 }): Promise<string> {
   const sorted = [...args.items].sort((a, b) => a.id.localeCompare(b.id));
   const itemKeys = await Promise.all(
@@ -94,59 +56,6 @@ async function buildHash(args: {
   return crypto.createHash("sha256").update(payload).digest("hex").slice(0, 16);
 }
 
-// Group items by their source photo so a single image showing multiple
-// pieces (e.g., earrings + shoes laid out together, or a swimsuit
-// top+bottom photographed as a set) is sent to Gemini once with all the
-// pieces enumerated — instead of duplicating the image per piece, which
-// confuses the model.
-async function loadGarments(items: ItemRow[]): Promise<TryOnGarment[]> {
-  const groups = new Map<
-    string,
-    { firstItem: ItemRow; pieces: TryOnPiece[] }
-  >();
-  for (const it of items) {
-    const key = photoPathFor(it);
-    const piece: TryOnPiece = {
-      id: it.id,
-      slot: slotForItem(it.category, it.subType),
-      category: it.category,
-      subType: it.subType,
-      color: it.color,
-    };
-    const existing = groups.get(key);
-    if (existing) {
-      existing.pieces.push(piece);
-    } else {
-      groups.set(key, { firstItem: it, pieces: [piece] });
-    }
-  }
-
-  const garments: TryOnGarment[] = [];
-  for (const [relPath, group] of groups) {
-    try {
-      const buf = await fs.readFile(path.join(UPLOAD_ROOT, relPath));
-      const ext = path.extname(relPath).toLowerCase();
-      const mime =
-        ext === ".png"
-          ? "image/png"
-          : ext === ".jpg" || ext === ".jpeg"
-            ? "image/jpeg"
-            : ext === ".webp"
-              ? "image/webp"
-              : "image/png";
-      garments.push({
-        imageBuf: buf,
-        imageMime: mime,
-        hasBackground: !group.firstItem.imageBgRemovedPath,
-        pieces: group.pieces,
-      });
-    } catch {
-      /* skip garments we can't load */
-    }
-  }
-  return garments;
-}
-
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id;
@@ -162,7 +71,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Add at least one piece before generating a try-on." }, { status: 400 });
   }
 
-  const mannequin = await readMannequin(userId);
+  const mannequin = await loadMannequinFor(userId);
   if (!mannequin) {
     return NextResponse.json(
       {
@@ -173,7 +82,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     );
   }
 
-  const items: ItemRow[] = outfit.items.map((oi) => ({
+  const items: ComposeItem[] = outfit.items.map((oi) => ({
     id: oi.item.id,
     imagePath: oi.item.imagePath,
     imageBgRemovedPath: oi.item.imageBgRemovedPath,
@@ -199,7 +108,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   inflight.add(id);
 
   try {
-    const garments = await loadGarments(items);
+    const garments = await groupAndLoadGarments(items);
     if (garments.length === 0) {
       return NextResponse.json({ error: "Couldn't load any garment images from disk." }, { status: 500 });
     }
@@ -264,8 +173,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   });
   if (!outfit) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const mannequin = await readMannequin(userId);
-  const items: ItemRow[] = outfit.items.map((oi) => ({
+  const mannequin = await loadMannequinFor(userId);
+  const items: ComposeItem[] = outfit.items.map((oi) => ({
     id: oi.item.id,
     imagePath: oi.item.imagePath,
     imageBgRemovedPath: oi.item.imageBgRemovedPath,
