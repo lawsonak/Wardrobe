@@ -18,22 +18,21 @@ type Info = {
 // Settings panel for the per-user "personal mannequin".
 //
 // Lifecycle:
-//   1. Upload → POST multipart → server saves the source photo and runs
-//      the three-step Gemini pipeline (body → cartoon head → compose).
-//      The composed mannequin replaces the global default for try-ons.
-//   2. "Regenerate" → POST { mode: "regenerate" } → re-run the full
-//      pipeline on the saved source (results vary).
+//   1. Upload → POST multipart → server saves the source photo and
+//      asks Gemini for a stylized illustration. The illustration is
+//      saved as the user's canonical mannequin and used by the AI
+//      try-on instead of the global default.
+//   2. "Regenerate" → POST { mode: "regenerate" } → re-run on the saved
+//      source (the model is non-deterministic; results vary).
 //   3. "Reset" → DELETE → wipes the source + illustration. The user
-//      goes back to the global default mannequin.
+//      goes back to the global default mannequin for try-ons.
 export default function MannequinUpload({ initial }: { initial: Info }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [info, setInfo] = useState<Info>(initial);
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<"idle" | "preparing" | "generating">("idle");
-  // Three sequential Gemini calls now (body, head, compose). 30s is a
-  // realistic median; tail can hit 60s.
-  const generationProgress = useTimedProgress(phase === "generating", 30);
+  const generationProgress = useTimedProgress(phase === "generating", 12);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -179,14 +178,14 @@ export default function MannequinUpload({ initial }: { initial: Info }) {
           ) : (
             <p>
               Upload a clear, well-lit, full-body photo of yourself. We&apos;ll send it to Gemini and
-              turn it into a fashion-illustration mannequin matching your body type, with a friendly
-              cartoon portrait of you composed onto it.
+              turn it into a neutral fashion-illustration mannequin matching your body type. The
+              illustration becomes your personal try-on figure.
             </p>
           )}
           <p className="text-xs text-stone-500">
-            Privacy: the photo is sent to Google&apos;s Gemini API to generate the body, the cartoon
-            head, and the composite. Files are stored on your server. Reset any time to delete
-            everything.
+            Privacy: the photo is sent to Google&apos;s Gemini API to generate the illustration.
+            Files are stored on your server. The mannequin is generated without facial features.
+            Reset any time to delete everything.
           </p>
         </div>
       </div>
@@ -233,7 +232,7 @@ export default function MannequinUpload({ initial }: { initial: Info }) {
       </div>
 
       {phase === "generating" && (
-        <ProgressBar value={generationProgress} label="Drawing your mannequin…" hint="usually 30–60s" />
+        <ProgressBar value={generationProgress} label="Drawing your mannequin…" hint="usually 5–15s" />
       )}
       {phase === "preparing" && (
         <p className="text-xs text-stone-500">Preparing photo…</p>
