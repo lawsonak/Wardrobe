@@ -4,7 +4,6 @@ import { prisma } from "@/lib/db";
 import ItemCard from "@/components/ItemCard";
 import GiftBanner from "@/components/GiftBanner";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
-import AiOutfitPicker from "@/components/AiOutfitPicker";
 import TodaysOutfitCard from "@/components/TodaysOutfitCard";
 import { firstNameFromUser } from "@/lib/userName";
 import { getPrefs } from "@/lib/userPrefs";
@@ -142,28 +141,17 @@ export default async function Dashboard() {
 
       <section>
         <h1 className="font-display text-2xl text-stone-800">{greet(now, firstName)}</h1>
-        <p className="mt-1 text-sm text-stone-600">
-          {needsReviewCount > 0
-            ? `You have ${needsReviewCount} item${needsReviewCount === 1 ? "" : "s"} waiting for review.`
-            : itemCount === 0
-              ? "Your closet is waiting. Snap your first piece to begin."
-              : `${itemCount} item${itemCount === 1 ? "" : "s"} · ${outfitCount} outfit${outfitCount === 1 ? "" : "s"}.`}
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Link href="/wardrobe/new" className="btn-primary">📸 Add item</Link>
-          {itemCount > 0 && (
-            <Link href="/outfits/builder" className="btn-secondary">Build an outfit</Link>
-          )}
-          {itemCount >= 3 && (
-            <Link href="/outfits/builder?shuffle=1" className="btn-secondary">✨ Surprise me</Link>
-          )}
-          <Link href="/wishlist" className="btn-secondary">♡ Wishlist</Link>
-        </div>
-        {itemCount >= 3 && (
-          <div className="mt-3">
-            <AiOutfitPicker />
-          </div>
+        {itemCount === 0 && (
+          <p className="mt-1 text-sm text-stone-600">
+            Your closet is waiting. Snap your first piece to begin.
+          </p>
         )}
+        <dl className="mt-3 grid grid-cols-4 gap-2">
+          <StatTile href="/wardrobe" label="Items" value={itemCount} />
+          <StatTile href="/outfits" label="Outfits" value={outfitCount} />
+          <StatTile href="/wardrobe?fav=1" label="Favorites" value={favoriteCount} />
+          <StatTile href="/wishlist" label="Wishlist" value={wishlistCount} />
+        </dl>
       </section>
 
       {/* Today's outfit (AI-picked, weather-aware when home city is set) */}
@@ -266,32 +254,18 @@ export default async function Dashboard() {
         </section>
       )}
 
-      {/* Closet stats */}
-      {itemCount > 0 && (
-        <section className="card p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-display text-lg text-stone-800">Closet stats</h2>
-            <div className="flex items-center gap-3 text-xs">
-              <Link href="/wardrobe/quality" className="text-blush-600 hover:underline">Closet quality</Link>
-              <Link href="/settings" className="text-blush-600 hover:underline">Settings</Link>
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3 text-center">
-            <div>
-              <p className="font-display text-2xl text-blush-700">{itemCount}</p>
-              <p className="text-xs text-stone-500">Items</p>
-            </div>
-            <div>
-              <p className="font-display text-2xl text-blush-700">{outfitCount}</p>
-              <p className="text-xs text-stone-500">Outfits</p>
-            </div>
-            <div>
-              <p className="font-display text-2xl text-blush-700">{favoriteCount}</p>
-              <p className="text-xs text-stone-500">Favorites</p>
-            </div>
-          </div>
-        </section>
-      )}
     </div>
+  );
+}
+
+function StatTile({ href, label, value }: { href: string; label: string; value: number }) {
+  return (
+    <Link
+      href={href}
+      className="card flex flex-col items-center justify-center px-2 py-3 text-center transition-shadow hover:shadow-md"
+    >
+      <dt className="text-[10px] uppercase tracking-wide text-stone-500">{label}</dt>
+      <dd className="font-display text-2xl text-blush-700">{value}</dd>
+    </Link>
   );
 }
