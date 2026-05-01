@@ -40,6 +40,75 @@ const STATUS_LABELS: Record<string, string> = {
   draft: "Draft",
 };
 
+const OUTFITS_VISIBLE_BY_DEFAULT = 10;
+
+// Heavy-rotation staples can land in dozens of outfits — render the
+// first 10 inline and tuck the rest behind a native `<details>` so the
+// page doesn't become a wall of cards. No client JS needed.
+function OutfitsList({ outfits }: { outfits: DetailOutfit[] }) {
+  const visible = outfits.slice(0, OUTFITS_VISIBLE_BY_DEFAULT);
+  const overflow = outfits.slice(OUTFITS_VISIBLE_BY_DEFAULT);
+  return (
+    <section>
+      <div className="mb-2 flex items-end justify-between">
+        <h2 className="font-display text-xl text-stone-800">
+          In outfits
+          <span className="ml-2 text-sm font-normal text-stone-400">{outfits.length}</span>
+        </h2>
+        <Link href="/outfits" className="text-xs text-blush-600 hover:underline">
+          All outfits
+        </Link>
+      </div>
+      <ul className="space-y-2">
+        {visible.map((o) => (
+          <OutfitListRow key={o.id} outfit={o} />
+        ))}
+      </ul>
+      {overflow.length > 0 && (
+        <details className="mt-2">
+          <summary className="cursor-pointer rounded-full px-3 py-2 text-xs font-medium text-blush-600 hover:bg-blush-50">
+            Show {overflow.length} more
+          </summary>
+          <ul className="mt-2 space-y-2">
+            {overflow.map((o) => (
+              <OutfitListRow key={o.id} outfit={o} />
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
+  );
+}
+
+function OutfitListRow({ outfit }: { outfit: DetailOutfit }) {
+  return (
+    <li>
+      <Link
+        href={`/outfits/${outfit.id}/style`}
+        className="card flex items-center gap-3 p-3 transition hover:shadow-md"
+      >
+        <div className="flex shrink-0 gap-1">
+          {outfit.thumbs.slice(0, 4).map((t) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={t.id}
+              src={t.src}
+              alt=""
+              className="h-10 w-10 rounded-md bg-cream-50 object-contain p-1 ring-1 ring-stone-100"
+            />
+          ))}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium text-stone-800">{outfit.name}</p>
+        </div>
+        <svg className="h-4 w-4 shrink-0 text-stone-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+        </svg>
+      </Link>
+    </li>
+  );
+}
+
 // Strip any legacy `[Worn: YYYY-MM-DD]` markers left over from the
 // old wear-tracking feature so they don't show in the notes pane.
 function stripWearMarkers(s: string | null | undefined): string {
@@ -250,44 +319,10 @@ export default function ItemDetailView({
         </section>
       )}
 
-      {/* Outfits using this item */}
+      {/* Outfits using this item — capped so heavily-used staples
+          don't render an unbounded wall of cards. */}
       {outfits.length > 0 && (
-        <section>
-          <div className="mb-2 flex items-end justify-between">
-            <h2 className="font-display text-xl text-stone-800">In outfits</h2>
-            <Link href="/outfits" className="text-xs text-blush-600 hover:underline">
-              All outfits
-            </Link>
-          </div>
-          <ul className="space-y-2">
-            {outfits.map((o) => (
-              <li key={o.id}>
-                <Link
-                  href={`/outfits/${o.id}/style`}
-                  className="card flex items-center gap-3 p-3 transition hover:shadow-md"
-                >
-                  <div className="flex shrink-0 gap-1">
-                    {o.thumbs.slice(0, 4).map((t) => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        key={t.id}
-                        src={t.src}
-                        alt=""
-                        className="h-10 w-10 rounded-md bg-cream-50 object-contain p-1 ring-1 ring-stone-100"
-                      />
-                    ))}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-stone-800">{o.name}</p>
-                  </div>
-                  <svg className="h-4 w-4 shrink-0 text-stone-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                  </svg>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <OutfitsList outfits={outfits} />
       )}
 
       {/* Label / tag photo (if any) */}

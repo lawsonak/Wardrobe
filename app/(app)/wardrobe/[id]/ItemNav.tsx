@@ -83,7 +83,11 @@ export default function ItemNav({
           <Chevron direction="left" />
         </Link>
       ) : (
-        <span className="btn-icon pointer-events-none opacity-30" aria-hidden>
+        <span
+          className="btn-icon pointer-events-none opacity-30"
+          aria-hidden
+          title="Newest piece — nothing newer"
+        >
           <Chevron direction="left" />
         </span>
       )}
@@ -97,7 +101,11 @@ export default function ItemNav({
           <Chevron direction="right" />
         </Link>
       ) : (
-        <span className="btn-icon pointer-events-none opacity-30" aria-hidden>
+        <span
+          className="btn-icon pointer-events-none opacity-30"
+          aria-hidden
+          title="Oldest piece — nothing older"
+        >
           <Chevron direction="right" />
         </span>
       )}

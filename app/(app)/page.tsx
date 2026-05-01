@@ -132,7 +132,7 @@ export default async function Dashboard() {
             Your closet is waiting. Snap your first piece to begin.
           </p>
         )}
-        <dl className="mt-3 grid grid-cols-4 gap-2">
+        <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
           <StatTile href="/wardrobe" label="Items" value={itemCount} />
           <StatTile href="/outfits" label="Outfits" value={outfitCount} />
           <StatTile href="/wardrobe?fav=1" label="Favorites" value={favoriteCount} />
