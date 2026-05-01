@@ -539,6 +539,28 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
             )}
           </div>
 
+          {/* Action bar at the top so Save is reachable without scrolling
+              past the packing list. Mirrors the bottom bar's controls. */}
+          <div className="card flex flex-wrap items-center justify-between gap-2 p-3">
+            <button type="button" className="btn-ghost" onClick={() => setStep(3)}>
+              ← Back
+            </button>
+            <div className="flex items-center gap-2">
+              <Link href="/collections" className="btn-ghost text-stone-500">
+                Cancel
+              </Link>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={save}
+                disabled={busy || !canSave}
+                title={!canSave ? "Pick at least one piece" : undefined}
+              >
+                {busy ? "Saving…" : "Save collection"}
+              </button>
+            </div>
+          </div>
+
           <div className="card space-y-3 p-4">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
@@ -634,32 +656,6 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
           </div>
 
           {error && <p className="text-sm text-blush-700">{error}</p>}
-        </div>
-      )}
-
-      {/* Sticky action bar — Save is one tap away from anywhere on
-          step 4, no scrolling to the bottom. */}
-      {step === 4 && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200 bg-white/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-white/80">
-          <div className="mx-auto flex max-w-2xl items-center justify-between gap-2">
-            <button type="button" className="btn-ghost" onClick={() => setStep(3)}>
-              ← Back
-            </button>
-            <div className="flex items-center gap-2">
-              <Link href="/collections" className="btn-ghost text-stone-500">
-                Cancel
-              </Link>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={save}
-                disabled={busy || !canSave}
-                title={!canSave ? "Pick at least one piece" : undefined}
-              >
-                {busy ? "Saving…" : "Save collection"}
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </div>
