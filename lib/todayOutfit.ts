@@ -7,7 +7,7 @@
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { todayISO } from "@/lib/wear";
+import { todayISO } from "@/lib/dates";
 
 const UPLOAD_ROOT = path.join(process.cwd(), "data", "uploads");
 const FILE = "todays-outfit.json";

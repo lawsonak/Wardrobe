@@ -61,35 +61,6 @@ export function FavoriteToggle({
   );
 }
 
-export function WoreTodayButton({ itemId }: { itemId: string }) {
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
-
-  async function press() {
-    if (busy) return;
-    setBusy(true);
-    haptic("tap");
-    try {
-      const res = await fetch(`/api/items/${itemId}/wear`, { method: "POST" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
-      toast(data?.alreadyMarked ? "Already marked for today" : "Marked as worn today");
-      router.refresh();
-    } catch (err) {
-      console.error(err);
-      toast("Couldn't update", "error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <button type="button" onClick={press} disabled={busy} className="btn-secondary text-xs">
-      👕 Wore today
-    </button>
-  );
-}
-
 export function DeleteItemButton({ itemId, label }: { itemId: string; label: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);

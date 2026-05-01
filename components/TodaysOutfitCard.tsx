@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "@/lib/toast";
 import OutfitMiniCanvas from "@/components/OutfitMiniCanvas";
 import type { Landmarks } from "@/lib/ai/mannequinLandmarks";
 import { haptic } from "@/lib/haptics";
@@ -123,21 +122,6 @@ export default function TodaysOutfitCard({
     router.push(`/outfits/builder?${params.toString()}`);
   }
 
-  async function markWornAndOpen() {
-    if (!picked) return;
-    haptic("tap");
-    try {
-      await Promise.all(
-        picked.itemIds.map((id) =>
-          fetch(`/api/items/${id}/wear`, { method: "POST" }).catch(() => null),
-        ),
-      );
-      toast("Marked these as worn today");
-    } catch {
-      /* ignore */
-    }
-  }
-
   return (
     <section className="card p-4">
       <div className="flex items-start justify-between gap-3">
@@ -194,9 +178,6 @@ export default function TodaysOutfitCard({
           <>
             <button type="button" onClick={openInBuilder} className="btn-primary">
               Open in Builder
-            </button>
-            <button type="button" onClick={markWornAndOpen} className="btn-secondary">
-              👕 Wearing it
             </button>
             <button
               type="button"

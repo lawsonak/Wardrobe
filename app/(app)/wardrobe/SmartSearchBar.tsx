@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
 
 // Sits at the top of /wardrobe. The user can type plain English ("white
-// summer dresses I haven't worn lately") and we POST to /api/ai/search
-// to convert it into URL filters this page already understands.
+// summer dresses for a beach trip") and we POST to /api/ai/search to
+// convert it into URL filters this page already understands.
 //
 // When AI is off we just fall back to the existing q= LIKE-search.
 export default function SmartSearchBar({
@@ -48,7 +48,6 @@ export default function SmartSearchBar({
         season?: string;
         activity?: string;
         favoritesOnly?: boolean;
-        dormantOnly?: boolean;
         freeText?: string;
       };
       const params: Record<string, string> = {};
@@ -57,7 +56,6 @@ export default function SmartSearchBar({
       if (f.season) params.season = f.season;
       if (f.activity) params.activity = f.activity;
       if (f.favoritesOnly) params.fav = "1";
-      if (f.dormantOnly) params.dormant = "1";
       if (f.freeText) params.q = f.freeText;
       // If the parser found nothing structured, fall back to LIKE on
       // the original phrase.

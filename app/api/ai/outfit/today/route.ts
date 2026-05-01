@@ -12,7 +12,7 @@ import {
   writeSavedPick,
   type SavedPickItemLayout,
 } from "@/lib/todayOutfit";
-import { todayISO } from "@/lib/wear";
+import { todayISO } from "@/lib/dates";
 import { getMannequinForUser } from "@/lib/mannequin";
 import { extractItemFits } from "@/lib/ai/itemFit";
 

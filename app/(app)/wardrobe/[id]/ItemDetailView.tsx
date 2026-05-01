@@ -2,15 +2,8 @@ import { Fragment } from "react";
 import Link from "next/link";
 import { csvToList } from "@/lib/constants";
 import { parseFitDetails, FIT_FIELDS } from "@/lib/fitDetails";
-import {
-  daysSince,
-  lastWearISO,
-  notesWithoutWears,
-  wearCount,
-  wearDates,
-} from "@/lib/wear";
 import type { Category } from "@/lib/constants";
-import { FavoriteToggle, WoreTodayButton, DeleteItemButton } from "./ItemActions";
+import { FavoriteToggle, DeleteItemButton } from "./ItemActions";
 import ItemNav from "./ItemNav";
 import { type Angle } from "./ItemAngles";
 import ItemPhotoCarousel, { type CarouselPhoto } from "@/components/ItemPhotoCarousel";
@@ -47,22 +40,14 @@ const STATUS_LABELS: Record<string, string> = {
   draft: "Draft",
 };
 
-function formatDate(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function formatLastWorn(iso: string | null): string {
-  if (!iso) return "Not worn yet";
-  const d = daysSince(iso);
-  if (d === 0) return "Worn today";
-  if (d === 1) return "Worn yesterday";
-  if (d < 30) return `Worn ${d} days ago`;
-  if (d < 365) return `Worn ${Math.round(d / 30)} mo ago`;
-  return `Worn ${Math.round(d / 365)} yr ago`;
+// Strip any legacy `[Worn: YYYY-MM-DD]` markers left over from the
+// old wear-tracking feature so they don't show in the notes pane.
+function stripWearMarkers(s: string | null | undefined): string {
+  if (!s) return "";
+  return s
+    .replace(/^[\t ]*\[Worn:\s*\d{4}-\d{2}-\d{2}\][\t ]*\r?\n?/gm, "")
+    .replace(/[\t ]*\[Worn:\s*\d{4}-\d{2}-\d{2}\]/g, "")
+    .trim();
 }
 
 type Sister = {
@@ -116,10 +101,7 @@ export default function ItemDetailView({
     .map((f) => ({ ...f, value: fitDetails[f.key] }))
     .filter((f) => !!f.value);
 
-  const cleanNotes = notesWithoutWears(item.notes);
-  const lastWorn = lastWearISO(item.notes);
-  const totalWears = wearCount(item.notes);
-  const recentWears = wearDates(item.notes).slice(0, 8);
+  const cleanNotes = stripWearMarkers(item.notes);
 
   const heading = item.subType ?? item.category;
 
@@ -180,17 +162,6 @@ export default function ItemDetailView({
         </div>
         <FavoriteToggle itemId={item.id} initial={item.isFavorite} />
       </div>
-
-      {/* Quick stats */}
-      <section className="card flex flex-wrap items-center justify-between gap-3 p-3">
-        <div className="text-sm text-stone-700">
-          <span className="font-display text-xl text-blush-700">{totalWears}</span>
-          <span className="ml-1 text-stone-500">wear{totalWears === 1 ? "" : "s"}</span>
-          <span className="mx-2 text-stone-300">·</span>
-          <span className="text-stone-600">{formatLastWorn(lastWorn)}</span>
-        </div>
-        <WoreTodayButton itemId={item.id} />
-      </section>
 
       {/* Metadata grid */}
       <section className="card p-4">
@@ -316,16 +287,6 @@ export default function ItemDetailView({
               </li>
             ))}
           </ul>
-        </section>
-      )}
-
-      {/* Wear history */}
-      {recentWears.length > 0 && (
-        <section className="card p-4">
-          <p className="label mb-2">Recent wears</p>
-          <p className="text-sm text-stone-700">
-            {recentWears.map(formatDate).join(" · ")}
-          </p>
         </section>
       )}
 
