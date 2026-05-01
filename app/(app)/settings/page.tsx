@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { firstNameFromUser } from "@/lib/userName";
-import { getPrefs, setHomeCity } from "@/lib/userPrefs";
+import { getPrefs, setHomeCity, setStylePreferences } from "@/lib/userPrefs";
 import { getForecast, cToF } from "@/lib/weather";
 import { getMannequinForUser } from "@/lib/mannequin";
 import MannequinUpload from "@/components/MannequinUpload";
@@ -15,6 +15,13 @@ async function saveHomeCityAction(formData: FormData) {
   const value = String(formData.get("homeCity") ?? "");
   await setHomeCity(value);
   revalidatePath("/");
+  revalidatePath("/settings");
+}
+
+async function saveStylePrefsAction(formData: FormData) {
+  "use server";
+  const value = String(formData.get("stylePreferences") ?? "");
+  await setStylePreferences(value);
   revalidatePath("/settings");
 }
 
@@ -90,6 +97,31 @@ export default async function SettingsPage() {
       </section>
 
       <section className="card p-4">
+        <h2 className="font-display text-lg text-stone-800">Style preferences</h2>
+        <p className="mt-1 text-sm text-stone-600">
+          Free-form notes for the AI to factor in when picking outfits or making
+          suggestions. A few examples:
+        </p>
+        <ul className="mt-2 list-disc pl-5 text-xs text-stone-500">
+          <li>I don&apos;t like wearing pink and blue together.</li>
+          <li>I always wear denim with sunglasses.</li>
+          <li>Avoid oversized fits; I prefer tailored silhouettes.</li>
+          <li>I never wear yellow.</li>
+        </ul>
+        <form action={saveStylePrefsAction} className="mt-3 space-y-2">
+          <textarea
+            name="stylePreferences"
+            defaultValue={prefs.stylePreferences ?? ""}
+            placeholder="Anything you want the AI to remember about your style…"
+            className="input min-h-[7rem] w-full resize-y"
+            maxLength={1500}
+            aria-label="Style preferences"
+          />
+          <button type="submit" className="btn-primary">Save preferences</button>
+        </form>
+      </section>
+
+      <section className="card p-4">
         <h2 className="font-display text-lg text-stone-800">Backup</h2>
         <p className="mt-1 text-sm text-stone-600">
           Download a JSON snapshot of your closet, outfits, wishlist, and brands. Photos
@@ -120,12 +152,6 @@ export default async function SettingsPage() {
               Closet quality
             </Link>
             <span className="text-stone-500"> — find missing fields and possible duplicate brands.</span>
-          </li>
-          <li>
-            <Link href="/wardrobe?dormant=1" className="text-blush-600 hover:underline">
-              Haven&apos;t worn lately
-            </Link>
-            <span className="text-stone-500"> — pieces that could use a rediscover.</span>
           </li>
           <li>
             <Link href="/wardrobe/new?batch=1" className="text-blush-600 hover:underline">

@@ -48,13 +48,11 @@ export async function POST(req: NextRequest) {
 
   // Optional weather hint. Free, no API key — falls back silently if
   // the home city isn't set or the geocoder doesn't recognize it.
+  const prefs = await getPrefs();
   let weatherLine = "";
-  if (useWeather) {
-    const prefs = await getPrefs();
-    if (prefs.homeCity) {
-      const f = await getForecast(prefs.homeCity);
-      if (f) weatherLine = describeForOutfit(f);
-    }
+  if (useWeather && prefs.homeCity) {
+    const f = await getForecast(prefs.homeCity);
+    if (f) weatherLine = describeForOutfit(f);
   }
 
   const result = await provider.buildOutfit({
@@ -75,6 +73,7 @@ export async function POST(req: NextRequest) {
       seasons: csvToList(i.seasons),
       activities: csvToList(i.activities),
     })),
+    preferences: prefs.stylePreferences ?? undefined,
   });
 
   return NextResponse.json({

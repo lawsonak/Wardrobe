@@ -121,7 +121,7 @@ export default function OutfitCard({
             aria-label="Open style canvas"
             title="Style canvas"
           >
-            ✨ Style
+            Style
           </Link>
           <button
             type="button"

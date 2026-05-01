@@ -177,21 +177,101 @@ export default function OutfitBuilder({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shouldAutoShuffle, items]);
 
-  function surprise() {
-    haptic("tap");
+  // Local random fallback used when AI is off / fails. Respects two
+  // hard rules: never pair Underwear with anything, and never mix
+  // Swimwear with non-swim items unless the activity is "beach".
+  function localRandomSurprise() {
     const sample = (arr: BuilderItem[]) => arr[Math.floor(Math.random() * arr.length)];
+    const isSwim = (it: BuilderItem) => it.category === "Swimwear";
+    const isUndies = (it: BuilderItem) =>
+      it.category === "Underwear" || it.category === "Bras";
+    const swimMode = activity === "beach";
+    const filterPool = (pool: BuilderItem[]) =>
+      pool.filter((it) => {
+        if (isUndies(it)) return false;
+        if (isSwim(it) && !swimMode) return false;
+        if (!isSwim(it) && swimMode) return false;
+        return true;
+      });
+
+    const tops = filterPool(itemsBySlot.top);
+    const bottoms = filterPool(itemsBySlot.bottom);
+    const dresses = filterPool(itemsBySlot.dress);
+    const shoes = filterPool(itemsBySlot.shoes);
+    const outers = filterPool(itemsBySlot.outerwear);
+    const accs = filterPool(itemsBySlot.accessory);
+    const bags = filterPool(itemsBySlot.bag);
+
     const next: Picks = emptyPicks();
-    if (itemsBySlot.dress.length > 0 && Math.random() < 0.4) {
-      next.dress = [sample(itemsBySlot.dress)];
+    if (dresses.length > 0 && Math.random() < 0.4) {
+      next.dress = [sample(dresses)];
     } else {
-      if (itemsBySlot.top.length > 0) next.top = [sample(itemsBySlot.top)];
-      if (itemsBySlot.bottom.length > 0) next.bottom = [sample(itemsBySlot.bottom)];
+      if (tops.length > 0) next.top = [sample(tops)];
+      if (bottoms.length > 0 && !swimMode) next.bottom = [sample(bottoms)];
+      else if (bottoms.length > 0 && swimMode && Math.random() < 0.7) next.bottom = [sample(bottoms)];
     }
-    if (itemsBySlot.shoes.length > 0) next.shoes = [sample(itemsBySlot.shoes)];
-    if (itemsBySlot.outerwear.length > 0 && Math.random() < 0.5) next.outerwear = [sample(itemsBySlot.outerwear)];
-    if (itemsBySlot.accessory.length > 0 && Math.random() < 0.4) next.accessory = [sample(itemsBySlot.accessory)];
-    if (itemsBySlot.bag.length > 0 && Math.random() < 0.4) next.bag = [sample(itemsBySlot.bag)];
+    if (shoes.length > 0) next.shoes = [sample(shoes)];
+    if (outers.length > 0 && Math.random() < 0.5) next.outerwear = [sample(outers)];
+    if (accs.length > 0 && Math.random() < 0.4) next.accessory = [sample(accs)];
+    if (bags.length > 0 && Math.random() < 0.4) next.bag = [sample(bags)];
     setPicks(next);
+  }
+
+  // AI-driven outfit pick. Calls /api/ai/outfit with the current
+  // activity/season as occasion context; the server-side prompt
+  // enforces compatibility rules (no underwear with swim, swim only
+  // for beach, etc.) and folds in the user's free-form style notes
+  // from settings. Falls back to localRandomSurprise on any failure.
+  async function surprise() {
+    haptic("tap");
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const occasion = [
+        activity ? `activity: ${activity}` : "Casual outfit from my closet",
+        season ? `season: ${season}` : "",
+        favOnly ? "prefer favorites" : "",
+      ].filter(Boolean).join(" · ");
+      const res = await fetch("/api/ai/outfit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          occasion,
+          season: season || undefined,
+          activity: activity || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data?.enabled === false) {
+        toast("AI is off — picking randomly", "info");
+        localRandomSurprise();
+        return;
+      }
+      const ids = (data?.itemIds ?? []) as string[];
+      if (ids.length === 0) {
+        localRandomSurprise();
+        return;
+      }
+      const byId = new Map(items.map((it) => [it.id, it]));
+      const next: Picks = emptyPicks();
+      for (const id of ids) {
+        const it = byId.get(id);
+        if (!it) continue;
+        const slot = slotForItem(it.category, it.subType);
+        if (slot) next[slot].push(it);
+      }
+      // Enforce mutual-exclusion in case the AI returned both a
+      // dress and a top+bottom.
+      if (next.dress.length > 0) { next.top = []; next.bottom = []; }
+      setPicks(next);
+      if (data.name && !name) setName(data.name);
+    } catch (err) {
+      console.error("AI surprise failed", err);
+      localRandomSurprise();
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function save() {
@@ -274,7 +354,14 @@ export default function OutfitBuilder({
             <input type="checkbox" className="mr-1" checked={favOnly} onChange={(e) => setFavOnly(e.target.checked)} />
             Favorites only
           </label>
-          <button type="button" onClick={surprise} className="btn-primary ml-auto">✨ Surprise me</button>
+          <button
+            type="button"
+            onClick={surprise}
+            className="btn-primary ml-auto"
+            disabled={saving}
+          >
+            {saving ? "Picking…" : "✨ Surprise me"}
+          </button>
           <button type="button" onClick={() => setPicks(emptyPicks())} className="btn-ghost">Clear</button>
         </div>
       </div>

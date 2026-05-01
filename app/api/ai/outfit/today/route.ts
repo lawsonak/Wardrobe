@@ -181,6 +181,7 @@ export async function POST(req: NextRequest) {
       seasons: csvToList(i.seasons),
       activities: csvToList(i.activities),
     })),
+    preferences: prefs.stylePreferences ?? undefined,
   });
 
   // Rehydrate before fit-pass so we have everything in order.
