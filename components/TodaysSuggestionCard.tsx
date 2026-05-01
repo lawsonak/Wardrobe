@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import ProgressBar from "@/components/ProgressBar";
 import { useTimedProgress } from "@/lib/progress";
 import type { SavedSuggestion } from "@/lib/todaysSuggestion";
 
 // "Today's suggestion" — a single AI-picked product the user might
-// like, hyperlinked to the vendor's product page. Fires once per
-// morning when no saved suggestion exists, lets the user request a
-// different option via "✨ Try another".
+// like, hyperlinked to the vendor's product page. Strictly user-
+// initiated: the card sits idle with a "Suggest a piece" button until
+// the user taps it. We keep whatever's saved for today so the card
+// paints instantly on revisit, but never fires AI on its own.
 export default function TodaysSuggestionCard({
   initialSaved,
 }: {
@@ -18,16 +19,6 @@ export default function TodaysSuggestionCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const progress = useTimedProgress(busy, 12);
-
-  // Single-shot auto-fire on mount when there's nothing for today.
-  const autoFiredRef = useRef(false);
-  useEffect(() => {
-    if (autoFiredRef.current) return;
-    if (initialSaved) return;
-    autoFiredRef.current = true;
-    fetchNext(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialSaved]);
 
   async function fetchNext(again: boolean) {
     setBusy(true);
