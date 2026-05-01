@@ -78,6 +78,9 @@ export interface TagProvider {
       seasons?: string[];
       activities?: string[];
     }>;
+    /** Free-form style notes from the user — e.g. "I don't pair pink and blue".
+     *  Honored unless directly contradicted by the occasion. */
+    preferences?: string;
   }): Promise<OutfitSuggestion>;
 }
 

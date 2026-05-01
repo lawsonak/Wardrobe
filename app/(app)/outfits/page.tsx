@@ -71,7 +71,7 @@ export default async function OutfitsPage({
           <p className="mt-1 text-stone-600">Mix and match a few favorites — or let AI suggest something.</p>
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             <Link href="/outfits/builder" className="btn-primary">Build an outfit</Link>
-            <Link href="/outfits/builder?shuffle=1" className="btn-secondary">✨ Shuffle one</Link>
+            <Link href="/outfits/builder?shuffle=1" className="btn-secondary">✨ Surprise me</Link>
           </div>
         </div>
       ) : (

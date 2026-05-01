@@ -250,10 +250,15 @@ export const CATEGORY_TO_SLOT: Record<Category, Slot> = {
 // wins over the category default.
 export const SUBTYPE_TO_SLOT: Record<string, Slot> = {
   // ── Swimwear ──
+  // One-pieces / swim dresses live in the Top slot rather than Dress
+  // so they don't get conflated with regular dresses in the picker.
+  // The builder still treats Swimwear as its own category — see the
+  // "no underwear with swimsuits" / "swim only on beach" rules in
+  // the AI prompt and `surprise()` fallback.
   "Bikini bottom": "bottom",
   "Swim shorts": "bottom",
-  "One-piece": "dress",
-  "Swim dress": "dress",
+  "One-piece": "top",
+  "Swim dress": "top",
   "Cover-up": "outerwear",
   "Tankini": "top",
   "Bikini top": "top",

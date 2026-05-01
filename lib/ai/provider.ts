@@ -335,7 +335,7 @@ function makeGemini(): TagProvider {
       }
     },
 
-    async buildOutfit({ occasion, items }) {
+    async buildOutfit({ occasion, items, preferences }) {
       if (!key) return { itemIds: [], debug: { error: "GEMINI_API_KEY not set" } };
 
       // Compact the catalog so big closets don't blow our prompt budget.
@@ -352,13 +352,26 @@ function makeGemini(): TagProvider {
         activities: it.activities?.length ? it.activities : undefined,
       }));
 
+      const prefsLine = preferences && preferences.trim()
+        ? `User style preferences (always honor unless they directly contradict the occasion): ${preferences.trim().slice(0, 600)}. `
+        : "";
+
       const prompt =
         `You're a personal stylist for a wardrobe app. The user is asking for an outfit for: "${occasion}". ` +
+        prefsLine +
         `Pick a small set of pieces from THIS catalog (you may NOT invent items not in the catalog). ` +
         `Return their ids in the response. Aim for one cohesive outfit: include either a dress OR a top+bottom, ` +
         `usually shoes, and only add outerwear/accessories/bags/jewelry if they fit the occasion. ` +
         `Try not to combine clashing colors or wildly mismatched formality. ` +
         `Pick a short outfit name (3-5 words) and a one-sentence reasoning. ` +
+        // Hard rules about category compatibility — fixes cases where the model
+        // would pair underwear with a swimsuit or treat a swim one-piece as
+        // a regular dress.
+        `HARD RULES: ` +
+        `(1) NEVER include any item from the Underwear or Bras categories in an outfit unless the occasion explicitly says "underwear" — these are undergarments, not outfit pieces. ` +
+        `(2) NEVER pair Swimwear with Underwear, Activewear, Loungewear, or formal pieces. A swim outfit is Swimwear + sandals + maybe a cover-up + sunglasses; nothing else. ` +
+        `(3) A Swimwear "One-piece" or "Swim dress" REPLACES the top + bottom — do not add a separate bottom when one is picked. They are NOT regular dresses; only suggest them for beach/pool occasions. ` +
+        `(4) Don't mix Activewear with Formal, Loungewear with Workwear, etc. Stay within one register. ` +
         `Match the occasion to the right category: ` +
         `BEACH / pool / swim → prefer Swimwear (and shorts, sandals, sundresses, sun hats). ` +
         `WORKOUT / gym / running → prefer Activewear. ` +

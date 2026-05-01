@@ -81,7 +81,7 @@ export default function BgCleanup() {
   return (
     <div className="space-y-3">
       {total === 0 ? (
-        <p className="text-sm text-stone-500">All photos already have clean backgrounds. ✨</p>
+        <p className="text-sm text-stone-500">All photos already have clean backgrounds.</p>
       ) : (
         <p className="text-sm text-stone-600">
           {total} photo{total === 1 ? "" : "s"} could use a clean background.

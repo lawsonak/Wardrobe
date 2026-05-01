@@ -10,16 +10,21 @@
 import { cookies } from "next/headers";
 
 const HOME_CITY = "wardrobe.homeCity";
+const STYLE_PREFS = "wardrobe.stylePrefs";
 const ONE_YEAR = 60 * 60 * 24 * 365;
+const MAX_PREFS_LEN = 1500;
 
 export type Prefs = {
   homeCity: string | null;
+  /** Free-form style notes the user wants the AI to factor in. */
+  stylePreferences: string | null;
 };
 
 export async function getPrefs(): Promise<Prefs> {
   const jar = await cookies();
   const homeCity = jar.get(HOME_CITY)?.value?.trim() || null;
-  return { homeCity };
+  const stylePreferences = jar.get(STYLE_PREFS)?.value?.trim() || null;
+  return { homeCity, stylePreferences };
 }
 
 export async function setHomeCity(value: string): Promise<void> {
@@ -30,6 +35,21 @@ export async function setHomeCity(value: string): Promise<void> {
     return;
   }
   jar.set(HOME_CITY, trimmed.slice(0, 80), {
+    maxAge: ONE_YEAR,
+    httpOnly: false,
+    sameSite: "lax",
+    path: "/",
+  });
+}
+
+export async function setStylePreferences(value: string): Promise<void> {
+  const jar = await cookies();
+  const trimmed = value.trim();
+  if (!trimmed) {
+    jar.delete(STYLE_PREFS);
+    return;
+  }
+  jar.set(STYLE_PREFS, trimmed.slice(0, MAX_PREFS_LEN), {
     maxAge: ONE_YEAR,
     httpOnly: false,
     sameSite: "lax",
