@@ -27,6 +27,15 @@ That runs `scripts/update.sh`: `git pull --ff-only` → `npm install` → `prism
 
 ## Workflow conventions
 
+**Always anchor on `main` before planning or implementing.** This rule exists because we've already burned a PR's worth of work on an out-of-date branch:
+
+1. Run `git fetch origin main && git log --oneline origin/main..HEAD` and `git log --oneline HEAD..origin/main` to see how far the working branch has drifted from `main`.
+2. If `main` is ahead by more than a handful of commits, **read the relevant commit subjects** (`git log --oneline origin/main -30`) and skim the files in those commits that touch the area you're about to change. Parallel work that overlaps your task is the #1 hidden gotcha.
+3. If a pre-assigned branch (e.g. `claude/<feature-id>`) was created against an older `main`, treat its prior commits as inspiration, not a foundation — start a fresh branch off current `main` and re-apply only the parts that still make sense.
+4. Never plan or design against a stale tree. The Phase 1 explore step in plan mode must read the current `main` state, not whatever happened to be checked out.
+
+Other conventions:
+
 - Branch naming: `claude/<kebab-case-feature>`.
 - Commit style: Conventional Commits — `feat:`, `fix(scope):`, etc.
 - PRs go through the GitHub MCP tools (`mcp__github__create_pull_request`, `mcp__github__merge_pull_request`); merge method `squash`.
@@ -135,7 +144,7 @@ The closet's tagged `activities` field is restricted to the enum, but Collection
 
 ## Quick start for a new chat
 
-1. `git checkout main && git pull origin main --ff-only`
+1. `git fetch origin main && git checkout main && git pull origin main --ff-only` — **always start here**, even if a feature branch was pre-assigned. If you're handed a pre-existing branch, run `git log --oneline origin/main..HEAD` and `git log --oneline HEAD..origin/main` first to confirm it isn't behind. If `main` has moved on, branch fresh off current `main` rather than building on stale history (see "Workflow conventions").
 2. `git checkout -b claude/<your-branch>`
 3. `npm install` if needed → `npx prisma generate`
 4. Make changes; run `npm run typecheck && npm run build`
