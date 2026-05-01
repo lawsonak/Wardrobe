@@ -14,7 +14,8 @@ export default async function CollectionsPage() {
     include: {
       items: {
         include: { item: true },
-        take: 6,
+        // Pull enough for a swipeable preview without going overboard.
+        take: 30,
       },
       _count: { select: { items: true } },
     },
@@ -46,37 +47,57 @@ export default async function CollectionsPage() {
               ? [c.destination, formatDateRange(c.startDate, c.endDate)].filter(Boolean).join(" · ")
               : [c.occasion, c.season].filter(Boolean).join(" · ");
             return (
-              <li key={c.id}>
-                <Link href={`/collections/${c.id}`} className="card block overflow-hidden transition hover:shadow-md">
-                  <div className="tile-bg grid grid-cols-3 gap-2 p-3">
-                    {c.items.slice(0, 6).map(({ item }) => {
+              <li key={c.id} className="card overflow-hidden transition hover:shadow-md">
+                {/* Horizontal swipe-through preview. Each tile is its
+                    own Link so a tap anywhere navigates, but the
+                    native horizontal scroll still wins on swipe (the
+                    Link doesn't move, so a drag isn't interpreted as
+                    a click). Empty case falls back to a single CTA. */}
+                {c.items.length === 0 ? (
+                  <Link
+                    href={`/collections/${c.id}`}
+                    className="tile-bg flex aspect-[3/1] items-center justify-center text-sm text-stone-400"
+                  >
+                    empty — open to add pieces
+                  </Link>
+                ) : (
+                  <div
+                    className="tile-bg no-scrollbar flex snap-x snap-mandatory gap-2 overflow-x-auto p-3"
+                    aria-label={`${c.name} preview — swipe to see more`}
+                  >
+                    {c.items.map(({ item }) => {
                       const src = item.imageBgRemovedPath
                         ? `/api/uploads/${item.imageBgRemovedPath}`
                         : `/api/uploads/${item.imagePath}`;
                       return (
-                        <div key={item.id} className="flex aspect-square items-center justify-center rounded-xl bg-white/60 p-1">
+                        <Link
+                          key={item.id}
+                          href={`/collections/${c.id}`}
+                          className="flex aspect-square w-20 shrink-0 snap-start items-center justify-center rounded-xl bg-white/60 p-1 sm:w-24"
+                          aria-label={`${item.subType ?? item.category} — open ${c.name}`}
+                        >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={src} alt={item.subType ?? item.category} className="h-full w-full object-contain" />
-                        </div>
+                          <img
+                            src={src}
+                            alt={item.subType ?? item.category}
+                            draggable={false}
+                            className="h-full w-full object-contain"
+                          />
+                        </Link>
                       );
                     })}
-                    {c.items.length === 0 && (
-                      <div className="col-span-3 flex aspect-[3/1] items-center justify-center text-sm text-stone-400">
-                        empty — open to add pieces
-                      </div>
-                    )}
                   </div>
-                  <div className="px-4 py-3">
-                    <p className="truncate font-display text-lg text-stone-800">
-                      <span className="mr-1.5" aria-hidden>{isTrip ? "✈️" : "🧺"}</span>
-                      {c.name}
-                    </p>
-                    <p className="truncate text-xs text-stone-500">
-                      {subtitle || "—"}
-                      <span className="text-stone-300"> · </span>
-                      {c._count.items} piece{c._count.items === 1 ? "" : "s"}
-                    </p>
-                  </div>
+                )}
+                <Link href={`/collections/${c.id}`} className="block px-4 py-3">
+                  <p className="truncate font-display text-lg text-stone-800">
+                    <span className="mr-1.5" aria-hidden>{isTrip ? "✈️" : "🧺"}</span>
+                    {c.name}
+                  </p>
+                  <p className="truncate text-xs text-stone-500">
+                    {subtitle || "—"}
+                    <span className="text-stone-300"> · </span>
+                    {c._count.items} piece{c._count.items === 1 ? "" : "s"}
+                  </p>
                 </Link>
               </li>
             );
