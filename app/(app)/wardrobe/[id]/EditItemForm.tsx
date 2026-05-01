@@ -70,9 +70,16 @@ export default function EditItemForm({ item }: { item: Item }) {
   const [autoTagState, setAutoTagState] = useState<"idle" | "running" | "done" | "disabled" | "error">("idle");
   const [autoTagMessage, setAutoTagMessage] = useState<string | null>(null);
   const autoTagProgress = useTimedProgress(autoTagState === "running", 18);
-  const [lookupState, setLookupState] = useState<"idle" | "running" | "done" | "disabled" | "error">("idle");
+  const [lookupState, setLookupState] = useState<"idle" | "running" | "pending" | "applied" | "disabled" | "error">("idle");
   const [lookupMessage, setLookupMessage] = useState<string | null>(null);
   const [lookupSources, setLookupSources] = useState<string[]>([]);
+  const [lookupCandidate, setLookupCandidate] = useState<{
+    material?: string;
+    careNotes?: string;
+    description?: string;
+    retailPrice?: string;
+    productUrl?: string;
+  } | null>(null);
   const lookupProgress = useTimedProgress(lookupState === "running", 12);
 
   // Load the item's main photo (preferring the smaller bg-removed
@@ -243,9 +250,11 @@ export default function EditItemForm({ item }: { item: Item }) {
     }
   }
 
-  // Ask Gemini to grounded-search the brand + subType online and pull
-  // back fabric, care, description, retail price. Empty fields fill in;
-  // existing values stay untouched. Brand is required.
+  // Two-step flow: clicking "Look up online" runs Gemini's grounded
+  // search and parks the result in `lookupCandidate` for review. The
+  // user clicks the productUrl to verify it's the right product, then
+  // either approves (applyLookup) or dismisses (rejectLookup). Nothing
+  // touches the form fields until approval.
   async function lookupOnline() {
     if (lookupState === "running") return;
     if (!brand.trim()) {
@@ -256,6 +265,7 @@ export default function EditItemForm({ item }: { item: Item }) {
     setLookupState("running");
     setLookupMessage(null);
     setLookupSources([]);
+    setLookupCandidate(null);
     try {
       const res = await fetch("/api/ai/lookup-product", {
         method: "POST",
@@ -285,54 +295,70 @@ export default function EditItemForm({ item }: { item: Item }) {
         retailPrice?: string;
         productUrl?: string;
       };
+      const sources = Array.isArray(data?.sources) ? (data.sources as string[]).slice(0, 5) : [];
+      setLookupSources(sources);
 
-      let applied = 0;
-      // Material → prefix into fitNotes (matches the auto-tag flow).
-      if (s.material) {
-        const line = `Material: ${s.material}`;
-        if (!fitNotes.toLowerCase().includes("material:")) {
-          setFitNotes((prev) => (prev.trim() ? `${prev.trim()}\n${line}` : line));
-          applied++;
-        }
-      }
-      // Care notes → append to fitNotes if not already present.
-      if (s.careNotes) {
-        const line = `Care: ${s.careNotes}`;
-        if (!fitNotes.toLowerCase().includes("care:")) {
-          setFitNotes((prev) => (prev.trim() ? `${prev.trim()}\n${line}` : line));
-          applied++;
-        }
-      }
-      // Description + price + url → append to notes.
-      const noteLines: string[] = [];
-      if (s.description) noteLines.push(s.description);
-      if (s.retailPrice) noteLines.push(`Retail: ${s.retailPrice}`);
-      if (s.productUrl) noteLines.push(`Source: ${s.productUrl}`);
-      if (noteLines.length > 0) {
-        const block = noteLines.join("\n");
-        const already = noteLines.every((l) => notes.includes(l));
-        if (!already) {
-          setNotes((prev) => (prev.trim() ? `${prev.trim()}\n\n${block}` : block));
-          applied++;
-        }
-      }
-
-      setLookupSources(Array.isArray(data?.sources) ? data.sources.slice(0, 5) : []);
-      if (applied > 0) {
-        setLookupState("done");
-        setLookupMessage(`Pre-filled ${applied} field${applied === 1 ? "" : "s"} from the web — review and save.`);
-      } else if (Object.keys(s).length === 0) {
+      const hasAnything = !!(s.material || s.careNotes || s.description || s.retailPrice || s.productUrl);
+      if (!hasAnything) {
         setLookupState("error");
         setLookupMessage("Couldn't find this product online — try a more specific subType or color.");
-      } else {
-        setLookupState("done");
-        setLookupMessage("Found it, but everything was already filled in.");
+        return;
       }
+
+      setLookupCandidate(s);
+      setLookupState("pending");
+      setLookupMessage(null);
     } catch (err) {
       console.error(err);
       setLookupState("error");
       setLookupMessage(friendlyFetchError(err, "Lookup failed."));
     }
+  }
+
+  function applyLookup() {
+    if (!lookupCandidate) return;
+    const s = lookupCandidate;
+    let applied = 0;
+    if (s.material) {
+      const line = `Material: ${s.material}`;
+      if (!fitNotes.toLowerCase().includes("material:")) {
+        setFitNotes((prev) => (prev.trim() ? `${prev.trim()}\n${line}` : line));
+        applied++;
+      }
+    }
+    if (s.careNotes) {
+      const line = `Care: ${s.careNotes}`;
+      if (!fitNotes.toLowerCase().includes("care:")) {
+        setFitNotes((prev) => (prev.trim() ? `${prev.trim()}\n${line}` : line));
+        applied++;
+      }
+    }
+    const noteLines: string[] = [];
+    if (s.description) noteLines.push(s.description);
+    if (s.retailPrice) noteLines.push(`Retail: ${s.retailPrice}`);
+    if (s.productUrl) noteLines.push(`Source: ${s.productUrl}`);
+    if (noteLines.length > 0) {
+      const block = noteLines.join("\n");
+      const already = noteLines.every((l) => notes.includes(l));
+      if (!already) {
+        setNotes((prev) => (prev.trim() ? `${prev.trim()}\n\n${block}` : block));
+        applied++;
+      }
+    }
+    setLookupCandidate(null);
+    setLookupState("applied");
+    setLookupMessage(
+      applied > 0
+        ? `Applied ${applied} field${applied === 1 ? "" : "s"} from the web — review and save.`
+        : "Everything was already filled in — no changes needed.",
+    );
+  }
+
+  function rejectLookup() {
+    setLookupCandidate(null);
+    setLookupState("idle");
+    setLookupMessage(null);
+    setLookupSources([]);
   }
 
   async function save() {
@@ -522,7 +548,80 @@ export default function EditItemForm({ item }: { item: Item }) {
             {lookupMessage}
           </p>
         )}
-        {lookupSources.length > 0 && (
+
+        {lookupState === "pending" && lookupCandidate && (
+          <div className="rounded-xl bg-blush-50 p-3 ring-1 ring-blush-200">
+            <p className="mb-2 text-xs font-medium text-blush-800">
+              Is this the right product? Tap the link to verify, then choose.
+            </p>
+            {lookupCandidate.productUrl ? (
+              <a
+                href={lookupCandidate.productUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block break-all text-sm font-medium text-blush-700 underline hover:text-blush-800"
+              >
+                {hostnameOf(lookupCandidate.productUrl)}
+                <span className="text-stone-400"> ↗</span>
+              </a>
+            ) : (
+              <p className="text-xs text-stone-500">No specific product URL — only general sources.</p>
+            )}
+            {lookupCandidate.description && (
+              <p className="mt-2 text-xs italic text-stone-700">&ldquo;{lookupCandidate.description}&rdquo;</p>
+            )}
+            <ul className="mt-2 space-y-0.5 text-xs text-stone-600">
+              {lookupCandidate.material && (
+                <li><span className="text-stone-400">Material:</span> {lookupCandidate.material}</li>
+              )}
+              {lookupCandidate.careNotes && (
+                <li><span className="text-stone-400">Care:</span> {lookupCandidate.careNotes}</li>
+              )}
+              {lookupCandidate.retailPrice && (
+                <li><span className="text-stone-400">Retail:</span> {lookupCandidate.retailPrice}</li>
+              )}
+            </ul>
+            {lookupSources.length > 0 && (
+              <p className="mt-2 text-xs text-stone-400">
+                Other sources:{" "}
+                {lookupSources
+                  .filter((s) => s !== lookupCandidate.productUrl)
+                  .map((s, i) => (
+                    <span key={s}>
+                      {i > 0 ? " · " : ""}
+                      <a
+                        href={s}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:underline"
+                        title={s}
+                      >
+                        {hostnameOf(s)}
+                      </a>
+                    </span>
+                  ))}
+              </p>
+            )}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={applyLookup}
+                className="btn-primary text-xs"
+              >
+                ✓ Use this — apply details
+              </button>
+              <button
+                type="button"
+                onClick={rejectLookup}
+                className="btn-ghost text-xs text-stone-500"
+              >
+                Not it
+              </button>
+            </div>
+          </div>
+        )}
+
+        {lookupState === "applied" && lookupSources.length > 0 && (
           <p className="text-xs text-stone-400">
             Sources:{" "}
             {lookupSources.map((s, i) => (
