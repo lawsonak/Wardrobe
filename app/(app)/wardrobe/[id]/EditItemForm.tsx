@@ -70,6 +70,10 @@ export default function EditItemForm({ item }: { item: Item }) {
   const [autoTagState, setAutoTagState] = useState<"idle" | "running" | "done" | "disabled" | "error">("idle");
   const [autoTagMessage, setAutoTagMessage] = useState<string | null>(null);
   const autoTagProgress = useTimedProgress(autoTagState === "running", 18);
+  const [lookupState, setLookupState] = useState<"idle" | "running" | "done" | "disabled" | "error">("idle");
+  const [lookupMessage, setLookupMessage] = useState<string | null>(null);
+  const [lookupSources, setLookupSources] = useState<string[]>([]);
+  const lookupProgress = useTimedProgress(lookupState === "running", 12);
 
   // Load the item's main photo (preferring the smaller bg-removed
   // cutout) and the label photo if present. Uses fetchWithRetry so a
@@ -239,6 +243,98 @@ export default function EditItemForm({ item }: { item: Item }) {
     }
   }
 
+  // Ask Gemini to grounded-search the brand + subType online and pull
+  // back fabric, care, description, retail price. Empty fields fill in;
+  // existing values stay untouched. Brand is required.
+  async function lookupOnline() {
+    if (lookupState === "running") return;
+    if (!brand.trim()) {
+      setLookupState("error");
+      setLookupMessage("Add a brand first — that's what we search for online.");
+      return;
+    }
+    setLookupState("running");
+    setLookupMessage(null);
+    setLookupSources([]);
+    try {
+      const res = await fetch("/api/ai/lookup-product", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brand: brand.trim(),
+          subType: subType || null,
+          color: color || null,
+          category,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data?.enabled === false) {
+        setLookupState("disabled");
+        setLookupMessage(data.message ?? "AI is disabled.");
+        return;
+      }
+      if (!res.ok) {
+        setLookupState("error");
+        setLookupMessage(data?.error ?? `Lookup failed (HTTP ${res.status}).`);
+        return;
+      }
+      const s = (data?.suggestions ?? {}) as {
+        material?: string;
+        careNotes?: string;
+        description?: string;
+        retailPrice?: string;
+        productUrl?: string;
+      };
+
+      let applied = 0;
+      // Material → prefix into fitNotes (matches the auto-tag flow).
+      if (s.material) {
+        const line = `Material: ${s.material}`;
+        if (!fitNotes.toLowerCase().includes("material:")) {
+          setFitNotes((prev) => (prev.trim() ? `${prev.trim()}\n${line}` : line));
+          applied++;
+        }
+      }
+      // Care notes → append to fitNotes if not already present.
+      if (s.careNotes) {
+        const line = `Care: ${s.careNotes}`;
+        if (!fitNotes.toLowerCase().includes("care:")) {
+          setFitNotes((prev) => (prev.trim() ? `${prev.trim()}\n${line}` : line));
+          applied++;
+        }
+      }
+      // Description + price + url → append to notes.
+      const noteLines: string[] = [];
+      if (s.description) noteLines.push(s.description);
+      if (s.retailPrice) noteLines.push(`Retail: ${s.retailPrice}`);
+      if (s.productUrl) noteLines.push(`Source: ${s.productUrl}`);
+      if (noteLines.length > 0) {
+        const block = noteLines.join("\n");
+        const already = noteLines.every((l) => notes.includes(l));
+        if (!already) {
+          setNotes((prev) => (prev.trim() ? `${prev.trim()}\n\n${block}` : block));
+          applied++;
+        }
+      }
+
+      setLookupSources(Array.isArray(data?.sources) ? data.sources.slice(0, 5) : []);
+      if (applied > 0) {
+        setLookupState("done");
+        setLookupMessage(`Pre-filled ${applied} field${applied === 1 ? "" : "s"} from the web — review and save.`);
+      } else if (Object.keys(s).length === 0) {
+        setLookupState("error");
+        setLookupMessage("Couldn't find this product online — try a more specific subType or color.");
+      } else {
+        setLookupState("done");
+        setLookupMessage("Found it, but everything was already filled in.");
+      }
+    } catch (err) {
+      console.error(err);
+      setLookupState("error");
+      setLookupMessage(friendlyFetchError(err, "Lookup failed."));
+    }
+  }
+
   async function save() {
     setBusy(true);
     setSaved(false);
@@ -385,25 +481,65 @@ export default function EditItemForm({ item }: { item: Item }) {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-stone-100 pt-3">
-        <button
-          type="button"
-          onClick={autoTag}
-          className="btn-ghost text-xs text-blush-600"
-          disabled={busy || autoTagState === "running"}
-          title="Ask AI to fill empty fields and write notes from the photo"
-        >
-          {autoTagState === "running" ? "Reading photo…" : "✨ Auto-tag"}
-        </button>
-        {autoTagState === "running" && (
-          <div className="flex-1 min-w-[10rem]">
-            <ProgressBar value={autoTagProgress} label="Reading photo…" />
-          </div>
+      <div className="space-y-2 border-t border-stone-100 pt-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={autoTag}
+            className="btn-ghost text-xs text-blush-600"
+            disabled={busy || autoTagState === "running" || lookupState === "running"}
+            title="Ask AI to fill empty fields and write notes from the photo"
+          >
+            {autoTagState === "running" ? "Reading photo…" : "✨ Auto-tag"}
+          </button>
+          <button
+            type="button"
+            onClick={lookupOnline}
+            className="btn-ghost text-xs text-blush-600"
+            disabled={busy || lookupState === "running" || autoTagState === "running" || !brand.trim()}
+            title={brand.trim() ? "Ask AI to search the web for material, care, retail price" : "Add a brand first"}
+          >
+            {lookupState === "running" ? "Looking up…" : "✨ Look up online"}
+          </button>
+          {autoTagState === "running" && (
+            <div className="flex-1 min-w-[10rem]">
+              <ProgressBar value={autoTagProgress} label="Reading photo…" />
+            </div>
+          )}
+          {lookupState === "running" && (
+            <div className="flex-1 min-w-[10rem]">
+              <ProgressBar value={lookupProgress} label="Searching the web…" hint="usually 5–15s" />
+            </div>
+          )}
+          {autoTagState !== "running" && autoTagMessage && (
+            <span className={"text-xs " + (autoTagState === "error" ? "text-blush-700" : "text-stone-500")}>
+              {autoTagMessage}
+            </span>
+          )}
+        </div>
+        {lookupState !== "running" && lookupMessage && (
+          <p className={"text-xs " + (lookupState === "error" ? "text-blush-700" : "text-stone-500")}>
+            {lookupMessage}
+          </p>
         )}
-        {autoTagState !== "running" && autoTagMessage && (
-          <span className={"text-xs " + (autoTagState === "error" ? "text-blush-700" : "text-stone-500")}>
-            {autoTagMessage}
-          </span>
+        {lookupSources.length > 0 && (
+          <p className="text-xs text-stone-400">
+            Sources:{" "}
+            {lookupSources.map((s, i) => (
+              <span key={s}>
+                {i > 0 ? " · " : ""}
+                <a
+                  href={s}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:underline"
+                  title={s}
+                >
+                  {hostnameOf(s)}
+                </a>
+              </span>
+            ))}
+          </p>
         )}
       </div>
 
@@ -417,4 +553,12 @@ export default function EditItemForm({ item }: { item: Item }) {
       </div>
     </div>
   );
+}
+
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
 }
