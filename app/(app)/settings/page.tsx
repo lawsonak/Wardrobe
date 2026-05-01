@@ -166,10 +166,10 @@ export default async function SettingsPage() {
             <span className="text-stone-500"> — pick a stack of existing photos at once; AI tags them in the background.</span>
           </li>
           <li>
-            <Link href="/capsules" className="text-blush-600 hover:underline">
+            <Link href="/collections" className="text-blush-600 hover:underline">
               Collections
             </Link>
-            <span className="text-stone-500"> — group items into pack lists, capsule wardrobes, themes.</span>
+            <span className="text-stone-500"> — plan trips with destination + dates and AI-curated packing lists.</span>
           </li>
           <li>
             <Link href="/sets" className="text-blush-600 hover:underline">

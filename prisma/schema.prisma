@@ -19,7 +19,7 @@ model User {
   outfits       Outfit[]
   wishlistItems WishlistItem[]
   brands        Brand[]
-  capsules      Capsule[]
+  collections   Collection[]
   notifications Notification[]
   itemSets      ItemSet[]
 }
@@ -61,9 +61,9 @@ model Item {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  outfitItems  OutfitItem[]
-  capsuleItems CapsuleItem[]
-  photos       ItemPhoto[]
+  outfitItems     OutfitItem[]
+  collectionItems CollectionItem[]
+  photos          ItemPhoto[]
 }
 
 // A "matching set" of items that came together — like a swimsuit
@@ -115,13 +115,12 @@ model Outfit {
   // Style-canvas layout, JSON-encoded. Optional — outfits without a saved
   // layout fall back to category-driven defaults at render time.
   layoutJson String?
-  // Optional back-link to the Capsule that generated this outfit (the
-  // trip planner). Keeps the detail page able to show "outfits in
-  // this collection" cleanly. Detached from a capsule = standalone outfit.
-  capsuleId  String?
-  capsule    Capsule? @relation(fields: [capsuleId], references: [id], onDelete: SetNull)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  // Optional back-link to the Collection that generated this outfit.
+  // Detached from a collection = standalone outfit.
+  collectionId String?
+  collection   Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   items OutfitItem[]
 }
@@ -156,46 +155,44 @@ model BrandAlias {
   @@unique([brandId, aliasKey])
 }
 
-// A user-curated subset of items. "Paris trip", "Summer vacation",
-// "Date-night capsule" — anything. Items can belong to many capsules.
-model Capsule {
-  id          String   @id @default(cuid())
+// A user-curated subset of items — typically a packing list for a trip
+// ("Lisbon · May 5–10") but also general themed sets ("Date night",
+// "Work week"). Items can belong to many collections.
+model Collection {
+  id          String    @id @default(cuid())
   ownerId     String
-  owner       User     @relation(fields: [ownerId], references: [id])
+  owner       User      @relation(fields: [ownerId], references: [id])
+  // "trip" | "general" — drives which fields the UI shows.
+  kind        String    @default("general")
   name        String
   description String?
+  // Trip-specific. All optional so general collections can leave them blank.
+  destination String?
+  startDate   DateTime?
+  endDate     DateTime?
+  // Free-form trip notes ("pack a light layer for evenings"). Distinct
+  // from `description` so we can keep AI-suggested tips separate.
+  notes       String?
+  // Legacy / general-collection fields.
   occasion    String?
   season      String?
-  // Trip-planning extras. All optional; the basic capsule keeps working
-  // exactly as before when none are set.
-  dateNeeded  DateTime?
-  // Free-form city / location string. Used to fetch a weather forecast
-  // around `dateNeeded` so the AI plan picks weather-appropriate pieces.
-  location    String?
-  // JSON-encoded `Record<string, number>` keyed by category name —
-  // e.g. `{"Tops": 3, "Bottoms": 4, "Underwear": 6}`. The detail page
-  // shows fulfilled vs target counts so the user can pack the right
-  // mix of pieces.
-  targetCounts   String?
-  // JSON-encoded array of `{ activity, label, count }` — e.g.
-  // `[{"activity":"formal","label":"Dinners","count":2}]`. Drives the
-  // AI plan: "give me 2 formal-dinner outfits, 3 lunches, 1 workout".
-  activityTargets String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  // CSV of activity tags (ACTIVITIES enum + free-form like "hiking").
+  activities  String    @default("")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  items   CapsuleItem[]
+  items   CollectionItem[]
   outfits Outfit[]
 }
 
-model CapsuleItem {
-  id        String  @id @default(cuid())
-  capsuleId String
-  capsule   Capsule @relation(fields: [capsuleId], references: [id], onDelete: Cascade)
-  itemId    String
-  item      Item    @relation(fields: [itemId], references: [id])
+model CollectionItem {
+  id           String     @id @default(cuid())
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  itemId       String
+  item         Item       @relation(fields: [itemId], references: [id])
 
-  @@unique([capsuleId, itemId])
+  @@unique([collectionId, itemId])
 }
 
 // Lightweight in-app notifications (batch upload finished, items waiting

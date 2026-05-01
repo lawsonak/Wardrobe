@@ -82,18 +82,19 @@ export interface TagProvider {
      *  Honored unless directly contradicted by the occasion. */
     preferences?: string;
   }): Promise<OutfitSuggestion>;
-
-  /** Generate multiple distinct outfits in one shot for a trip / event.
-   *  Each row of `targets` says "I want N outfits for {activity}". Returns
-   *  one result row per requested outfit. Implementations that don't
-   *  support this should leave the method undefined. */
-  planTrip?(input: {
-    destination?: string | null;
-    dateNeeded?: string | null;
-    weather?: string | null;
-    preferences?: string;
-    packListHint?: string;
-    targets: Array<{ activity: string; label: string; count: number }>;
+  /** Curate a packing list for a trip from the user's closet. Reasons
+   *  about destination climate, trip length and planned activities,
+   *  picks pieces from the catalog (never invents), and returns the
+   *  itemIds plus a 1-sentence reasoning and short packing tips. */
+  buildPackingList?(input: {
+    trip: {
+      destination?: string;
+      startDate?: string;
+      endDate?: string;
+      activities: string[];
+      occasion?: string;
+      notes?: string;
+    };
     items: Array<{
       id: string;
       category: string;
@@ -103,7 +104,21 @@ export interface TagProvider {
       seasons?: string[];
       activities?: string[];
     }>;
-  }): Promise<TripPlanResult>;
+  }): Promise<PackingListSuggestion>;
+  /** Suggest 4–8 activities the user is likely to do on a trip given
+   *  destination + dates. Helps the user fill the activities chips
+   *  without typing. Pulled from the ACTIVITIES enum where possible
+   *  plus free-form ones (hiking, museum days, …). */
+  suggestActivities?(input: {
+    destination?: string;
+    startDate?: string;
+    endDate?: string;
+    occasion?: string;
+  }): Promise<ActivitySuggestion>;
+  /** Parse a free-text closet search into structured filters. Optional —
+   *  the wardrobe UI falls back to LIKE-search across notes/brand/etc.
+   *  when this isn't implemented. */
+  parseSearch?(input: { query: string }): Promise<SearchParseResult>;
 }
 
 export type NotesResult = {
@@ -111,22 +126,25 @@ export type NotesResult = {
   debug?: TagDebug;
 };
 
-export type TripPlannedOutfit = {
-  name: string;
-  activity: string;
-  itemIds: string[];
-  reasoning?: string;
-};
-
-export type TripPlanResult = {
-  outfits: TripPlannedOutfit[];
-  debug?: TagDebug;
-};
-
 export type OutfitSuggestion = {
   itemIds: string[];
   name?: string;
   reasoning?: string;
+  debug?: TagDebug;
+};
+
+export type PackingListSuggestion = {
+  itemIds: string[];
+  reasoning?: string;
+  // Short freeform tips: "pack a light layer for evenings", "no umbrella
+  // needed in May", etc.
+  packingNotes?: string;
+  debug?: TagDebug;
+};
+
+export type ActivitySuggestion = {
+  // Mix of ACTIVITIES enum values and free-form strings.
+  activities: string[];
   debug?: TagDebug;
 };
 
@@ -145,12 +163,6 @@ export type SearchParseResult = {
   filters: SearchFilters;
   debug?: TagDebug;
 };
-
-// Extension on the provider that supports parsing search queries.
-// Optional — UI falls back to LIKE-search when not implemented.
-export interface TagProvider {
-  parseSearch?(input: { query: string }): Promise<SearchParseResult>;
-}
 
 export class DisabledProvider implements TagProvider {
   name = "disabled";

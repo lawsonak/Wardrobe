@@ -14,12 +14,12 @@ export default async function AdminPage() {
   const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
   const firstName = firstNameFromUser(session?.user);
 
-  const [items, outfits, wishlist, brands, capsules, drafts, needsReview] = await Promise.all([
+  const [items, outfits, wishlist, brands, collections, drafts, needsReview] = await Promise.all([
     prisma.item.count({ where: { ownerId: userId } }),
     prisma.outfit.count({ where: { ownerId: userId } }),
     prisma.wishlistItem.count({ where: { ownerId: userId } }),
     prisma.brand.count({ where: { ownerId: userId } }),
-    prisma.capsule.count({ where: { ownerId: userId } }),
+    prisma.collection.count({ where: { ownerId: userId } }),
     prisma.item.count({ where: { ownerId: userId, status: "draft" } }),
     prisma.item.count({ where: { ownerId: userId, status: "needs_review" } }),
   ]);
@@ -44,7 +44,7 @@ export default async function AdminPage() {
           <Stat label="Outfits" value={outfits} />
           <Stat label="Wishlist" value={wishlist} />
           <Stat label="Brands" value={brands} />
-          <Stat label="Collections" value={capsules} />
+          <Stat label="Collections" value={collections} />
           <Stat label="Drafts" value={drafts} />
           <Stat label="Needs review" value={needsReview} />
         </dl>
