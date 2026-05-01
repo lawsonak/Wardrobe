@@ -95,6 +95,11 @@ export interface TagProvider {
       occasion?: string;
       notes?: string;
     };
+    /** Optional per-category target counts. When provided, the model
+     *  should respect them closely (off by ±1 is fine). Keys are
+     *  category names (e.g. "Tops", "Underwear"); values are integer
+     *  counts. The model still must only pick from `items`. */
+    targets?: Record<string, number>;
     items: Array<{
       id: string;
       category: string;
