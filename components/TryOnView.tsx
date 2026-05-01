@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import StyleCanvas, { type CanvasItem } from "@/components/StyleCanvas";
 
 type Mode = "ai" | "manual";
@@ -35,7 +35,10 @@ export default function TryOnView({
   initialTryOnImagePath: string | null;
   initialTryOnGeneratedAt: string | null;
 }) {
-  const [mode, setMode] = useState<Mode>(initialTryOnImagePath ? "ai" : "manual");
+  // Default to AI try-on. When there's no cached image yet, the
+  // freshness check auto-fires generate() so the user sees the AI
+  // pipeline kick off immediately instead of staring at a placeholder.
+  const [mode, setMode] = useState<Mode>("ai");
   const [tryOnPath, setTryOnPath] = useState<string | null>(initialTryOnImagePath);
   const [generatedAt, setGeneratedAt] = useState<string | null>(initialTryOnGeneratedAt);
   const [generating, setGenerating] = useState(false);
@@ -43,10 +46,14 @@ export default function TryOnView({
   const [skippedCount, setSkippedCount] = useState(0);
   const [stale, setStale] = useState(false);
   const [mannequinReady, setMannequinReady] = useState(true);
+  // Tracks whether we've already auto-fired generation for this mount,
+  // so the freshness check doesn't keep re-triggering.
+  const autoFiredRef = useRef(false);
 
-  // Check freshness once on mount and whenever the items array changes —
-  // tells us whether the cached image is still valid for the current
-  // outfit composition.
+  // Check freshness on mount + whenever the items array changes. If
+  // the user has a mannequin set up and there's no fresh try-on yet,
+  // auto-fire generation once so opening the page from the outfits
+  // list immediately starts the AI try-on without an extra click.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -62,6 +69,16 @@ export default function TryOnView({
         } else {
           setStale(false);
         }
+        // Auto-fire on first mount when:
+        //  - mannequin is ready (otherwise generate() would 500),
+        //  - we haven't already auto-fired this session,
+        //  - and either no try-on exists yet or the existing one is
+        //    stale (items changed since last render).
+        const needsGeneration = !data.tryOnImagePath || !data.isFresh;
+        if (data.mannequinReady && needsGeneration && !autoFiredRef.current) {
+          autoFiredRef.current = true;
+          generate();
+        }
       } catch {
         /* network blip — leave UI alone */
       }
@@ -69,6 +86,7 @@ export default function TryOnView({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outfitId, items.length]);
 
   async function generate() {
