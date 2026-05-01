@@ -10,6 +10,7 @@ import {
   generateTryOn,
   TRY_ON_PROMPT_VERSION,
   type TryOnGarment,
+  type TryOnPiece,
 } from "@/lib/ai/tryon";
 import { readUserMannequinPng } from "@/lib/mannequin";
 
@@ -64,6 +65,10 @@ async function statMtime(relPath: string): Promise<number | null> {
   }
 }
 
+function photoPathFor(it: ItemRow): string {
+  return it.imageBgRemovedPath ?? it.imagePath;
+}
+
 async function buildHash(args: {
   mannequinId: string;
   items: ItemRow[];
@@ -71,7 +76,7 @@ async function buildHash(args: {
   const sorted = [...args.items].sort((a, b) => a.id.localeCompare(b.id));
   const itemKeys = await Promise.all(
     sorted.map(async (it) => {
-      const photoPath = it.imageBgRemovedPath ?? it.imagePath;
+      const photoPath = photoPathFor(it);
       const mtime = await statMtime(photoPath);
       return {
         id: it.id,
@@ -89,33 +94,57 @@ async function buildHash(args: {
   return crypto.createHash("sha256").update(payload).digest("hex").slice(0, 16);
 }
 
-async function loadGarment(it: ItemRow): Promise<TryOnGarment | null> {
-  const useBg = !!it.imageBgRemovedPath;
-  const relPath = it.imageBgRemovedPath ?? it.imagePath;
-  try {
-    const buf = await fs.readFile(path.join(UPLOAD_ROOT, relPath));
-    const ext = path.extname(relPath).toLowerCase();
-    const mime =
-      ext === ".png"
-        ? "image/png"
-        : ext === ".jpg" || ext === ".jpeg"
-          ? "image/jpeg"
-          : ext === ".webp"
-            ? "image/webp"
-            : "image/png";
-    return {
+// Group items by their source photo so a single image showing multiple
+// pieces (e.g., earrings + shoes laid out together, or a swimsuit
+// top+bottom photographed as a set) is sent to Gemini once with all the
+// pieces enumerated — instead of duplicating the image per piece, which
+// confuses the model.
+async function loadGarments(items: ItemRow[]): Promise<TryOnGarment[]> {
+  const groups = new Map<
+    string,
+    { firstItem: ItemRow; pieces: TryOnPiece[] }
+  >();
+  for (const it of items) {
+    const key = photoPathFor(it);
+    const piece: TryOnPiece = {
       id: it.id,
       slot: slotForItem(it.category, it.subType),
       category: it.category,
       subType: it.subType,
       color: it.color,
-      imageBuf: buf,
-      imageMime: mime,
-      hasBackground: !useBg,
     };
-  } catch {
-    return null;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.pieces.push(piece);
+    } else {
+      groups.set(key, { firstItem: it, pieces: [piece] });
+    }
   }
+
+  const garments: TryOnGarment[] = [];
+  for (const [relPath, group] of groups) {
+    try {
+      const buf = await fs.readFile(path.join(UPLOAD_ROOT, relPath));
+      const ext = path.extname(relPath).toLowerCase();
+      const mime =
+        ext === ".png"
+          ? "image/png"
+          : ext === ".jpg" || ext === ".jpeg"
+            ? "image/jpeg"
+            : ext === ".webp"
+              ? "image/webp"
+              : "image/png";
+      garments.push({
+        imageBuf: buf,
+        imageMime: mime,
+        hasBackground: !group.firstItem.imageBgRemovedPath,
+        pieces: group.pieces,
+      });
+    } catch {
+      /* skip garments we can't load */
+    }
+  }
+  return garments;
 }
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -170,9 +199,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   inflight.add(id);
 
   try {
-    const garments = (await Promise.all(items.map(loadGarment))).filter(
-      (g): g is TryOnGarment => g !== null,
-    );
+    const garments = await loadGarments(items);
     if (garments.length === 0) {
       return NextResponse.json({ error: "Couldn't load any garment images from disk." }, { status: 500 });
     }
