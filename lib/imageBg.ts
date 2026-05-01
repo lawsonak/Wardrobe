@@ -224,3 +224,150 @@ export function cropToSilhouette(input: Buffer): Buffer {
   }
   return PNG.sync.write(out);
 }
+
+// Detect where the head sits on a generated mannequin PNG. Returns a
+// bounding box in normalized (0..1) coordinates of the source image,
+// or null if the figure can't be located.
+//
+// The mannequin prompt produces a single figure on a plain off-white
+// seamless background, head fully visible at the top, feet at the
+// bottom. We scan rows top-to-bottom:
+//
+//   1. find the first row containing a meaningful run of foreground
+//      pixels — that's the top of the hair
+//   2. estimate head width from the next few percent of rows
+//   3. walk down until row width exceeds ~1.5x the head width — that's
+//      the start of the shoulders, so the chin/neck is just above
+//   4. take the leftmost / rightmost foreground pixel across the head
+//      rows for x extents
+//
+// A small padding ring is added so the user's stylized head overlay
+// (which may include hair extending slightly beyond the mannequin's
+// bald silhouette) covers the underlying head completely.
+const HEAD_BG_MIN_LUMA = 215;       // mannequin bg is plain off-white
+const HEAD_BG_MAX_SAT = 30;
+const HEAD_MIN_ROW_WIDTH_PX = 5;    // ignore stray noise rows
+const HEAD_SHOULDER_RATIO = 1.5;    // shoulders > 1.5x head width
+
+export type HeadBBoxNorm = { x: number; y: number; w: number; h: number };
+
+export function detectHeadBBox(input: Buffer): HeadBBoxNorm | null {
+  let png: PNG;
+  try {
+    png = PNG.sync.read(input);
+  } catch {
+    return null;
+  }
+
+  const { width, height, data } = png;
+  const channels = data.length / (width * height);
+  if (channels !== 3 && channels !== 4) return null;
+
+  // Per-row foreground bounds (left, right) and pixel count.
+  const rowLeft = new Int32Array(height).fill(-1);
+  const rowRight = new Int32Array(height).fill(-1);
+  const rowCount = new Int32Array(height);
+
+  for (let y = 0; y < height; y++) {
+    let left = -1;
+    let right = -1;
+    let count = 0;
+    for (let x = 0; x < width; x++) {
+      const off = (y * width + x) * channels;
+      const r = data[off];
+      const g = data[off + 1];
+      const b = data[off + 2];
+      const min = Math.min(r, g, b);
+      const max = Math.max(r, g, b);
+      const isBg = min >= HEAD_BG_MIN_LUMA && max - min <= HEAD_BG_MAX_SAT;
+      if (!isBg) {
+        if (left < 0) left = x;
+        right = x;
+        count++;
+      }
+    }
+    rowLeft[y] = left;
+    rowRight[y] = right;
+    rowCount[y] = count;
+  }
+
+  // 1. First row with substantial figure.
+  let yTop = -1;
+  for (let y = 0; y < height; y++) {
+    if (rowCount[y] >= HEAD_MIN_ROW_WIDTH_PX) {
+      yTop = y;
+      break;
+    }
+  }
+  if (yTop < 0) return null;
+
+  // 2. Average head width over a sample window just below the top.
+  const sampleRows = Math.max(3, Math.floor(height * 0.04));
+  const sampleEnd = Math.min(height - 1, yTop + sampleRows);
+  let sumWidth = 0;
+  let samples = 0;
+  for (let y = yTop; y <= sampleEnd; y++) {
+    if (rowCount[y] >= HEAD_MIN_ROW_WIDTH_PX) {
+      sumWidth += rowRight[y] - rowLeft[y] + 1;
+      samples++;
+    }
+  }
+  if (samples === 0) return null;
+  const avgHeadWidth = sumWidth / samples;
+
+  // 3. Walk down to find the shoulder transition. Bottom of head is
+  // the local min width between the head sample window and the
+  // shoulder row (the neck), or the shoulder row itself if no clear
+  // pinch — better to over-cover than to slice off the chin.
+  let yShoulder = -1;
+  for (let y = sampleEnd + 1; y < height; y++) {
+    if (rowCount[y] < HEAD_MIN_ROW_WIDTH_PX) continue;
+    const w = rowRight[y] - rowLeft[y] + 1;
+    if (w > avgHeadWidth * HEAD_SHOULDER_RATIO) {
+      yShoulder = y;
+      break;
+    }
+  }
+  // Fallback: assume head occupies the top ~18% of the figure.
+  if (yShoulder < 0) yShoulder = Math.min(height - 1, yTop + Math.floor(height * 0.18));
+
+  let yChin = yShoulder - 1;
+  let minRunWidth = Infinity;
+  const searchStart = sampleEnd + 1;
+  for (let y = searchStart; y < yShoulder; y++) {
+    if (rowCount[y] < HEAD_MIN_ROW_WIDTH_PX) continue;
+    const w = rowRight[y] - rowLeft[y] + 1;
+    if (w < minRunWidth) {
+      minRunWidth = w;
+      yChin = y;
+    }
+  }
+
+  // 4. x extents across the head rows.
+  let xMin = width;
+  let xMax = -1;
+  for (let y = yTop; y <= yChin; y++) {
+    if (rowCount[y] < HEAD_MIN_ROW_WIDTH_PX) continue;
+    if (rowLeft[y] < xMin) xMin = rowLeft[y];
+    if (rowRight[y] > xMax) xMax = rowRight[y];
+  }
+  if (xMax < 0) return null;
+
+  // Padding so the overlay's hair has room beyond the bald silhouette.
+  const padX = (xMax - xMin + 1) * 0.18;
+  const headHeight = yChin - yTop + 1;
+  const padTop = headHeight * 0.15;
+  const padBottom = headHeight * 0.05;
+
+  const x0 = Math.max(0, xMin - padX);
+  const y0 = Math.max(0, yTop - padTop);
+  const x1 = Math.min(width, xMax + padX + 1);
+  const y1 = Math.min(height, yChin + padBottom + 1);
+
+  return {
+    x: x0 / width,
+    y: y0 / height,
+    w: (x1 - x0) / width,
+    h: (y1 - y0) / height,
+  };
+}
