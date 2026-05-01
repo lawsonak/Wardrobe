@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ProgressBar from "@/components/ProgressBar";
 import { useTimedProgress } from "@/lib/progress";
 import type { SavedSuggestion } from "@/lib/todaysSuggestion";
@@ -18,16 +18,42 @@ export default function TodaysSuggestionCard({
   const [saved, setSaved] = useState<SavedSuggestion | null>(initialSaved);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Same stall-detection pattern as TodaysOutfitCard: surface a
+  // Cancel option after 35s so a wedged request isn't a dead end.
+  const [stillWaiting, setStillWaiting] = useState(false);
   const progress = useTimedProgress(busy, 12);
+  const abortRef = useRef<AbortController | null>(null);
+  const stallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
+    };
+  }, []);
+
+  function cancel() {
+    abortRef.current?.abort();
+    if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
+    setBusy(false);
+    setStillWaiting(false);
+  }
 
   async function fetchNext(again: boolean) {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setBusy(true);
     setError(null);
+    setStillWaiting(false);
+    if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
+    stallTimerRef.current = setTimeout(() => setStillWaiting(true), 35_000);
     try {
       const res = await fetch("/api/ai/style-suggestion", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ again }),
+        signal: controller.signal,
       });
       const data = await res.json().catch(() => ({}));
       if (data?.enabled === false) {
@@ -42,11 +68,30 @@ export default function TodaysSuggestionCard({
         setSaved(data.saved as SavedSuggestion);
       }
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       console.error(err);
       setError(err instanceof Error ? err.message : "Couldn't reach the AI.");
     } finally {
+      if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
       setBusy(false);
+      setStillWaiting(false);
     }
+  }
+
+  function StillWaiting() {
+    if (!stillWaiting) return null;
+    return (
+      <div className="mt-2 flex items-center justify-between gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">
+        <span>Taking longer than usual. You can cancel and try again later.</span>
+        <button
+          type="button"
+          onClick={cancel}
+          className="rounded-full bg-white px-2 py-1 text-amber-800 ring-1 ring-amber-200 hover:bg-amber-100"
+        >
+          Cancel
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -66,12 +111,13 @@ export default function TodaysSuggestionCard({
       </div>
 
       {!saved && busy && (
-        <div className="mt-3">
+        <div className="mt-3 space-y-2">
           <ProgressBar
             value={progress}
             label="Reading your closet…"
             hint="usually 5–15s"
           />
+          <StillWaiting />
         </div>
       )}
 
@@ -114,12 +160,13 @@ export default function TodaysSuggestionCard({
             <p className="mt-2 text-sm italic text-stone-600">&ldquo;{saved.reasoning}&rdquo;</p>
           )}
           {busy && (
-            <div className="mt-3">
+            <div className="mt-3 space-y-2">
               <ProgressBar
                 value={progress}
                 label="Looking for another option…"
                 hint="usually 5–15s"
               />
+              <StillWaiting />
             </div>
           )}
         </div>

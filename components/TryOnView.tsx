@@ -152,7 +152,7 @@ export default function TryOnView({
             onClick={generate}
             disabled={generating || !mannequinReady}
             className="btn-primary text-xs disabled:opacity-50"
-            title={!mannequinReady ? "Mannequin base image is missing on the server" : undefined}
+            title={!mannequinReady ? "Set up your mannequin in Settings to enable AI try-on" : undefined}
           >
             {generating ? "Generating…" : tryOnPath ? "✨ Regenerate try-on" : "✨ Generate AI try-on"}
           </button>
@@ -161,10 +161,11 @@ export default function TryOnView({
 
       {!mannequinReady && (
         <div className="card border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-          The mannequin base image isn&apos;t set up yet. Run{" "}
-          <code className="rounded bg-amber-100 px-1">npm run generate:mannequin</code>{" "}
-          (requires <code className="rounded bg-amber-100 px-1">GEMINI_API_KEY</code>) or commit a
-          PNG to <code className="rounded bg-amber-100 px-1">public/mannequin/base.png</code>.
+          AI try-on isn&apos;t set up yet. Upload your photo in{" "}
+          <a href="/settings" className="font-medium underline underline-offset-2">
+            Settings → Your mannequin
+          </a>{" "}
+          to enable it. The Manual layout tab on the right still works without a mannequin.
         </div>
       )}
 

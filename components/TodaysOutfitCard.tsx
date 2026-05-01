@@ -43,8 +43,14 @@ export default function TodaysOutfitCard({
   const [busy, setBusy] = useState(false);
   const [picked, setPicked] = useState<Suggestion | null>(initialPick ?? null);
   const [error, setError] = useState<string | null>(null);
+  // After 35s the network call has clearly stalled (typical run is
+  // 12-25s). Surface a "still waiting?" hint with a Cancel button so the
+  // user can abandon a stuck request and try again later.
+  const [stillWaiting, setStillWaiting] = useState(false);
   // Pick + tryon together usually run 12-25s. Bump the time scale.
   const pickProgress = useTimedProgress(busy, 22);
+  const abortRef = useRef<AbortController | null>(null);
+  const stallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Auto-fire on mount when there's nothing saved for today yet. Single-
   // shot per page mount, gated by autoFiredRef so a parent re-render
@@ -59,14 +65,36 @@ export default function TodaysOutfitCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPick]);
 
+  // Best-effort cleanup if the user navigates away mid-request.
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
+    };
+  }, []);
+
+  function cancel() {
+    abortRef.current?.abort();
+    if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
+    setBusy(false);
+    setStillWaiting(false);
+  }
+
   async function pick(again = false) {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setBusy(true);
     setError(null);
+    setStillWaiting(false);
+    if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
+    stallTimerRef.current = setTimeout(() => setStillWaiting(true), 35_000);
     try {
       const res = await fetch("/api/ai/outfit/today", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ again }),
+        signal: controller.signal,
       });
       const data = await res.json();
       if (data?.enabled === false) {
@@ -94,10 +122,15 @@ export default function TodaysOutfitCard({
         setError(`Couldn't render the try-on: ${data.tryOnError}`);
       }
     } catch (err) {
+      // Aborts come through as DOMException with name "AbortError" — the
+      // user explicitly cancelled, no need to surface an error.
+      if (err instanceof DOMException && err.name === "AbortError") return;
       console.error(err);
       setError(err instanceof Error ? err.message : "Today's outfit failed.");
     } finally {
+      if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
       setBusy(false);
+      setStillWaiting(false);
     }
   }
 
@@ -178,12 +211,24 @@ export default function TodaysOutfitCard({
       )}
 
       {busy && (
-        <div className="mt-3">
+        <div className="mt-3 space-y-2">
           <ProgressBar
             value={pickProgress}
             label={picked ? "Picking your next look…" : "Picking + rendering your look…"}
             hint="usually 12–25s"
           />
+          {stillWaiting && (
+            <div className="flex items-center justify-between gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">
+              <span>Taking longer than usual. You can cancel and try again later.</span>
+              <button
+                type="button"
+                onClick={cancel}
+                className="rounded-full bg-white px-2 py-1 text-amber-800 ring-1 ring-amber-200 hover:bg-amber-100"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
         </div>
       )}
 
