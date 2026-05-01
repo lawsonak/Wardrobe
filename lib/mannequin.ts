@@ -9,9 +9,18 @@
 //   mannequin-source.<ext>    — original uploaded photo, kept so
 //                                "Regenerate" can re-run without
 //                                re-uploading
-//   mannequin.json            — metadata: { id, createdAt }. The `id`
-//                                is included in try-on cache hashes so
-//                                regenerating invalidates the cache.
+//   mannequin-head.png        — optional: stylized head crop (matching
+//                                the mannequin's illustration style)
+//                                that the try-on UI overlays on top
+//                                of the AI-rendered body via CSS, no
+//                                AI in the merge step. Easy to remove
+//                                from Settings to back out of the
+//                                feature without losing the mannequin.
+//   mannequin.json            — metadata: { id, createdAt, headBBox? }.
+//                                The `id` is included in try-on cache
+//                                hashes so regenerating invalidates
+//                                the cache. headBBox positions the
+//                                head overlay (normalized 0..1).
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -19,26 +28,40 @@ import crypto from "node:crypto";
 
 const UPLOAD_ROOT = path.join(process.cwd(), "data", "uploads");
 const MANNEQUIN_FILENAME = "mannequin.png";
+const MANNEQUIN_HEAD_FILENAME = "mannequin-head.png";
 const MANNEQUIN_SOURCE_PREFIX = "mannequin-source";
 const MANNEQUIN_META_FILENAME = "mannequin.json";
 
+// Frame coordinates for where the head sits on a freshly generated
+// mannequin (head fully visible at the top per the prompt). Used as a
+// fallback when no per-mannequin bbox has been computed. Normalized
+// 0..1 of the rendered image — width × 9:16 → these % values stay
+// stable across screen sizes.
+const DEFAULT_HEAD_BBOX = { x: 0.34, y: 0.015, w: 0.32, h: 0.18 };
+
+export type HeadBBox = { x: number; y: number; w: number; h: number };
+
 export type UserMannequinInfo = {
-  /** Public URL served via /api/uploads/<rel>, with a cache-busting v=. */
+  /** Path served via /api/uploads/<rel> when present, else null. */
   url: string | null;
-  /** Source photo is on disk (lets us regenerate without re-upload). */
   hasSource: boolean;
   /** Stable id used in try-on cache hashes. Null when no mannequin. */
   id: string | null;
+  /** Stylized head overlay served via /api/uploads/, when present. */
+  headUrl: string | null;
+  /** Where the head should sit on the mannequin image (0..1). Always
+   *  set when headUrl is set, falling back to DEFAULT_HEAD_BBOX. */
+  headBBox: HeadBBox | null;
 };
 
-type Meta = { id: string; createdAt: string };
+type Meta = { id: string; createdAt: string; headBBox?: HeadBBox };
 
 function userDir(userId: string): string {
   return path.join(UPLOAD_ROOT, userId);
 }
 
 export async function getUserMannequin(userId: string): Promise<UserMannequinInfo> {
-  if (!userId) return { url: null, hasSource: false, id: null };
+  if (!userId) return { url: null, hasSource: false, id: null, headUrl: null, headBBox: null };
   const dir = userDir(userId);
   const renderedAbs = path.join(dir, MANNEQUIN_FILENAME);
   let url: string | null = null;
@@ -57,8 +80,25 @@ export async function getUserMannequin(userId: string): Promise<UserMannequinInf
     /* dir may not exist yet */
   }
 
-  const id = await readMeta(userId).then((m) => m?.id ?? null);
-  return { url, hasSource, id };
+  let headUrl: string | null = null;
+  const headAbs = path.join(dir, MANNEQUIN_HEAD_FILENAME);
+  try {
+    const stat = await fs.stat(headAbs);
+    headUrl = `/api/uploads/${userId}/${MANNEQUIN_HEAD_FILENAME}?v=${stat.mtimeMs.toFixed(0)}`;
+  } catch {
+    /* not present */
+  }
+
+  const meta = await readMeta(userId);
+  const headBBox = headUrl ? meta?.headBBox ?? DEFAULT_HEAD_BBOX : null;
+
+  return {
+    url,
+    hasSource,
+    id: meta?.id ?? null,
+    headUrl,
+    headBBox,
+  };
 }
 
 export async function readUserMannequinPng(
@@ -144,6 +184,7 @@ export async function clearUserMannequin(userId: string): Promise<void> {
         .filter(
           (e) =>
             e === MANNEQUIN_FILENAME ||
+            e === MANNEQUIN_HEAD_FILENAME ||
             e === MANNEQUIN_META_FILENAME ||
             e.startsWith(`${MANNEQUIN_SOURCE_PREFIX}.`),
         )
@@ -151,6 +192,34 @@ export async function clearUserMannequin(userId: string): Promise<void> {
     );
   } catch {
     /* nothing to clear */
+  }
+}
+
+export async function saveStylizedHead(userId: string, png: Buffer): Promise<void> {
+  const dir = userDir(userId);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, MANNEQUIN_HEAD_FILENAME), png);
+  // Default bbox is good enough until/unless we add per-mannequin
+  // detection. Mannequin id stays the same — the head overlay isn't
+  // baked into the try-on PNG, it's CSS-stacked, so cached try-ons
+  // don't need to invalidate.
+  const meta = (await readMeta(userId)) ?? { id: `user-${userId.slice(0, 8)}`, createdAt: new Date().toISOString() };
+  if (!meta.headBBox) meta.headBBox = DEFAULT_HEAD_BBOX;
+  await fs.writeFile(path.join(dir, MANNEQUIN_META_FILENAME), JSON.stringify(meta, null, 2));
+}
+
+export async function clearStylizedHead(userId: string): Promise<void> {
+  if (!userId) return;
+  const dir = userDir(userId);
+  try {
+    await fs.unlink(path.join(dir, MANNEQUIN_HEAD_FILENAME));
+  } catch {
+    /* not present */
+  }
+  const meta = await readMeta(userId);
+  if (meta?.headBBox) {
+    delete meta.headBBox;
+    await fs.writeFile(path.join(dir, MANNEQUIN_META_FILENAME), JSON.stringify(meta, null, 2));
   }
 }
 
