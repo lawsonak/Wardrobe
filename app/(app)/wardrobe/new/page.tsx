@@ -34,7 +34,7 @@ export default async function NewItemPage({
             </Link>
           )}
           <Link href="/wardrobe/bulk" className="btn-secondary text-sm">
-            🗂 Import from library
+            🗂 Import from library (bulk)
           </Link>
         </div>
       </div>
