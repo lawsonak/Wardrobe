@@ -14,7 +14,7 @@ import {
   generateMannequinFromPhoto,
   generateStylizedHead,
 } from "@/lib/ai/mannequin";
-import { whiteToTransparent } from "@/lib/imageBg";
+import { whiteToTransparent, cropToSilhouette } from "@/lib/imageBg";
 import { prisma } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -58,8 +58,11 @@ async function tryGenerateHead(args: {
       // alpha=0 before saving so the overlay sits cleanly on the
       // try-on without a visible white square. No-op when the model
       // does honor the alpha channel request.
+      // Then tighten the canvas to the silhouette so the bbox in the
+      // try-on UI positions the head, not Gemini's incidental margin.
       const cleaned = whiteToTransparent(head.pngBuffer);
-      await saveStylizedHead(args.userId, cleaned);
+      const cropped = cropToSilhouette(cleaned);
+      await saveStylizedHead(args.userId, cropped);
     } else {
       console.warn("stylized head generation failed:", head.error);
     }
