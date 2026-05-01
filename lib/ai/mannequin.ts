@@ -154,6 +154,7 @@ const HEAD_PROMPT = [
   "Output requirements (CRITICAL):",
   "- Head ONLY, cropped just below the chin. No shoulders, no body, no neck below the jaw.",
   "- Background MUST be a single solid pure-white (#ffffff) — every pixel outside the head silhouette must be exactly white so it can be keyed out cleanly. Do NOT use off-white, cream, beige, gradient, or shadow on the background. Pure white only.",
+  "- DO NOT draw a checkerboard pattern, transparency-indicator pattern, grid, dots, noise, or any decorative pattern in the background. The background is a flat solid white field — nothing else.",
   "- Square framing. The head fills most of the canvas with a small margin.",
   "- Single PNG. Do not output text.",
 ].join(" ");

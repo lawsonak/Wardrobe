@@ -1,87 +1,166 @@
 // Server-side post-processing for AI-generated head crops.
 //
-// Gemini Flash Image's "transparent PNG" requests are unreliable — it
-// frequently returns a PNG with a solid white background instead of a
-// real alpha channel. We chroma-key the white pixels to alpha=0 with
-// soft edges so the head sits cleanly on top of a try-on without a
-// visible white square.
+// Gemini Flash Image's "transparent PNG" requests are unreliable. We've
+// seen three failure modes:
+//   1. Solid white background (most common)
+//   2. Off-white / cream / soft-shadow background
+//   3. The literal photoshop transparency-indicator checkerboard pattern
+//      drawn AS image content — alternating grey + white squares
 //
-// Implementation: pure JS via `pngjs`. No native deps. The thresholds
-// are tuned for the Gemini output (saturated white background, slight
-// JPEG-ish anti-aliasing artifacts at the silhouette edges).
+// A pure threshold chroma-key (the previous implementation) handles (1)
+// and (2) but the grey squares in (3) sneak through and you see a faint
+// checkerboard around the head.
+//
+// Approach: flood-fill from the canvas borders. Any pixel that is
+// "background-like" (high luminance, low saturation — covers white,
+// off-white, AND the light-grey checkerboard squares) AND reachable
+// from a border pixel of the same kind gets alpha=0. Pixels inside the
+// head silhouette are protected because they're walled off by darker
+// skin/hair pixels. Soft-edge feather is applied at the boundary so
+// the silhouette doesn't get a hard matte.
+//
+// Pure JS via `pngjs`. No native deps.
 
 import { PNG } from "pngjs";
 
-const FULLY_TRANSPARENT_AT = 245; // min(R,G,B) above this → alpha 0
-const SOFT_EDGE_FROM = 220;       // …and below this stays opaque; in
-                                  // between, alpha ramps linearly so
-                                  // the silhouette doesn't get a hard
-                                  // matte edge.
+// Background-like = min(R,G,B) ≥ HI AND saturation (max-min) ≤ SAT.
+// Tuned to catch:
+//   - pure white (255,255,255): min=255, sat=0
+//   - off-white (245,243,240): min=240, sat=5
+//   - light grey checkerboard square (215,215,215): min=215, sat=0
+// And NOT catch:
+//   - skin (220,180,150): min=150 — fails HI check
+//   - light blonde hair (230,210,180): min=180 — fails HI check
+const BG_MIN_LUMA = 200;
+const BG_MAX_SAT = 35;
+
+// Soft-edge feather: pixels just inside the silhouette that are still
+// somewhat light get partial alpha so the head doesn't have a hard cutout.
+const SOFT_EDGE_LUMA = 175;
+
+function isBackgroundLike(r: number, g: number, b: number): boolean {
+  const min = Math.min(r, g, b);
+  const max = Math.max(r, g, b);
+  return min >= BG_MIN_LUMA && max - min <= BG_MAX_SAT;
+}
 
 export function whiteToTransparent(input: Buffer): Buffer {
   let png: PNG;
   try {
     png = PNG.sync.read(input);
   } catch {
-    // Not a valid PNG (Gemini sometimes returns JPEG). Pass the
-    // bytes through unchanged — caller can decide what to do.
+    // Not a valid PNG (Gemini sometimes returns JPEG). Pass through.
     return input;
   }
 
-  // PNG.sync.read normalizes to RGBA when the source has any kind of
-  // transparency or palette; for plain RGB sources it stays 3-channel.
-  // pngjs always exposes a .data buffer that's RGBA when colorType
-  // includes alpha; we force RGBA on output.
-  const channels = png.data.length / (png.width * png.height);
-  const data = png.data;
+  const { width, height } = png;
+  const channels = png.data.length / (width * height);
 
+  // Normalize to RGBA in a fresh buffer so the rest of the code only
+  // has one shape to deal with.
+  let rgba: Buffer;
   if (channels === 4) {
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      const m = Math.min(r, g, b);
-      if (m >= FULLY_TRANSPARENT_AT) {
-        data[i + 3] = 0;
-      } else if (m > SOFT_EDGE_FROM) {
-        const t = (m - SOFT_EDGE_FROM) / (FULLY_TRANSPARENT_AT - SOFT_EDGE_FROM);
-        // Multiply existing alpha (preserves any anti-aliasing the
-        // model already produced) by the chroma-key factor.
-        data[i + 3] = Math.max(0, Math.min(255, Math.round(data[i + 3] * (1 - t))));
-      }
+    rgba = Buffer.from(png.data);
+  } else if (channels === 3) {
+    rgba = Buffer.alloc(width * height * 4);
+    for (let i = 0, j = 0; i < png.data.length; i += 3, j += 4) {
+      rgba[j] = png.data[i];
+      rgba[j + 1] = png.data[i + 1];
+      rgba[j + 2] = png.data[i + 2];
+      rgba[j + 3] = 255;
     }
-    return PNG.sync.write(png);
+  } else {
+    return input; // unexpected channel count
   }
 
-  if (channels === 3) {
-    // Synthesize an alpha channel from scratch.
-    const out = new PNG({
-      width: png.width,
-      height: png.height,
-      colorType: 6, // RGBA
-      inputColorType: 6,
-    });
-    const src = data;
-    const dst = out.data;
-    for (let i = 0, j = 0; i < src.length; i += 3, j += 4) {
-      const r = src[i];
-      const g = src[i + 1];
-      const b = src[i + 2];
-      dst[j] = r;
-      dst[j + 1] = g;
-      dst[j + 2] = b;
-      const m = Math.min(r, g, b);
-      if (m >= FULLY_TRANSPARENT_AT) dst[j + 3] = 0;
-      else if (m > SOFT_EDGE_FROM) {
-        const t = (m - SOFT_EDGE_FROM) / (FULLY_TRANSPARENT_AT - SOFT_EDGE_FROM);
-        dst[j + 3] = Math.round(255 * (1 - t));
-      } else {
-        dst[j + 3] = 255;
-      }
+  const total = width * height;
+  // visited bitmap: 0 = unvisited, 1 = background, 2 = foreground-edge
+  // (only flagged for background pixels that abut a foreground neighbor —
+  // those get the soft-edge feather).
+  const flag = new Uint8Array(total);
+
+  // BFS queue of pixel indices (NOT byte offsets).
+  const queue: number[] = [];
+
+  // Seed from every border pixel that looks background-like.
+  function seed(idx: number) {
+    const off = idx * 4;
+    const r = rgba[off];
+    const g = rgba[off + 1];
+    const b = rgba[off + 2];
+    if (isBackgroundLike(r, g, b) && flag[idx] === 0) {
+      flag[idx] = 1;
+      queue.push(idx);
     }
-    return PNG.sync.write(out);
+  }
+  for (let x = 0; x < width; x++) {
+    seed(x);
+    seed((height - 1) * width + x);
+  }
+  for (let y = 0; y < height; y++) {
+    seed(y * width);
+    seed(y * width + (width - 1));
   }
 
-  // Unexpected channel count — pass through.
-  return input;
+  // 4-connected flood fill. Any background-like pixel connected to a
+  // border seed is itself background.
+  while (queue.length) {
+    const idx = queue.pop() as number;
+    const x = idx % width;
+    const y = (idx / width) | 0;
+    const neighbors = [
+      x > 0 ? idx - 1 : -1,
+      x < width - 1 ? idx + 1 : -1,
+      y > 0 ? idx - width : -1,
+      y < height - 1 ? idx + width : -1,
+    ];
+    for (const n of neighbors) {
+      if (n < 0 || flag[n] !== 0) continue;
+      const off = n * 4;
+      if (isBackgroundLike(rgba[off], rgba[off + 1], rgba[off + 2])) {
+        flag[n] = 1;
+        queue.push(n);
+      }
+    }
+  }
+
+  // Pass 2: write alpha. Background pixels → 0. Pixels adjacent to a
+  // background pixel that are still light (luma > SOFT_EDGE_LUMA) get
+  // partial alpha proportional to how light they are — feathers the edge.
+  for (let idx = 0; idx < total; idx++) {
+    const off = idx * 4;
+    if (flag[idx] === 1) {
+      rgba[off + 3] = 0;
+      continue;
+    }
+    // Foreground pixel. Check 4-neighbors for background; if any, this
+    // is on the silhouette boundary and may need feathering.
+    const x = idx % width;
+    const y = (idx / width) | 0;
+    let touchesBg = false;
+    if (x > 0 && flag[idx - 1] === 1) touchesBg = true;
+    else if (x < width - 1 && flag[idx + 1] === 1) touchesBg = true;
+    else if (y > 0 && flag[idx - width] === 1) touchesBg = true;
+    else if (y < height - 1 && flag[idx + width] === 1) touchesBg = true;
+    if (!touchesBg) continue;
+
+    const r = rgba[off];
+    const g = rgba[off + 1];
+    const b = rgba[off + 2];
+    const min = Math.min(r, g, b);
+    if (min >= BG_MIN_LUMA) {
+      // Same brightness as background but saturated enough to not be
+      // counted as bg by the predicate (e.g. pale pink). Treat as bg too.
+      rgba[off + 3] = 0;
+    } else if (min > SOFT_EDGE_LUMA) {
+      // Linear ramp: at min=SOFT_EDGE_LUMA → alpha unchanged; at
+      // min=BG_MIN_LUMA → alpha 0.
+      const t = (min - SOFT_EDGE_LUMA) / (BG_MIN_LUMA - SOFT_EDGE_LUMA);
+      rgba[off + 3] = Math.round(rgba[off + 3] * (1 - t));
+    }
+  }
+
+  const out = new PNG({ width, height, colorType: 6, inputColorType: 6 });
+  rgba.copy(out.data);
+  return PNG.sync.write(out);
 }
