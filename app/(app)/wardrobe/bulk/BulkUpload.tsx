@@ -6,6 +6,13 @@ import { useRouter } from "next/navigation";
 import { CATEGORIES, type Category } from "@/lib/constants";
 import { removeBackground, resetBackgroundRemover } from "@/lib/bgRemoval";
 import { heicToJpeg, isHeic } from "@/lib/heic";
+import { normalizeOrientation } from "@/lib/imageOrientation";
+
+// Sentinel for the "Let AI decide" option. The bulk endpoint accepts
+// this and stores a placeholder category until AI tagging fills the
+// real one in.
+const AUTO_CATEGORY = "__auto__" as const;
+type DefaultCategory = Category | typeof AUTO_CATEGORY;
 
 // Two-phase pipeline:
 //   1. Upload — every picked photo goes to /api/items/bulk in a single
@@ -33,7 +40,7 @@ let nextId = 1;
 export default function BulkUpload() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [defaultCategory, setDefaultCategory] = useState<Category>("Tops");
+  const [defaultCategory, setDefaultCategory] = useState<DefaultCategory>(AUTO_CATEGORY);
   const [defaultStatus, setDefaultStatus] = useState<"needs_review" | "active">("needs_review");
   const [removeBg, setRemoveBg] = useState(true);
   const [aiTag, setAiTag] = useState(true);
@@ -105,22 +112,34 @@ export default function BulkUpload() {
     // batch of iPhone photos.
     const ready: Job[] = [];
     for (const j of pending) {
-      if (isHeic(j.file)) {
-        update(j.id, { state: "processing-heic" });
+      let working = j;
+      if (isHeic(working.file)) {
+        update(working.id, { state: "processing-heic" });
         try {
-          const converted = await heicToJpeg(j.file);
-          // Replace preview with the JPEG so the grid renders.
-          if (j.previewUrl) URL.revokeObjectURL(j.previewUrl);
+          const converted = await heicToJpeg(working.file);
+          if (working.previewUrl) URL.revokeObjectURL(working.previewUrl);
           const newPreview = URL.createObjectURL(converted);
-          update(j.id, { file: converted, previewUrl: newPreview });
-          ready.push({ ...j, file: converted, previewUrl: newPreview });
+          update(working.id, { file: converted, previewUrl: newPreview });
+          working = { ...working, file: converted, previewUrl: newPreview };
         } catch (err) {
           console.error("HEIC conversion failed", err);
-          update(j.id, { state: "error", error: "HEIC conversion failed" });
+          update(working.id, { state: "error", error: "HEIC conversion failed" });
+          continue;
         }
-      } else {
-        ready.push(j);
       }
+      // EXIF orientation → physical pixels for every queued photo.
+      try {
+        const reoriented = await normalizeOrientation(working.file);
+        if (reoriented !== working.file) {
+          if (working.previewUrl) URL.revokeObjectURL(working.previewUrl);
+          const newPreview = URL.createObjectURL(reoriented);
+          update(working.id, { file: reoriented, previewUrl: newPreview });
+          working = { ...working, file: reoriented, previewUrl: newPreview };
+        }
+      } catch (err) {
+        console.warn("orientation normalize failed for bulk job", err);
+      }
+      ready.push(working);
     }
 
     // One POST with every file attached.
@@ -155,7 +174,7 @@ export default function BulkUpload() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: "Bulk upload complete",
+          title: "Import complete",
           body: `${uploadedCount} item${uploadedCount === 1 ? "" : "s"} saved${defaultStatus === "needs_review" ? " — waiting for review" : ""}.`,
           href: defaultStatus === "needs_review" ? "/wardrobe/needs-review" : "/wardrobe",
         }),
@@ -261,13 +280,18 @@ export default function BulkUpload() {
             <select
               className="input"
               value={defaultCategory}
-              onChange={(e) => setDefaultCategory(e.target.value as Category)}
+              onChange={(e) => setDefaultCategory(e.target.value as DefaultCategory)}
             >
+              <option value={AUTO_CATEGORY}>✨ Let AI decide</option>
               {CATEGORIES.map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
-            <p className="mt-1 text-xs text-stone-500">Per-item edits happen in Needs Review.</p>
+            <p className="mt-1 text-xs text-stone-500">
+              {defaultCategory === AUTO_CATEGORY
+                ? "AI will read each photo and assign the right category."
+                : "Every photo in this batch becomes a " + defaultCategory + " — edit individuals later."}
+            </p>
           </div>
           <div>
             <label className="label">After upload</label>
@@ -316,6 +340,13 @@ export default function BulkUpload() {
         <div className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-700 ring-1 ring-amber-200">
           Tip: don&apos;t mix label / tag close-ups into a bulk upload — each photo becomes its own
           item. Add label photos from the item&apos;s detail page after.
+        </div>
+      )}
+
+      {defaultCategory === AUTO_CATEGORY && !aiTag && (
+        <div className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-700 ring-1 ring-amber-200">
+          &ldquo;Let AI decide&rdquo; needs Auto-tag turned on. Either enable Auto-tag above, or pick a
+          specific category — otherwise every item lands as a placeholder you&apos;ll have to fix in Needs Review.
         </div>
       )}
 

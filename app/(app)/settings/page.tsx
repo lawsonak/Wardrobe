@@ -1,20 +1,43 @@
 import Link from "next/link";
+import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { firstNameFromUser } from "@/lib/userName";
+import { getPrefs, setHomeCity, setStylePreferences } from "@/lib/userPrefs";
+import { getForecast, cToF } from "@/lib/weather";
+import { getMannequinForUser } from "@/lib/mannequin";
+import MannequinUpload from "@/components/MannequinUpload";
 
 export const dynamic = "force-dynamic";
+
+async function saveHomeCityAction(formData: FormData) {
+  "use server";
+  const value = String(formData.get("homeCity") ?? "");
+  await setHomeCity(value);
+  revalidatePath("/");
+  revalidatePath("/settings");
+}
+
+async function saveStylePrefsAction(formData: FormData) {
+  "use server";
+  const value = String(formData.get("stylePreferences") ?? "");
+  await setStylePreferences(value);
+  revalidatePath("/settings");
+}
 
 export default async function SettingsPage() {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
   const firstName = firstNameFromUser(session?.user);
+  const prefs = await getPrefs();
 
-  const [items, outfits, wishlist, brands] = await Promise.all([
+  const [items, outfits, wishlist, brands, forecast, mannequin] = await Promise.all([
     prisma.item.count({ where: { ownerId: userId } }),
     prisma.outfit.count({ where: { ownerId: userId } }),
     prisma.wishlistItem.count({ where: { ownerId: userId } }),
     prisma.brand.count({ where: { ownerId: userId } }),
+    prefs.homeCity ? getForecast(prefs.homeCity) : Promise.resolve(null),
+    getMannequinForUser(userId),
   ]);
 
   return (
@@ -26,6 +49,77 @@ export default async function SettingsPage() {
           {firstName ? `Hi ${firstName}.` : ""} Useful tools and a backup button.
         </p>
       </div>
+
+      <section className="card p-4">
+        <h2 className="font-display text-lg text-stone-800">Your mannequin</h2>
+        <p className="mt-1 text-sm text-stone-600">
+          Upload a photo of yourself and we&apos;ll turn it into a soft fashion-illustration
+          mannequin. It&apos;s used in the outfit style canvas so layouts feel like they&apos;re on you.
+        </p>
+        <div className="mt-3">
+          <MannequinUpload
+            initial={{
+              url: mannequin.url,
+              hasSource: mannequin.hasSource,
+              hasLandmarks: !!mannequin.landmarks,
+            }}
+          />
+        </div>
+      </section>
+
+      <section className="card p-4">
+        <h2 className="font-display text-lg text-stone-800">Home city</h2>
+        <p className="mt-1 text-sm text-stone-600">
+          Used to tailor &ldquo;Today&apos;s outfit&rdquo; on your dashboard with the local weather.
+          Optional — leave blank to skip.
+        </p>
+        <form action={saveHomeCityAction} className="mt-3 flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            name="homeCity"
+            defaultValue={prefs.homeCity ?? ""}
+            placeholder="e.g. Brooklyn, NY"
+            className="input flex-1 min-w-[14rem]"
+            aria-label="Home city"
+          />
+          <button type="submit" className="btn-primary">Save</button>
+        </form>
+        {forecast && (
+          <p className="mt-3 text-xs text-stone-500">
+            Showing {forecast.city}{forecast.country ? `, ${forecast.country}` : ""}: {cToF(forecast.tempC)}°F, {forecast.conditions}.
+          </p>
+        )}
+        {prefs.homeCity && !forecast && (
+          <p className="mt-3 text-xs text-stone-500">
+            Couldn&apos;t look up &ldquo;{prefs.homeCity}&rdquo; just now — try a more specific name.
+          </p>
+        )}
+      </section>
+
+      <section className="card p-4">
+        <h2 className="font-display text-lg text-stone-800">Style preferences</h2>
+        <p className="mt-1 text-sm text-stone-600">
+          Free-form notes for the AI to factor in when picking outfits or making
+          suggestions. A few examples:
+        </p>
+        <ul className="mt-2 list-disc pl-5 text-xs text-stone-500">
+          <li>I don&apos;t like wearing pink and blue together.</li>
+          <li>I always wear denim with sunglasses.</li>
+          <li>Avoid oversized fits; I prefer tailored silhouettes.</li>
+          <li>I never wear yellow.</li>
+        </ul>
+        <form action={saveStylePrefsAction} className="mt-3 space-y-2">
+          <textarea
+            name="stylePreferences"
+            defaultValue={prefs.stylePreferences ?? ""}
+            placeholder="Anything you want the AI to remember about your style…"
+            className="input min-h-[7rem] w-full resize-y"
+            maxLength={1500}
+            aria-label="Style preferences"
+          />
+          <button type="submit" className="btn-primary">Save preferences</button>
+        </form>
+      </section>
 
       <section className="card p-4">
         <h2 className="font-display text-lg text-stone-800">Backup</h2>
@@ -61,21 +155,27 @@ export default async function SettingsPage() {
           </li>
           <li>
             <Link href="/wardrobe/new?batch=1" className="text-blush-600 hover:underline">
-              Batch add
+              Quick add
             </Link>
-            <span className="text-stone-500"> — rapid-fire add many items in a row.</span>
+            <span className="text-stone-500"> — snap photos one at a time; the camera reopens after each save.</span>
           </li>
           <li>
             <Link href="/wardrobe/bulk" className="text-blush-600 hover:underline">
-              Bulk upload
+              Import from library
             </Link>
-            <span className="text-stone-500"> — pick a stack of photos at once, send to Needs Review.</span>
+            <span className="text-stone-500"> — pick a stack of existing photos at once; AI tags them in the background.</span>
           </li>
           <li>
             <Link href="/collections" className="text-blush-600 hover:underline">
               Collections
             </Link>
             <span className="text-stone-500"> — plan trips with destination + dates and AI-curated packing lists.</span>
+          </li>
+          <li>
+            <Link href="/sets" className="text-blush-600 hover:underline">
+              Matching sets
+            </Link>
+            <span className="text-stone-500"> — link pieces that came together (swimsuit top + bottom, pajamas) without locking them into one outfit.</span>
           </li>
           <li>
             <Link href="/admin" className="text-blush-600 hover:underline">

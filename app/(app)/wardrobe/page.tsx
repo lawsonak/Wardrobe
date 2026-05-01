@@ -3,27 +3,64 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { CATEGORIES, type Category } from "@/lib/constants";
 import ItemCard from "@/components/ItemCard";
-import { firstNameFromUser, possessiveTitle } from "@/lib/userName";
+import { firstNameFromUser } from "@/lib/userName";
+import SmartSearchBar from "./SmartSearchBar";
+import { inferredCategoriesFor } from "@/lib/activities";
 
 export const dynamic = "force-dynamic";
 
 export default async function WardrobePage({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string; fav?: string; q?: string; status?: string }>;
+  searchParams: Promise<{
+    category?: string;
+    fav?: string;
+    q?: string;
+    status?: string;
+    color?: string;
+    season?: string;
+    activity?: string;
+  }>;
 }) {
   const [sp, session] = await Promise.all([searchParams, auth()]);
+  const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
   const firstName = firstNameFromUser(session?.user);
+
   const category = sp.category && CATEGORIES.includes(sp.category as Category) ? sp.category : undefined;
   const favOnly = sp.fav === "1";
   const q = sp.q?.trim();
   const statusFilter = sp.status;
+  const color = sp.color?.trim() || undefined;
+  const season = sp.season?.trim() || undefined;
+  const activity = sp.activity?.trim() || undefined;
+
+  // Activity filter pulls in categories that strongly imply that
+  // activity — e.g. "beach" surfaces every Swimwear item even when
+  // no one has tagged it explicitly.
+  const activityClause = activity
+    ? (() => {
+        const inferred = inferredCategoriesFor(activity);
+        if (inferred.length === 0) {
+          return { activities: { contains: activity } };
+        }
+        return {
+          OR: [
+            { activities: { contains: activity } },
+            { category: { in: inferred } },
+          ],
+        };
+      })()
+    : null;
 
   const items = await prisma.item.findMany({
     where: {
+      ownerId: userId,
       ...(category ? { category } : {}),
       ...(favOnly ? { isFavorite: true } : {}),
-      ...(statusFilter ? { status: statusFilter } : {}),
+      ...(statusFilter ? { status: statusFilter } : { status: "active" }),
+      ...(color ? { color } : {}),
+      ...(season ? { seasons: { contains: season } } : {}),
+      ...(activityClause ?? {}),
       ...(q
         ? {
             OR: [
@@ -38,54 +75,100 @@ export default async function WardrobePage({
     orderBy: { createdAt: "desc" },
   });
 
-  const title = possessiveTitle("Closet", firstName);
+  const filtered = items;
+
+  const title = "Closet";
+  const activeFilters: { label: string; href: string }[] = [];
+  if (category) activeFilters.push({ label: category, href: dropParam(sp, "category") });
+  if (color) activeFilters.push({ label: color, href: dropParam(sp, "color") });
+  if (season) activeFilters.push({ label: season, href: dropParam(sp, "season") });
+  if (activity) activeFilters.push({ label: activity, href: dropParam(sp, "activity") });
+  if (favOnly) activeFilters.push({ label: "favorites", href: dropParam(sp, "fav") });
 
   return (
     <div className="space-y-5">
       <div className="flex items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl text-blush-700">{title}</h1>
-          <p className="text-sm text-stone-500">{items.length} item{items.length === 1 ? "" : "s"}</p>
+          <p className="text-sm text-stone-500">
+            {filtered.length} item{filtered.length === 1 ? "" : "s"}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Link href="/wardrobe/new" className="btn-primary">+ Add</Link>
-          <Link href="/wardrobe/bulk" className="btn-secondary text-xs">Bulk</Link>
+          <Link href="/wardrobe/bulk" className="btn-secondary text-xs">Import</Link>
         </div>
       </div>
 
-      <form className="flex flex-wrap items-center gap-2" action="/wardrobe">
-        <input
-          name="q"
-          defaultValue={q ?? ""}
-          placeholder="Search by name, brand, color…"
-          className="input flex-1 min-w-[14rem]"
-        />
-        <select name="category" defaultValue={category ?? ""} className="input w-auto">
-          <option value="">All categories</option>
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
-        <label className="chip chip-off cursor-pointer">
-          <input type="checkbox" name="fav" value="1" defaultChecked={favOnly} className="mr-1" />
-          Favorites
-        </label>
-        <button className="btn-secondary" type="submit">Filter</button>
-      </form>
+      <SmartSearchBar initialQuery={q ?? ""} hasItems={items.length > 0} />
 
-      {items.length === 0 ? (
+      {/* Quick taxonomy filter (form, kept for keyboard-only / no-AI users) */}
+      <details className="card p-3 text-sm">
+        <summary className="cursor-pointer select-none text-stone-600">More filters</summary>
+        <form className="mt-3 flex flex-wrap items-center gap-2" action="/wardrobe">
+          <select name="category" defaultValue={category ?? ""} className="input w-auto">
+            <option value="">All categories</option>
+            {CATEGORIES.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+          <label className="chip chip-off cursor-pointer">
+            <input type="checkbox" name="fav" value="1" defaultChecked={favOnly} className="mr-1" />
+            Favorites
+          </label>
+          <button className="btn-secondary" type="submit">Apply</button>
+        </form>
+      </details>
+
+      {activeFilters.length > 0 && (
+        <div className="-mt-2 flex flex-wrap items-center gap-2 text-xs text-stone-500">
+          <span>Filtering by:</span>
+          {activeFilters.map((f) => (
+            <Link key={f.label} href={f.href} className="chip chip-off pr-2">
+              {f.label}
+              <span aria-hidden className="ml-1 text-stone-400">×</span>
+              <span className="sr-only">Remove filter</span>
+            </Link>
+          ))}
+        </div>
+      )}
+
+      {filtered.length === 0 ? (
         <div className="card p-10 text-center">
-          <p className="font-display text-2xl text-blush-700">Nothing here yet</p>
-          <p className="mt-1 text-stone-600">Add your first piece to start your collection.</p>
-          <Link href="/wardrobe/new" className="btn-primary mt-4 inline-flex">+ Add an item</Link>
+          {items.length === 0 ? (
+            <>
+              <p className="font-display text-2xl text-blush-700">
+                {firstName ? `Welcome, ${firstName}.` : "Your closet is waiting."}
+              </p>
+              <p className="mt-1 text-stone-600">Snap your first piece — tags can wait.</p>
+              <Link href="/wardrobe/new" className="btn-primary mt-4 inline-flex">+ Add an item</Link>
+            </>
+          ) : (
+            <>
+              <p className="font-display text-2xl text-blush-700">Nothing matches</p>
+              <p className="mt-1 text-stone-600">Try clearing a filter or rephrasing your search.</p>
+              <Link href="/wardrobe" className="btn-secondary mt-4 inline-flex">Clear filters</Link>
+            </>
+          )}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-          {items.map((item) => (
-            <ItemCard key={item.id} item={item} href={`/wardrobe/${item.id}`} />
+        <div className="-mx-1 grid grid-cols-4 gap-1 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7">
+          {filtered.map((item) => (
+            <ItemCard key={item.id} item={item} href={`/wardrobe/${item.id}`} compact />
           ))}
         </div>
       )}
     </div>
   );
+}
+
+// Build the URL string with one parameter dropped.
+function dropParam(sp: Record<string, string | undefined>, key: string): string {
+  const u = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) {
+    if (k === key || !v) continue;
+    u.set(k, v);
+  }
+  const qs = u.toString();
+  return qs ? `/wardrobe?${qs}` : "/wardrobe";
 }

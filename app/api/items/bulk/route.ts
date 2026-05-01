@@ -35,11 +35,18 @@ export async function POST(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const form = await req.formData();
-  const category = String(form.get("category") || "");
-  if (!category || !CATEGORIES.includes(category as (typeof CATEGORIES)[number])) {
+  const rawCategory = String(form.get("category") || "");
+  // "__auto__" means the user wants AI to assign a category. We need a
+  // non-null category at insert time, so store a placeholder ("Tops")
+  // and force needs_review status — AI tagging will overwrite both.
+  const isAuto = rawCategory === "__auto__";
+  const category = isAuto ? "Tops" : rawCategory;
+  if (!isAuto && (!category || !CATEGORIES.includes(category as (typeof CATEGORIES)[number]))) {
     return NextResponse.json({ error: "Missing or invalid category" }, { status: 400 });
   }
-  const statusVal = (form.get("status") as string | null) || "needs_review";
+  const statusVal = isAuto
+    ? "needs_review"
+    : (form.get("status") as string | null) || "needs_review";
 
   const files = form.getAll("images").filter((x): x is File => x instanceof File && x.size > 0);
   if (files.length === 0) {

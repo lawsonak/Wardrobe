@@ -3,7 +3,8 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { ACTIVITIES, SEASONS, SLOTS } from "@/lib/constants";
 import OutfitCard from "@/components/OutfitCard";
-import { firstNameFromUser, possessiveTitle } from "@/lib/userName";
+import { firstNameFromUser } from "@/lib/userName";
+import { getMannequinForUser } from "@/lib/mannequin";
 
 export const dynamic = "force-dynamic";
 
@@ -13,19 +14,23 @@ export default async function OutfitsPage({
   searchParams: Promise<{ activity?: string; season?: string; fav?: string }>;
 }) {
   const [sp, session] = await Promise.all([searchParams, auth()]);
+  const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
   const firstName = firstNameFromUser(session?.user);
 
-  const outfits = await prisma.outfit.findMany({
-    where: {
-      ...(sp.activity ? { activity: sp.activity } : {}),
-      ...(sp.season ? { season: sp.season } : {}),
-      ...(sp.fav === "1" ? { isFavorite: true } : {}),
-    },
-    orderBy: { updatedAt: "desc" },
-    include: { items: { include: { item: true } } },
-  });
+  const [outfits, mannequin] = await Promise.all([
+    prisma.outfit.findMany({
+      where: {
+        ...(sp.activity ? { activity: sp.activity } : {}),
+        ...(sp.season ? { season: sp.season } : {}),
+        ...(sp.fav === "1" ? { isFavorite: true } : {}),
+      },
+      orderBy: { updatedAt: "desc" },
+      include: { items: { include: { item: true } } },
+    }),
+    getMannequinForUser(userId),
+  ]);
 
-  const title = possessiveTitle("Outfits", firstName);
+  const title = "Outfits";
 
   return (
     <div className="space-y-5">
@@ -59,9 +64,15 @@ export default async function OutfitsPage({
 
       {outfits.length === 0 ? (
         <div className="card p-10 text-center">
-          <p className="font-display text-2xl text-blush-700">No outfits yet</p>
-          <p className="mt-1 text-stone-600">Mix and match your pieces to save your first look.</p>
-          <Link href="/outfits/builder" className="btn-primary mt-4 inline-flex">Build an outfit</Link>
+          <div className="text-4xl" aria-hidden>👗</div>
+          <p className="mt-3 font-display text-2xl text-blush-700">
+            {firstName ? `Build your first look, ${firstName}.` : "Build your first look."}
+          </p>
+          <p className="mt-1 text-stone-600">Mix and match a few favorites — or let AI suggest something.</p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <Link href="/outfits/builder" className="btn-primary">Build an outfit</Link>
+            <Link href="/outfits/builder?shuffle=1" className="btn-secondary">✨ Surprise me</Link>
+          </div>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
@@ -74,6 +85,7 @@ export default async function OutfitsPage({
                 activity: o.activity,
                 season: o.season,
                 isFavorite: o.isFavorite,
+                layoutJson: o.layoutJson,
                 items: o.items.map((oi) => ({
                   slot: oi.slot,
                   item: {
@@ -86,6 +98,8 @@ export default async function OutfitsPage({
                 }))}
               }
               slotsOrder={[...SLOTS]}
+              mannequinSrc={mannequin.url}
+              landmarks={mannequin.landmarks}
             />
           ))}
         </div>

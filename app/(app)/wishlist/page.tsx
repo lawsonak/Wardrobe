@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
-import { firstNameFromUser, possessiveTitle } from "@/lib/userName";
+import { firstNameFromUser } from "@/lib/userName";
 import WishlistCard from "./WishlistCard";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,7 @@ export default async function WishlistPage() {
   const active = items.filter((i) => !i.purchased);
   const purchased = items.filter((i) => i.purchased);
 
-  const title = possessiveTitle("Wishlist", firstName);
+  const title = "Wishlist";
 
   const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
   const sortedActive = [...active].sort(
@@ -41,8 +41,11 @@ export default async function WishlistPage() {
 
       {items.length === 0 ? (
         <div className="card p-10 text-center">
-          <p className="font-display text-2xl text-blush-700">Nothing on the list yet</p>
-          <p className="mt-1 text-stone-600">Add pieces you love, want to try, or need to fill a gap.</p>
+          <div className="text-4xl" aria-hidden>💝</div>
+          <p className="mt-3 font-display text-2xl text-blush-700">
+            {firstName ? `Start a wishlist, ${firstName}.` : "Start a wishlist."}
+          </p>
+          <p className="mt-1 text-stone-600">Birthday hints, vacation dreams, or pieces you keep eyeing.</p>
           <Link href="/wishlist/new" className="btn-primary mt-4 inline-flex">Add your first wish</Link>
         </div>
       ) : (

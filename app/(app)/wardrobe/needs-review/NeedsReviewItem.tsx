@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { confirmDialog } from "@/components/ConfirmDialog";
+import { toast } from "@/lib/toast";
+import { haptic } from "@/lib/haptics";
 
 type ReviewItem = {
   id: string;
@@ -35,20 +38,38 @@ export default function NeedsReviewItem({ item }: { item: ReviewItem }) {
 
   async function approve() {
     setBusy(true);
-    await fetch(`/api/items/${item.id}`, {
+    haptic("success");
+    const res = await fetch(`/api/items/${item.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "active" }),
     });
     setBusy(false);
-    router.refresh();
+    if (res.ok) {
+      toast("Approved — moved to closet");
+      router.refresh();
+    } else {
+      toast("Couldn't approve", "error");
+    }
   }
 
   async function remove() {
-    if (!confirm("Delete this item?")) return;
+    const ok = await confirmDialog({
+      title: "Delete this item?",
+      body: "It will be removed from your closet permanently.",
+      confirmText: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
     setBusy(true);
-    await fetch(`/api/items/${item.id}`, { method: "DELETE" });
-    router.refresh();
+    const res = await fetch(`/api/items/${item.id}`, { method: "DELETE" });
+    setBusy(false);
+    if (res.ok) {
+      toast("Item deleted");
+      router.refresh();
+    } else {
+      toast("Couldn't delete", "error");
+    }
   }
 
   return (
@@ -73,7 +94,7 @@ export default function NeedsReviewItem({ item }: { item: ReviewItem }) {
         )}
 
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Link href={`/wardrobe/${item.id}`} className="chip chip-off text-xs">
+          <Link href={`/wardrobe/${item.id}?edit=1`} className="chip chip-off text-xs">
             Edit details
           </Link>
           <button

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { confirmDialog } from "@/components/ConfirmDialog";
 
 type Storage = {
   totalFiles: number;
@@ -42,7 +43,13 @@ export default function AdminStorage() {
 
   async function cleanup() {
     if (!data || data.orphans.length === 0) return;
-    if (!confirm(`Delete ${data.orphans.length} orphaned file${data.orphans.length === 1 ? "" : "s"}? This is permanent.`)) return;
+    const ok = await confirmDialog({
+      title: `Delete ${data.orphans.length} orphaned file${data.orphans.length === 1 ? "" : "s"}?`,
+      body: "These photos aren't referenced by any item. This is permanent.",
+      confirmText: "Delete files",
+      destructive: true,
+    });
+    if (!ok) return;
     setBusy(true);
     setMessage(null);
     try {

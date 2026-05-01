@@ -2,7 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import MannequinSilhouette from "@/components/MannequinSilhouette";
-import { CATEGORY_TO_SLOT, type Category, type Slot } from "@/lib/constants";
+import { slotForItem, type Slot } from "@/lib/constants";
+import { slotDefaults, type SlotPlacement } from "@/lib/slots";
+import type { Landmarks } from "@/lib/ai/mannequinLandmarks";
+import { toast } from "@/lib/toast";
+import { haptic } from "@/lib/haptics";
+import ProgressBar from "@/components/ProgressBar";
+import { useTimedProgress } from "@/lib/progress";
 
 export type CanvasItem = {
   id: string;
@@ -26,19 +32,8 @@ type Layer = {
   label: string;
 };
 
-// Default placement and size by slot (percent of canvas).
-const SLOT_DEFAULTS: Record<Slot, { x: number; y: number; w: number; z: number }> = {
-  top:       { x: 50, y: 32, w: 56, z: 4 },
-  dress:     { x: 50, y: 44, w: 60, z: 3 },
-  bottom:    { x: 50, y: 58, w: 50, z: 4 },
-  outerwear: { x: 50, y: 38, w: 70, z: 5 },
-  shoes:     { x: 50, y: 92, w: 30, z: 6 },
-  accessory: { x: 50, y: 22, w: 24, z: 7 },
-  bag:       { x: 78, y: 50, w: 24, z: 8 },
-};
-
-function slotFor(category: string): Slot {
-  return CATEGORY_TO_SLOT[category as Category] ?? "accessory";
+function slotFor(item: { category: string; subType: string | null }): Slot {
+  return slotForItem(item.category, item.subType);
 }
 
 function srcFor(item: CanvasItem) {
@@ -51,12 +46,23 @@ export default function StyleCanvas({
   outfitId,
   items,
   initialLayoutJson,
+  mannequinSrc,
+  landmarks,
 }: {
   outfitId?: string;
   items: CanvasItem[];
   initialLayoutJson?: string | null;
+  mannequinSrc?: string | null;
+  landmarks?: Landmarks | null;
 }) {
   const canvasRef = useRef<HTMLDivElement>(null);
+
+  // Per-mannequin slot placements derived from landmarks (or hardcoded
+  // silhouette defaults when no calibration exists yet).
+  const SLOT_DEFAULTS: Record<Slot, SlotPlacement> = useMemo(
+    () => slotDefaults(landmarks ?? null),
+    [landmarks],
+  );
 
   // Build initial layers, restoring any saved layout for items that still
   // belong to this outfit.
@@ -73,7 +79,7 @@ export default function StyleCanvas({
       }
     }
     return items.map((it, idx) => {
-      const slot = slotFor(it.category);
+      const slot = slotFor(it);
       const d = SLOT_DEFAULTS[slot];
       const fromSaved = saved[it.id];
       return {
@@ -228,18 +234,75 @@ export default function StyleCanvas({
     );
   }
 
+  const [fitState, setFitState] = useState<"idle" | "running" | "error">("idle");
+  const fitProgress = useTimedProgress(fitState === "running", 20);
+
+  // Ask AI for per-item placement on the user's mannequin and replace
+  // the local layer positions with the result. The auto-save effect
+  // then persists the new layout server-side. Mannequin pixels are
+  // not touched.
+  async function autoFit() {
+    if (!outfitId || fitState === "running") return;
+    setFitState("running");
+    try {
+      const res = await fetch(`/api/outfits/${outfitId}/fit`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+      const parsed = JSON.parse(data.layoutJson) as { layers?: Array<{ id: string; x: number; y: number; w: number; rotation: number; hidden?: boolean }> };
+      const byId = new Map((parsed.layers ?? []).map((l) => [l.id, l]));
+      setLayers((prev) =>
+        prev.map((l) => {
+          const next = byId.get(l.id);
+          if (!next) return l;
+          return {
+            ...l,
+            x: next.x,
+            y: next.y,
+            w: next.w,
+            rotation: next.rotation,
+            hidden: next.hidden ?? false,
+          };
+        }),
+      );
+      haptic("success");
+      toast("Fitted to your mannequin");
+      setFitState("idle");
+    } catch (err) {
+      console.error(err);
+      const msg = err instanceof Error ? err.message : String(err);
+      toast(msg, "error");
+      setFitState("error");
+    }
+  }
+
   // Keep the canvas square-ish on big screens, full width on mobile.
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between text-xs text-stone-500">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-stone-500">
         <span>
           {saveState === "saving" && "Saving…"}
           {saveState === "saved" && <span className="text-sage-600">✓ Saved</span>}
           {saveState === "error" && <span className="text-blush-700">Save failed — retry by editing again.</span>}
           {saveState === "idle" && "Auto-saves as you edit."}
         </span>
-        <button type="button" onClick={resetAll} className="btn-ghost text-xs">Reset all</button>
+        <div className="flex flex-wrap items-center gap-2">
+          {outfitId && (
+            <button
+              type="button"
+              onClick={autoFit}
+              disabled={fitState === "running"}
+              className="btn-ghost text-xs text-blush-600"
+              title="Ask AI to position each piece on your mannequin"
+            >
+              {fitState === "running" ? "Fitting…" : "✨ Auto-fit"}
+            </button>
+          )}
+          <button type="button" onClick={resetAll} className="btn-ghost text-xs">Reset all</button>
+        </div>
       </div>
+      {fitState === "running" && (
+        <ProgressBar value={fitProgress} label="Fitting clothes to your mannequin…" />
+      )}
       <div className="card p-2">
         <div
           ref={canvasRef}
@@ -249,7 +312,7 @@ export default function StyleCanvas({
           onPointerCancel={onPointerUp}
           onClick={() => setSelectedId(null)}
         >
-          <MannequinSilhouette className="absolute inset-0 h-full w-full" />
+          <MannequinSilhouette src={mannequinSrc} className="absolute inset-0 h-full w-full" />
           {sorted.map((l) =>
             l.hidden ? null : (
               <div

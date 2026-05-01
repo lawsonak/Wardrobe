@@ -78,6 +78,9 @@ export interface TagProvider {
       seasons?: string[];
       activities?: string[];
     }>;
+    /** Free-form style notes from the user — e.g. "I don't pair pink and blue".
+     *  Honored unless directly contradicted by the occasion. */
+    preferences?: string;
   }): Promise<OutfitSuggestion>;
   /** Curate a packing list for a trip from the user's closet. Reasons
    *  about destination climate, trip length and planned activities,
@@ -112,6 +115,10 @@ export interface TagProvider {
     endDate?: string;
     occasion?: string;
   }): Promise<ActivitySuggestion>;
+  /** Parse a free-text closet search into structured filters. Optional —
+   *  the wardrobe UI falls back to LIKE-search across notes/brand/etc.
+   *  when this isn't implemented. */
+  parseSearch?(input: { query: string }): Promise<SearchParseResult>;
 }
 
 export type NotesResult = {
@@ -138,6 +145,22 @@ export type PackingListSuggestion = {
 export type ActivitySuggestion = {
   // Mix of ACTIVITIES enum values and free-form strings.
   activities: string[];
+  debug?: TagDebug;
+};
+
+// Parsed natural-language closet search. All fields optional; the
+// caller composes the final filter from whatever the model returned.
+export type SearchFilters = {
+  category?: string;       // one of CATEGORIES, or undefined
+  color?: string;          // one of COLOR_PALETTE names
+  season?: string;         // one of SEASONS
+  activity?: string;       // one of ACTIVITIES
+  favoritesOnly?: boolean;
+  freeText?: string;       // remainder for LIKE-search across notes etc.
+};
+
+export type SearchParseResult = {
+  filters: SearchFilters;
   debug?: TagDebug;
 };
 

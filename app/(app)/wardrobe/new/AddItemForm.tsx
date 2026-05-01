@@ -15,8 +15,14 @@ import FitDetailsEditor from "@/components/FitDetailsEditor";
 import SubtypePicker from "@/components/SubtypePicker";
 import { removeBackground, resetBackgroundRemover } from "@/lib/bgRemoval";
 import { heicToJpeg, isHeic } from "@/lib/heic";
+import { normalizeOrientation, rotateImage } from "@/lib/imageOrientation";
 import { normalizeSize } from "@/lib/size";
 import { serializeFitDetails } from "@/lib/fitDetails";
+import { toast } from "@/lib/toast";
+import { haptic } from "@/lib/haptics";
+import { fetchWithRetry, friendlyFetchError } from "@/lib/fetchRetry";
+import ProgressBar from "@/components/ProgressBar";
+import { useTimedProgress } from "@/lib/progress";
 
 export default function AddItemForm() {
   const router = useRouter();
@@ -33,6 +39,8 @@ export default function AddItemForm() {
   const [bgRemoved, setBgRemoved] = useState<Blob | null>(null);
   const [bgUrl, setBgUrl] = useState<string | null>(null);
   const [bgState, setBgState] = useState<"idle" | "running" | "done" | "error">("idle");
+  const [bgProgress, setBgProgress] = useState<number>(0);
+  const [bgPhase, setBgPhase] = useState<"fetch" | "compute" | "other" | null>(null);
   const [bgError, setBgError] = useState<string | null>(null);
   const [useOriginal, setUseOriginal] = useState(false);
 
@@ -53,11 +61,10 @@ export default function AddItemForm() {
   const [isFavorite, setIsFavorite] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [savedToast, setSavedToast] = useState<string | null>(null);
+  const [reopenCamera, setReopenCamera] = useState(false);
   const [autoTagState, setAutoTagState] = useState<"idle" | "running" | "done" | "disabled" | "error">("idle");
   const [autoTagMessage, setAutoTagMessage] = useState<string | null>(null);
-  const [notesState, setNotesState] = useState<"idle" | "running" | "error">("idle");
-  const [notesError, setNotesError] = useState<string | null>(null);
+  const autoTagProgress = useTimedProgress(autoTagState === "running", 18);
 
   useEffect(() => {
     return () => {
@@ -66,6 +73,16 @@ export default function AddItemForm() {
       if (labelUrl) URL.revokeObjectURL(labelUrl);
     };
   }, [originalUrl, bgUrl, labelUrl]);
+
+  // After a successful batch save, reopen the camera once the form has
+  // finished resetting (any preview elements unmounted, refs cleared).
+  // Driven by state instead of setTimeout so the camera always fires.
+  useEffect(() => {
+    if (reopenCamera && !original) {
+      cameraRef.current?.click();
+      setReopenCamera(false);
+    }
+  }, [reopenCamera, original]);
 
   async function processFile(picked: File): Promise<File | null> {
     let file = picked;
@@ -79,18 +96,54 @@ export default function AddItemForm() {
         return null;
       }
     }
+    // Bake EXIF orientation into pixels before any other processing
+    // so canvas-based steps (bg removal, rotation, etc.) see straight-up bytes.
+    try {
+      file = await normalizeOrientation(file);
+    } catch (err) {
+      console.warn("orientation normalize failed, using original", err);
+    }
     return file;
+  }
+
+  // Ask the AI which way the printed text on a label is facing, then
+  // physically rotate the bytes so the words are right-side-up. Falls
+  // back to the input on any failure (including AI off → rotation=0).
+  async function rotateLabelToUpright(file: File): Promise<File> {
+    try {
+      const fd = new FormData();
+      fd.append("image", file);
+      const res = await fetch("/api/ai/rotate-label", { method: "POST", body: fd });
+      if (!res.ok) return file;
+      const data = (await res.json().catch(() => ({}))) as { rotation?: number };
+      const r = data.rotation;
+      if (r === 90 || r === 180 || r === 270) {
+        return await rotateImage(file, r);
+      }
+      return file;
+    } catch (err) {
+      console.warn("label rotate failed", err);
+      return file;
+    }
   }
 
   async function runBgRemoval(file: File) {
     setBgState("running");
+    setBgProgress(0);
+    setBgPhase(null);
     setError(null);
     setBgError(null);
     try {
-      const out = await removeBackground(file);
+      const out = await removeBackground(file, {
+        onProgress: (p) => {
+          setBgPhase(p.phase);
+          setBgProgress(p.fraction);
+        },
+      });
       setBgRemoved(out);
       if (bgUrl) URL.revokeObjectURL(bgUrl);
       setBgUrl(URL.createObjectURL(out));
+      setBgProgress(1);
       setBgState("done");
     } catch (err) {
       console.error("Background removal failed", err);
@@ -105,15 +158,21 @@ export default function AddItemForm() {
     await runBgRemoval(original);
   }
 
-  async function generateNotes() {
-    if (!original || notesState === "running") return;
-    setNotesState("running");
-    setNotesError(null);
+  // Single AI button — runs the tag + notes calls in parallel and
+  // applies whichever results come back.
+  async function autoTag() {
+    if (!original || autoTagState === "running") return;
+    setAutoTagState("running");
+    setAutoTagMessage(null);
     try {
-      const fd = new FormData();
-      fd.append("image", original);
-      if (labelPhoto) fd.append("labelImage", labelPhoto);
-      fd.append(
+      const tagFd = new FormData();
+      tagFd.append("image", original);
+      if (labelPhoto) tagFd.append("labelImage", labelPhoto);
+
+      const notesFd = new FormData();
+      notesFd.append("image", original);
+      if (labelPhoto) notesFd.append("labelImage", labelPhoto);
+      notesFd.append(
         "context",
         JSON.stringify({
           category,
@@ -126,103 +185,107 @@ export default function AddItemForm() {
           existingNotes: notes || undefined,
         }),
       );
-      const res = await fetch("/api/ai/notes", { method: "POST", body: fd });
-      const data = await res.json().catch(() => ({}));
-      if (data?.enabled === false) {
-        setNotesError(data.message ?? "AI is disabled.");
-        setNotesState("error");
-        return;
-      }
-      const generated = String(data?.notes ?? "").trim();
-      if (!generated) {
-        setNotesError(data?.debug?.error ?? "Couldn't generate notes.");
-        setNotesState("error");
-        return;
-      }
-      // Append if there's already text, otherwise replace.
-      setNotes((prev) => (prev.trim() ? `${prev.trim()}\n\n${generated}` : generated));
-      setNotesState("idle");
-    } catch (err) {
-      console.error(err);
-      setNotesError(err instanceof Error ? err.message : "Notes failed.");
-      setNotesState("error");
-    }
-  }
 
-  async function autoTag() {
-    if (!original || autoTagState === "running") return;
-    setAutoTagState("running");
-    setAutoTagMessage(null);
-    try {
-      const fd = new FormData();
-      fd.append("image", original);
-      // Attaching the label photo lets the model OCR the brand/size/care
-      // tag, which is dramatically more reliable than guessing from the
-      // garment alone.
-      if (labelPhoto) fd.append("labelImage", labelPhoto);
-      const res = await fetch("/api/ai/tag", { method: "POST", body: fd });
-      const data = await res.json().catch(() => ({}));
-      if (data?.enabled === false) {
-        setAutoTagState("disabled");
-        setAutoTagMessage(data.message ?? "AI tagging disabled.");
-        return;
-      }
-      const s = (data?.suggestions ?? {}) as {
-        category?: Category;
-        subType?: string;
-        color?: string;
-        brand?: string;
-        size?: string;
-        seasons?: string[];
-        activities?: string[];
-        material?: string;
-        careNotes?: string;
-        notes?: string;
-      };
-      const debug = data?.debug as { error?: string; status?: number; rawText?: string } | undefined;
-      const usedLabel = data?.hasLabel === true;
+      const [tagSettled, notesSettled] = await Promise.allSettled([
+        fetchWithRetry("/api/ai/tag", { method: "POST", body: tagFd }, { timeoutMs: 60_000 }),
+        fetchWithRetry("/api/ai/notes", { method: "POST", body: notesFd }, { timeoutMs: 60_000 }),
+      ]);
+
       let applied = 0;
-      if (s.category && CATEGORIES.includes(s.category) && s.category !== category) {
-        setCategory(s.category);
-        applied++;
-      }
-      if (s.subType && !subType) { setSubType(s.subType); applied++; }
-      if (s.color && !color) { setColor(s.color); applied++; }
-      if (s.brand && !brand) { setBrand(s.brand); setBrandId(null); applied++; }
-      if (s.size && !size) { setSize(s.size); applied++; }
-      if (s.seasons && seasons.length === 0) {
-        const valid = s.seasons.filter((x) => SEASONS.includes(x as never));
-        if (valid.length > 0) { setSeasons(valid); applied++; }
-      }
-      if (s.activities && activities.length === 0) {
-        const valid = s.activities.filter((x) => ACTIVITIES.includes(x as never));
-        if (valid.length > 0) { setActivities(valid); applied++; }
-      }
-      // Material + care notes get appended to the freeform notes field
-      // (and into fitNotes) so we don't lose any signal from the label.
-      const extras: string[] = [];
-      if (s.material) extras.push(`Material: ${s.material}`);
-      if (s.careNotes) extras.push(`Care: ${s.careNotes}`);
-      if (s.notes) extras.push(s.notes);
-      if (extras.length > 0 && !notes) {
-        setNotes(extras.join("\n"));
-        applied++;
-      }
-      if (s.material && !fitNotes) {
-        setFitNotes(`Material: ${s.material}`);
+      let notesAdded = false;
+      let usedLabel = false;
+      let disabledMessage: string | null = null;
+      let tagError: string | undefined;
+      let tagRawText: string | undefined;
+      let suggestionKeyCount = 0;
+
+      // ---- Tag ----
+      if (tagSettled.status === "fulfilled" && tagSettled.value.ok) {
+        const data = await tagSettled.value.json().catch(() => ({}));
+        if (data?.enabled === false) {
+          disabledMessage = data.message ?? "AI is disabled.";
+        } else {
+          const s = (data?.suggestions ?? {}) as {
+            category?: Category;
+            subType?: string;
+            color?: string;
+            brand?: string;
+            size?: string;
+            seasons?: string[];
+            activities?: string[];
+            material?: string;
+            careNotes?: string;
+            notes?: string;
+          };
+          const debug = data?.debug as { error?: string; rawText?: string } | undefined;
+          usedLabel = data?.hasLabel === true;
+          tagError = debug?.error;
+          tagRawText = debug?.rawText;
+          suggestionKeyCount = Object.keys(s).length;
+
+          if (s.category && CATEGORIES.includes(s.category) && s.category !== category) {
+            setCategory(s.category);
+            applied++;
+          }
+          if (s.subType && !subType) { setSubType(s.subType); applied++; }
+          if (s.color && !color) { setColor(s.color); applied++; }
+          if (s.brand && !brand) { setBrand(s.brand); setBrandId(null); applied++; }
+          if (s.size && !size) { setSize(s.size); applied++; }
+          if (s.seasons && seasons.length === 0) {
+            const valid = s.seasons.filter((x) => SEASONS.includes(x as never));
+            if (valid.length > 0) { setSeasons(valid); applied++; }
+          }
+          if (s.activities && activities.length === 0) {
+            const valid = s.activities.filter((x) => ACTIVITIES.includes(x as never));
+            if (valid.length > 0) { setActivities(valid); applied++; }
+          }
+          if (s.material && !fitNotes) {
+            setFitNotes(`Material: ${s.material}`);
+          }
+        }
+      } else if (tagSettled.status === "rejected") {
+        tagError = friendlyFetchError(tagSettled.reason, "Couldn't auto-tag.");
       }
 
+      // ---- Notes ----
+      if (notesSettled.status === "fulfilled" && notesSettled.value.ok) {
+        const data = await notesSettled.value.json().catch(() => ({}));
+        if (data?.enabled === false) {
+          disabledMessage = disabledMessage ?? data.message ?? "AI is disabled.";
+        } else {
+          const generated = String(data?.notes ?? "").trim();
+          if (generated) {
+            setNotes((prev) => (prev.trim() ? `${prev.trim()}\n\n${generated}` : generated));
+            notesAdded = true;
+          }
+        }
+      }
+
+      // ---- Combined message ----
+      if (disabledMessage) {
+        setAutoTagState("disabled");
+        setAutoTagMessage(disabledMessage);
+        return;
+      }
+
+      const parts: string[] = [];
       if (applied > 0) {
-        setAutoTagState("done");
-        setAutoTagMessage(
-          `Pre-filled ${applied} field${applied === 1 ? "" : "s"}${usedLabel ? " (read brand/size/care from the label)" : ""} — review before saving.`,
+        parts.push(
+          `pre-filled ${applied} field${applied === 1 ? "" : "s"}${usedLabel ? " (read brand/size/care from the label)" : ""}`,
         );
-      } else if (debug?.error) {
+      }
+      if (notesAdded) parts.push("added notes");
+
+      if (parts.length > 0) {
+        const head = parts.join(" + ");
+        setAutoTagState("done");
+        setAutoTagMessage(`${head.charAt(0).toUpperCase()}${head.slice(1)} — review before saving.`);
+      } else if (tagError) {
         setAutoTagState("error");
-        setAutoTagMessage(debug.error);
-      } else if (Object.keys(s).length === 0 && debug?.rawText) {
+        setAutoTagMessage(tagError);
+      } else if (suggestionKeyCount === 0 && tagRawText) {
         setAutoTagState("error");
-        setAutoTagMessage(`Model returned: ${debug.rawText.slice(0, 200)}`);
+        setAutoTagMessage(`Model returned: ${tagRawText.slice(0, 200)}`);
       } else {
         setAutoTagState("done");
         setAutoTagMessage("No new suggestions — fields already filled or model couldn't tell.");
@@ -230,7 +293,7 @@ export default function AddItemForm() {
     } catch (err) {
       console.error(err);
       setAutoTagState("error");
-      setAutoTagMessage(err instanceof Error ? err.message : "Auto-tag failed.");
+      setAutoTagMessage(friendlyFetchError(err, "Auto-tag failed."));
     }
   }
 
@@ -261,8 +324,11 @@ export default function AddItemForm() {
     if (!picked) return;
 
     if (labelUrl) URL.revokeObjectURL(labelUrl);
-    const file = await processFile(picked);
-    if (!file) return;
+    const base = await processFile(picked);
+    if (!base) return;
+    // AI right-side-up pass — text on tags often gets shot at any
+    // angle. EXIF rotation only fixes camera tilt, not the tag itself.
+    const file = await rotateLabelToUpright(base);
     setLabelPhoto(file);
     setLabelUrl(URL.createObjectURL(file));
   }
@@ -300,6 +366,7 @@ export default function AddItemForm() {
     try {
       const res = await fetch("/api/items", { method: "POST", body: fd });
       if (!res.ok) throw new Error(await res.text());
+      haptic("success");
       if (addAnother || batchMode) {
         // Reset form for next item
         setOriginal(null);
@@ -325,21 +392,22 @@ export default function AddItemForm() {
         if (cameraRef.current) cameraRef.current.value = "";
         if (labelFileRef.current) labelFileRef.current.value = "";
         setSubmitting(false);
-        setSavedToast(batchMode ? "Saved. Snap the next one." : "Saved.");
+        toast(batchMode ? "Saved. Snap the next one." : "Saved");
         if (batchMode) {
-          setTimeout(() => cameraRef.current?.click(), 80);
+          setReopenCamera(true);
         } else {
           window.scrollTo({ top: 0, behavior: "smooth" });
         }
-        setTimeout(() => setSavedToast(null), 2200);
         router.refresh();
       } else {
+        toast("Saved to closet");
         router.push("/wardrobe");
         router.refresh();
       }
     } catch (err) {
       console.error(err);
       setError("Something went wrong saving that item.");
+      toast("Couldn't save that item", "error");
       setSubmitting(false);
     }
   }
@@ -372,8 +440,23 @@ export default function AddItemForm() {
             </div>
           )}
         </div>
-        <input ref={fileRef} type="file" accept="image/*,.heic,.heif" onChange={onPickFile} className="hidden" />
-        <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={onPickFile} className="hidden" />
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*,.heic,.heif"
+          onChange={onPickFile}
+          className="hidden"
+          aria-label="Choose item photo from library"
+        />
+        <input
+          ref={cameraRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={onPickFile}
+          className="hidden"
+          aria-label="Take item photo with camera"
+        />
         <div className="flex flex-wrap items-center gap-2">
           {/* Camera is primary on mobile */}
           <button type="button" className="btn-primary flex-1 sm:flex-none" onClick={() => cameraRef.current?.click()}>
@@ -387,7 +470,19 @@ export default function AddItemForm() {
             {original ? "Change" : "Choose from library"}
           </button>
           {bgState === "running" && (
-            <span className="text-sm text-stone-500">Processing…</span>
+            <div className="flex-1 min-w-[10rem]">
+              <ProgressBar
+                value={bgProgress}
+                label={
+                  bgPhase === "fetch"
+                    ? "Loading model…"
+                    : bgPhase === "compute"
+                      ? "Removing background…"
+                      : "Preparing…"
+                }
+                hint={`${Math.round(bgProgress * 100)}%`}
+              />
+            </div>
           )}
           {bgState === "done" && (
             <label className="chip chip-off cursor-pointer">
@@ -417,11 +512,16 @@ export default function AddItemForm() {
               onClick={autoTag}
               className="btn-ghost text-xs text-blush-600"
               disabled={autoTagState === "running"}
-              title="Ask AI to suggest tags for this photo"
+              title="Ask AI to fill empty fields and write notes from this photo"
             >
               {autoTagState === "running" ? "Reading photo…" : "✨ Auto-tag"}
             </button>
-            {autoTagMessage && (
+            {autoTagState === "running" && (
+              <div className="flex-1 min-w-[10rem]">
+                <ProgressBar value={autoTagProgress} label="Reading photo…" />
+              </div>
+            )}
+            {autoTagState !== "running" && autoTagMessage && (
               <span className={"text-xs " + (autoTagState === "error" ? "text-blush-700" : "text-stone-500")}>
                 {autoTagMessage}
               </span>
@@ -497,20 +597,13 @@ export default function AddItemForm() {
         </div>
 
         <div>
-          <div className="mb-1 flex items-center justify-between">
-            <label className="label !mb-0">Notes</label>
-            <button
-              type="button"
-              onClick={generateNotes}
-              disabled={!original || notesState === "running"}
-              className="text-xs text-blush-600 hover:underline disabled:cursor-not-allowed disabled:text-stone-400"
-              title={original ? "Generate styling notes from the photo" : "Add a photo first"}
-            >
-              {notesState === "running" ? "Writing…" : "✨ Generate"}
-            </button>
-          </div>
-          <textarea className="input min-h-[64px]" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Material, fit notes, where you got it…" />
-          {notesError && <p className="mt-1 text-xs text-blush-700">{notesError}</p>}
+          <label className="label">Notes</label>
+          <textarea
+            className="input min-h-[64px]"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Material, fit notes, where you got it…"
+          />
         </div>
 
         <label className="flex items-center gap-2 text-sm text-stone-700">
@@ -527,14 +620,29 @@ export default function AddItemForm() {
           // eslint-disable-next-line @next/next/no-img-element
           <img src={labelUrl} alt="Label photo" className="mb-3 max-h-48 w-auto rounded-xl bg-cream-50 object-contain p-1 ring-1 ring-stone-100" />
         )}
-        <input ref={labelFileRef} type="file" accept="image/*,.heic,.heif" onChange={onPickLabelPhoto} className="hidden" />
-        <input ref={labelCameraRef} type="file" accept="image/*" capture="environment" onChange={onPickLabelPhoto} className="hidden" />
+        <input
+          ref={labelFileRef}
+          type="file"
+          accept="image/*,.heic,.heif"
+          onChange={onPickLabelPhoto}
+          className="hidden"
+          aria-label="Choose tag photo from library"
+        />
+        <input
+          ref={labelCameraRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={onPickLabelPhoto}
+          className="hidden"
+          aria-label="Take tag photo with camera"
+        />
         <div className="flex gap-2">
-          <button type="button" className="btn-secondary text-xs" onClick={() => labelCameraRef.current?.click()}>
-            📷 Take photo
+          <button type="button" className="btn-secondary text-xs" onClick={() => labelFileRef.current?.click()}>
+            🖼️ Choose from library
           </button>
-          <button type="button" className="btn-ghost text-xs" onClick={() => labelFileRef.current?.click()}>
-            Choose
+          <button type="button" className="btn-ghost text-xs" onClick={() => labelCameraRef.current?.click()}>
+            📷 Take photo
           </button>
           {labelPhoto && (
             <button type="button" className="btn-ghost text-xs text-stone-400" onClick={() => { setLabelPhoto(null); if (labelUrl) URL.revokeObjectURL(labelUrl); setLabelUrl(null); }}>
@@ -563,13 +671,6 @@ export default function AddItemForm() {
         )}
       </div>
 
-      {savedToast && (
-        <div className="fixed inset-x-0 bottom-24 z-30 flex justify-center px-4 sm:bottom-8">
-          <div className="rounded-full bg-blush-600 px-4 py-2 text-sm text-white shadow-card">
-            {savedToast}
-          </div>
-        </div>
-      )}
     </form>
   );
 }

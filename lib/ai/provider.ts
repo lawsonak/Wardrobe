@@ -97,6 +97,18 @@ const NOTES_SCHEMA = {
   required: ["notes"],
 };
 
+const SEARCH_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    category: { type: "STRING", enum: [...ALLOWED_CATEGORIES] },
+    color: { type: "STRING", enum: [...ALLOWED_COLORS] },
+    season: { type: "STRING", enum: [...ALLOWED_SEASONS] },
+    activity: { type: "STRING", enum: [...ALLOWED_ACTIVITIES] },
+    favoritesOnly: { type: "BOOLEAN" },
+    freeText: { type: "STRING" },
+  },
+};
+
 function makeGemini(): TagProvider {
   const key = process.env.GEMINI_API_KEY;
   return {
@@ -121,17 +133,27 @@ function makeGemini(): TagProvider {
                 .join(", ")}.`
             : "";
 
+        const activityHint =
+          ` Activities should match the garment type. ALWAYS include the obvious activity for the category: ` +
+          `Swimwear → "beach"; Activewear → "workout"; Loungewear → "lounge"; ` +
+          `formal gowns / cocktail dresses / blazers / suits → "formal"; ` +
+          `simple everyday tops / jeans / sneakers → "casual". ` +
+          `An item can have multiple activities (e.g. a sundress can be "casual" + "beach" + "travel"). ` +
+          `Be generous: if the piece could plausibly suit an activity, include it.`;
+
         const prompt = labelBuf
           ? `You are tagging a single piece of clothing or accessory in a personal wardrobe app. ` +
             `You're given two images: the FIRST is the garment itself, the SECOND is a close-up of its brand/size/care label. ` +
             `Read the label text carefully — extract brand, size (alpha or numeric, exactly as printed), material/composition, and care instructions. ` +
             `Use the garment image for category, subType, color, seasons, activities. ` +
-            `Use only the enumerated values for category / color / seasons / activities. ` +
-            `Omit a field if you genuinely can't tell — never guess wildly.${brandHint}`
+            `Use the enumerated values for category / color / seasons / activities — pick the CLOSEST match even if imperfect. ` +
+            `Always return at least: category and color (snap color to the nearest enum value — for example a maroon item is "burgundy", a beige item is "tan"). ` +
+            `Fill in as many other fields as you reasonably can. Only leave a field empty if the image is genuinely unreadable.${activityHint}${brandHint}`
           : `You are tagging a single piece of clothing or accessory in a personal wardrobe app. ` +
             `Look at the image and fill in as many fields of the response schema as you can. ` +
-            `Use only the enumerated values for category / color / seasons / activities. ` +
-            `Omit a field if you genuinely can't tell — never guess wildly.${brandHint}`;
+            `Use the enumerated values for category / color / seasons / activities — pick the CLOSEST match even if imperfect. ` +
+            `Always return at least: category and color (snap color to the nearest enum value — for example a maroon item is "burgundy", a beige item is "tan"). ` +
+            `Fill in as many other fields as you reasonably can. Only leave a field empty if the image is genuinely unreadable.${activityHint}${brandHint}`;
 
         const parts: Array<Record<string, unknown>> = [
           { text: prompt },
@@ -331,7 +353,7 @@ function makeGemini(): TagProvider {
       }
     },
 
-    async buildOutfit({ occasion, items }) {
+    async buildOutfit({ occasion, items, preferences }) {
       if (!key) return { itemIds: [], debug: { error: "GEMINI_API_KEY not set" } };
 
       // Compact the catalog so big closets don't blow our prompt budget.
@@ -348,13 +370,32 @@ function makeGemini(): TagProvider {
         activities: it.activities?.length ? it.activities : undefined,
       }));
 
+      const prefsLine = preferences && preferences.trim()
+        ? `User style preferences (always honor unless they directly contradict the occasion): ${preferences.trim().slice(0, 600)}. `
+        : "";
+
       const prompt =
         `You're a personal stylist for a wardrobe app. The user is asking for an outfit for: "${occasion}". ` +
+        prefsLine +
         `Pick a small set of pieces from THIS catalog (you may NOT invent items not in the catalog). ` +
         `Return their ids in the response. Aim for one cohesive outfit: include either a dress OR a top+bottom, ` +
         `usually shoes, and only add outerwear/accessories/bags/jewelry if they fit the occasion. ` +
         `Try not to combine clashing colors or wildly mismatched formality. ` +
         `Pick a short outfit name (3-5 words) and a one-sentence reasoning. ` +
+        // Hard rules about category compatibility — fixes cases where the model
+        // would pair underwear with a swimsuit or treat a swim one-piece as
+        // a regular dress.
+        `HARD RULES: ` +
+        `(1) NEVER include any item from the Underwear or Bras categories in an outfit unless the occasion explicitly says "underwear" — these are undergarments, not outfit pieces. ` +
+        `(2) NEVER pair Swimwear with Underwear, Activewear, Loungewear, or formal pieces. A swim outfit is Swimwear + sandals + maybe a cover-up + sunglasses; nothing else. ` +
+        `(3) A Swimwear "One-piece" or "Swim dress" REPLACES the top + bottom — do not add a separate bottom when one is picked. They are NOT regular dresses; only suggest them for beach/pool occasions. ` +
+        `(4) Don't mix Activewear with Formal, Loungewear with Workwear, etc. Stay within one register. ` +
+        `Match the occasion to the right category: ` +
+        `BEACH / pool / swim → prefer Swimwear (and shorts, sandals, sundresses, sun hats). ` +
+        `WORKOUT / gym / running → prefer Activewear. ` +
+        `LOUNGE / sleep / pajama → prefer Loungewear. ` +
+        `FORMAL / black-tie / wedding → prefer Dresses (cocktail/gown/formal subtypes), Outerwear blazers, Shoes heels. ` +
+        `Don't skip Swimwear/Activewear/Loungewear when the occasion calls for them, even if those items have no activities tagged. ` +
         `Catalog (JSON):\n${JSON.stringify(catalog)}`;
 
       const body = {
@@ -456,6 +497,10 @@ function makeGemini(): TagProvider {
         `Use general climate knowledge for the destination + dates to factor in weather (rain, heat, layering). ` +
         `Cover every planned activity, avoid redundancy (don't pick three near-identical white tees), ` +
         `aim for roughly ${target} pieces, and prefer items tagged with matching seasons/activities when possible. ` +
+        `HARD RULES: ` +
+        `(1) Do include Underwear / Bras / Socks & Hosiery so the list reads as a real packing list (these are fine here even though we exclude them from outfits). ` +
+        `(2) Pair Swimwear with sandals + a cover-up for beach days; never with formal pieces. ` +
+        `(3) Match register: don't pack Activewear for a black-tie weekend, or formalwear for a yoga retreat. ` +
         `Return their ids in the response, plus a short one-sentence \`reasoning\` and a \`packingNotes\` ` +
         `field with practical tips ("pack a light layer for evenings", "leave the umbrella — May is dry"). ` +
         `Catalog (JSON):\n${JSON.stringify(catalog)}`;
@@ -602,6 +647,81 @@ function makeGemini(): TagProvider {
         };
       } catch (err) {
         return { activities: [], debug: { error: err instanceof Error ? err.message : String(err) } };
+      }
+    },
+
+    async parseSearch({ query }) {
+      if (!key) return { filters: {}, debug: { error: "GEMINI_API_KEY not set" } };
+      try {
+        const prompt =
+          `Parse the user's natural-language closet search into structured filters. ` +
+          `Only set a field if the query clearly implies it. ` +
+          `Use ONLY the enumerated values for category / color / season / activity. ` +
+          `Map informal words: "dresses" → category=Dresses; "denim" → freeText=jeans; ` +
+          `"favorites" / "I love" → favoritesOnly=true. ` +
+          `Anything that doesn't fit a structured field goes in freeText (one or two short keywords). ` +
+          `Query: "${query.slice(0, 200)}"`;
+
+        const body = {
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: SEARCH_SCHEMA,
+            temperature: 0.0,
+          },
+        };
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+          GEMINI_MODEL,
+        )}:generateContent?key=${encodeURIComponent(key)}`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const responseText = await res.text();
+        if (!res.ok) {
+          let detail = `HTTP ${res.status}`;
+          try {
+            const e = JSON.parse(responseText) as { error?: { message?: string } };
+            if (e.error?.message) detail = `HTTP ${res.status}: ${e.error.message}`;
+          } catch {
+            detail = `HTTP ${res.status}: ${responseText.slice(0, 200)}`;
+          }
+          return { filters: {}, debug: { status: res.status, error: detail, rawText: responseText.slice(0, 400) } };
+        }
+        const data = JSON.parse(responseText) as {
+          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+          usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+        };
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+        if (!text) return { filters: {}, debug: { status: 200, error: "Empty response", rawText: responseText.slice(0, 400) } };
+        const cleaned = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(cleaned);
+        } catch {
+          return { filters: {}, debug: { status: 200, error: "Model response wasn't valid JSON", rawText: cleaned.slice(0, 400) } };
+        }
+        const r = (parsed as Record<string, unknown>) ?? {};
+        const filters: import("./types").SearchFilters = {};
+        if (typeof r.category === "string") filters.category = r.category;
+        if (typeof r.color === "string") filters.color = r.color.toLowerCase();
+        if (typeof r.season === "string") filters.season = r.season.toLowerCase();
+        if (typeof r.activity === "string") filters.activity = r.activity.toLowerCase();
+        if (typeof r.favoritesOnly === "boolean") filters.favoritesOnly = r.favoritesOnly;
+        if (typeof r.freeText === "string" && r.freeText.trim()) filters.freeText = r.freeText.trim().slice(0, 60);
+        return {
+          filters,
+          debug: {
+            status: 200,
+            rawText: cleaned.slice(0, 400),
+            promptTokens: data.usageMetadata?.promptTokenCount,
+            responseTokens: data.usageMetadata?.candidatesTokenCount,
+          },
+        };
+      } catch (err) {
+        return { filters: {}, debug: { error: err instanceof Error ? err.message : String(err) } };
       }
     },
   };
