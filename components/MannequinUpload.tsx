@@ -279,7 +279,7 @@ export default function MannequinUpload({ initial }: { initial: Info }) {
             disabled={busy}
             title="Re-extract body anchor points (helps when clothes look misaligned)"
           >
-            📐 Recalibrate fit
+            ✨ Recalibrate fit
           </button>
         )}
         {(info.url || info.hasSource) && (

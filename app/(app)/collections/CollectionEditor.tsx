@@ -311,7 +311,7 @@ export default function CollectionEditor({
             onClick={regeneratePackingList}
             disabled={aiBusy !== null}
           >
-            {aiBusy === "pack" ? "Curating…" : "🔄 Regenerate with AI"}
+            {aiBusy === "pack" ? "Curating…" : "✨ Regenerate with AI"}
           </button>
         </div>
 
