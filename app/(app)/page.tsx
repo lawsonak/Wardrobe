@@ -67,6 +67,7 @@ export default async function Dashboard() {
         name: string | null;
         reasoning: string | null;
         weather: string | null;
+        tryOnImagePath: string | null;
       }
     | null = null;
   if (savedPick) {
@@ -88,6 +89,7 @@ export default async function Dashboard() {
         name: savedPick.name,
         reasoning: savedPick.reasoning,
         weather: savedPick.weather,
+        tryOnImagePath: savedPick.tryOnImagePath ?? null,
       };
     }
   }

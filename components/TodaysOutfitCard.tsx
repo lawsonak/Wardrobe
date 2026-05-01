@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { haptic } from "@/lib/haptics";
 import ProgressBar from "@/components/ProgressBar";
@@ -20,14 +20,16 @@ type Suggestion = {
   name: string | null;
   reasoning: string | null;
   weather: string | null;
+  tryOnImagePath: string | null;
 };
 
 // "Plan today's look".
 //
-// AI picks items from the closet (weather-aware when home city is set).
-// Items render as a clean tile grid — when the user wants to see them on
-// the mannequin, they save the outfit and visit the style canvas, where
-// the new Gemini-based AI try-on composites the dressed mannequin.
+// AI picks items from the closet (weather-aware when home city is set)
+// and composites a dressed-mannequin try-on for the pick using the same
+// Gemini Flash Image pipeline as the per-outfit Style page. Auto-fires
+// once per morning when no saved pick exists for today; user can
+// regenerate anytime via "✨ Try another".
 export default function TodaysOutfitCard({
   homeCity,
   weatherSummary,
@@ -41,7 +43,21 @@ export default function TodaysOutfitCard({
   const [busy, setBusy] = useState(false);
   const [picked, setPicked] = useState<Suggestion | null>(initialPick ?? null);
   const [error, setError] = useState<string | null>(null);
-  const pickProgress = useTimedProgress(busy, 12);
+  // Pick + tryon together usually run 12-25s. Bump the time scale.
+  const pickProgress = useTimedProgress(busy, 22);
+
+  // Auto-fire on mount when there's nothing saved for today yet. Single-
+  // shot per page mount, gated by autoFiredRef so a parent re-render
+  // doesn't keep re-triggering.
+  const autoFiredRef = useRef(false);
+  useEffect(() => {
+    if (autoFiredRef.current) return;
+    if (initialPick) return;
+    autoFiredRef.current = true;
+    // Don't await — let the card render its loading state immediately.
+    pick(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPick]);
 
   async function pick(again = false) {
     setBusy(true);
@@ -69,8 +85,14 @@ export default function TodaysOutfitCard({
         name: data.name ?? null,
         reasoning: data.reasoning ?? null,
         weather: data.weather ?? null,
+        tryOnImagePath: typeof data.tryOnImagePath === "string" ? data.tryOnImagePath : null,
       });
       haptic("success");
+      // Surface compose-only failures as a non-blocking note — the user
+      // still gets a valid outfit pick, just without the dressed render.
+      if (data?.tryOnError) {
+        setError(`Couldn't render the try-on: ${data.tryOnError}`);
+      }
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Today's outfit failed.");
@@ -85,6 +107,8 @@ export default function TodaysOutfitCard({
     if (picked.name) params.set("name", picked.name);
     router.push(`/outfits/builder?${params.toString()}`);
   }
+
+  const showHero = !!picked?.tryOnImagePath;
 
   return (
     <section className="card p-4">
@@ -105,7 +129,28 @@ export default function TodaysOutfitCard({
         </div>
       </div>
 
-      {picked && picked.pickedItems.length > 0 && (
+      {/* Dressed-mannequin hero when the try-on rendered successfully. */}
+      {showHero && picked?.tryOnImagePath && (
+        <div className="relative mt-4 mx-auto aspect-[1/2] max-h-[60vh] w-full overflow-hidden rounded-2xl">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`/api/uploads/${picked.tryOnImagePath}`}
+            alt={picked.name ?? "Today's outfit"}
+            className={"h-full w-full object-contain transition " + (busy ? "opacity-50" : "")}
+          />
+          {busy && (
+            <div className="absolute inset-0 grid place-items-center bg-white/40 text-sm text-stone-700">
+              <div className="rounded-full bg-white/80 px-3 py-1.5 shadow-card">
+                Picking + rendering…
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Fallback tile grid when we have items but no try-on image (no
+          mannequin set up, or the compose step failed). */}
+      {!showHero && picked && picked.pickedItems.length > 0 && (
         <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4">
           {picked.pickedItems.map((it) => {
             const src = it.imageBgRemovedPath
@@ -136,8 +181,8 @@ export default function TodaysOutfitCard({
         <div className="mt-3">
           <ProgressBar
             value={pickProgress}
-            label={picked ? "Picking your next look…" : "Picking your look…"}
-            hint="usually 5–15s"
+            label={picked ? "Picking your next look…" : "Picking + rendering your look…"}
+            hint="usually 12–25s"
           />
         </div>
       )}
@@ -158,7 +203,7 @@ export default function TodaysOutfitCard({
               type="button"
               onClick={() => pick(true)}
               disabled={busy}
-              className="btn-ghost text-stone-500"
+              className="btn-ghost text-blush-600"
             >
               {busy ? "…" : "✨ Try another"}
             </button>

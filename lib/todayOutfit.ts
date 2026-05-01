@@ -18,6 +18,11 @@ export type SavedPick = {
   name: string | null;
   reasoning: string | null;
   weather: string | null;
+  /** Relative path under data/uploads/<userId>/ for the AI-composited
+   *  try-on render (mannequin wearing the picked outfit), if it was
+   *  generated successfully. Null when generation was skipped, failed,
+   *  or the mannequin wasn't set up yet. */
+  tryOnImagePath?: string | null;
 };
 
 export async function readSavedPick(userId: string): Promise<SavedPick | null> {
@@ -33,6 +38,8 @@ export async function readSavedPick(userId: string): Promise<SavedPick | null> {
       name: typeof parsed.name === "string" ? parsed.name : null,
       reasoning: typeof parsed.reasoning === "string" ? parsed.reasoning : null,
       weather: typeof parsed.weather === "string" ? parsed.weather : null,
+      tryOnImagePath:
+        typeof parsed.tryOnImagePath === "string" ? parsed.tryOnImagePath : null,
     };
   } catch {
     return null;
