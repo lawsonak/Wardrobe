@@ -24,6 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <nav className="hidden items-center gap-1 text-sm sm:flex" aria-label="Primary">
               <Link href="/wardrobe" className="btn-ghost">Closet</Link>
               <Link href="/outfits" className="btn-ghost">Outfits</Link>
+              <Link href="/collections" className="btn-ghost">Collections</Link>
               <Link href="/wishlist" className="btn-ghost">Wishlist</Link>
               <Link href="/outfits/builder" className="btn-ghost">Build</Link>
               <form

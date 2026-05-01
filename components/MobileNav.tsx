@@ -27,9 +27,9 @@ const OUTFITS_ICON = (
     <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 7.125C2.25 6.504 2.754 6 3.375 6h6c.621 0 1.125.504 1.125 1.125v3.75c0 .621-.504 1.125-1.125 1.125h-6a1.125 1.125 0 0 1-1.125-1.125v-3.75ZM14.25 8.625c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v8.25c0 .621-.504 1.125-1.125 1.125h-5.25a1.125 1.125 0 0 1-1.125-1.125v-8.25ZM3.75 16.125c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125h-5.25a1.125 1.125 0 0 1-1.125-1.125v-2.25Z" />
   </svg>
 );
-const WISHLIST_ICON = (
+const COLLECTIONS_ICON = (
   <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
   </svg>
 );
 
@@ -37,7 +37,7 @@ const TABS: Tab[] = [
   { href: "/", label: "Home", match: (p) => p === "/", icon: HOME_ICON },
   { href: "/wardrobe", label: "Closet", match: (p) => p.startsWith("/wardrobe"), icon: CLOSET_ICON },
   { href: "/outfits", label: "Outfits", match: (p) => p.startsWith("/outfits"), icon: OUTFITS_ICON },
-  { href: "/wishlist", label: "Wishlist", match: (p) => p.startsWith("/wishlist"), icon: WISHLIST_ICON },
+  { href: "/collections", label: "Collections", match: (p) => p.startsWith("/collections"), icon: COLLECTIONS_ICON },
 ];
 
 export default function MobileNav() {

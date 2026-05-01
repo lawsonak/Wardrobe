@@ -32,7 +32,7 @@ export default async function CollectionsPage() {
           <h1 className="mt-1 font-display text-3xl text-blush-700">{title}</h1>
           <p className="text-sm text-stone-500">Trips and themed sets — destination, dates, activities, AI-curated packing.</p>
         </div>
-        <Link href="/collections/new" className="btn-primary">+ New</Link>
+        <Link href="/collections/new" className="btn-primary whitespace-nowrap">+ New</Link>
       </div>
 
       {collections.length === 0 ? (
