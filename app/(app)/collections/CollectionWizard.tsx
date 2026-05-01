@@ -385,6 +385,18 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
             </p>
           </div>
 
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="btn-secondary text-sm"
+              onClick={suggestActivities}
+              disabled={suggestingActs}
+            >
+              {suggestingActs ? "Asking AI…" : "✨ Suggest with AI"}
+            </button>
+            {actsAiHint && <span className="text-xs text-stone-500">{actsAiHint}</span>}
+          </div>
+
           <div>
             <span className="label">Common activities</span>
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -422,17 +434,6 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
               <button type="button" className="btn-secondary" onClick={addCustomActivity}>
                 Add
               </button>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className="btn-ghost text-blush-600"
-                onClick={suggestActivities}
-                disabled={suggestingActs}
-              >
-                {suggestingActs ? "Asking AI…" : "✨ Suggest with AI"}
-              </button>
-              {actsAiHint && <span className="text-xs text-stone-500">{actsAiHint}</span>}
             </div>
           </div>
 
