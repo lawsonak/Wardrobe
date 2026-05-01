@@ -56,7 +56,7 @@ export default async function Dashboard() {
           {itemCount >= 3 && (
             <Link href="/outfits/builder?shuffle=1" className="btn-secondary">✨ Shuffle</Link>
           )}
-          <Link href="/capsules" className="btn-secondary">Capsules</Link>
+          <Link href="/collections" className="btn-secondary">Collections</Link>
         </div>
         {itemCount >= 3 && (
           <div className="mt-3">

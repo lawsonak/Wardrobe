@@ -71,6 +71,24 @@ const OUTFIT_SCHEMA = {
   required: ["itemIds"],
 };
 
+const PACKING_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    itemIds: { type: "ARRAY", items: { type: "STRING" } },
+    reasoning: { type: "STRING" },
+    packingNotes: { type: "STRING" },
+  },
+  required: ["itemIds"],
+};
+
+const ACTIVITIES_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    activities: { type: "ARRAY", items: { type: "STRING" } },
+  },
+  required: ["activities"],
+};
+
 const NOTES_SCHEMA = {
   type: "OBJECT",
   properties: {
@@ -403,7 +421,198 @@ function makeGemini(): TagProvider {
         return { itemIds: [], debug: { error: err instanceof Error ? err.message : String(err) } };
       }
     },
+
+    async buildPackingList({ trip, items }) {
+      if (!key) return { itemIds: [], debug: { error: "GEMINI_API_KEY not set" } };
+
+      const cap = 250;
+      const catalog = items.slice(0, cap).map((it) => ({
+        id: it.id,
+        category: it.category,
+        subType: it.subType ?? undefined,
+        color: it.color ?? undefined,
+        brand: it.brand ?? undefined,
+        seasons: it.seasons?.length ? it.seasons : undefined,
+        activities: it.activities?.length ? it.activities : undefined,
+      }));
+
+      const nights = tripNights(trip.startDate, trip.endDate);
+      const dateLine = trip.startDate || trip.endDate
+        ? `Dates: ${trip.startDate ?? "?"} to ${trip.endDate ?? "?"}${nights ? ` (${nights} night${nights === 1 ? "" : "s"})` : ""}.`
+        : "";
+      const target = nights ? `${Math.max(nights + 3, 6)}–${Math.max(Math.ceil(nights * 1.5), 8)}` : "8–14";
+      const activitiesLine = trip.activities.length
+        ? `Planned activities: ${trip.activities.join(", ")}.`
+        : "Planned activities: not specified — pick a versatile, well-rounded set.";
+
+      const prompt =
+        `You're a packing assistant for a personal wardrobe app. ` +
+        `Curate a packing list from THIS catalog (you may NOT invent items). ` +
+        (trip.destination ? `Destination: ${trip.destination}. ` : "") +
+        dateLine + " " +
+        activitiesLine + " " +
+        (trip.occasion ? `Trip vibe: ${trip.occasion}. ` : "") +
+        (trip.notes ? `User notes: ${trip.notes}. ` : "") +
+        `Use general climate knowledge for the destination + dates to factor in weather (rain, heat, layering). ` +
+        `Cover every planned activity, avoid redundancy (don't pick three near-identical white tees), ` +
+        `aim for roughly ${target} pieces, and prefer items tagged with matching seasons/activities when possible. ` +
+        `Return their ids in the response, plus a short one-sentence \`reasoning\` and a \`packingNotes\` ` +
+        `field with practical tips ("pack a light layer for evenings", "leave the umbrella — May is dry"). ` +
+        `Catalog (JSON):\n${JSON.stringify(catalog)}`;
+
+      const body = {
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: PACKING_SCHEMA,
+          temperature: 0.4,
+        },
+      };
+
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+          GEMINI_MODEL,
+        )}:generateContent?key=${encodeURIComponent(key)}`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const responseText = await res.text();
+        if (!res.ok) {
+          let detail = `HTTP ${res.status}`;
+          try {
+            const e = JSON.parse(responseText) as { error?: { message?: string } };
+            if (e.error?.message) detail = `HTTP ${res.status}: ${e.error.message}`;
+          } catch {
+            detail = `HTTP ${res.status}: ${responseText.slice(0, 200)}`;
+          }
+          return { itemIds: [], debug: { status: res.status, error: detail, rawText: responseText.slice(0, 400) } };
+        }
+        const data = JSON.parse(responseText) as {
+          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+          usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+        };
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+        if (!text) {
+          return { itemIds: [], debug: { status: 200, error: "Empty response", rawText: responseText.slice(0, 400) } };
+        }
+        const cleaned = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(cleaned);
+        } catch {
+          return { itemIds: [], debug: { status: 200, error: "Model response wasn't valid JSON", rawText: cleaned.slice(0, 400) } };
+        }
+        const r = parsed as { itemIds?: unknown; reasoning?: unknown; packingNotes?: unknown };
+        const ownedIds = new Set(items.map((i) => i.id));
+        const ids = Array.isArray(r.itemIds)
+          ? r.itemIds.filter((x): x is string => typeof x === "string" && ownedIds.has(x))
+          : [];
+        return {
+          itemIds: ids,
+          reasoning: typeof r.reasoning === "string" ? r.reasoning.slice(0, 400) : undefined,
+          packingNotes: typeof r.packingNotes === "string" ? r.packingNotes.slice(0, 600) : undefined,
+          debug: {
+            status: 200,
+            rawText: cleaned.slice(0, 400),
+            promptTokens: data.usageMetadata?.promptTokenCount,
+            responseTokens: data.usageMetadata?.candidatesTokenCount,
+          },
+        };
+      } catch (err) {
+        return { itemIds: [], debug: { error: err instanceof Error ? err.message : String(err) } };
+      }
+    },
+
+    async suggestActivities({ destination, startDate, endDate, occasion }) {
+      if (!key) return { activities: [], debug: { error: "GEMINI_API_KEY not set" } };
+      const nights = tripNights(startDate, endDate);
+      const prompt =
+        `You're helping someone plan a trip. Suggest 4–8 likely activities ` +
+        `they'll do, so they can choose what to pack for. ` +
+        (destination ? `Destination: ${destination}. ` : "") +
+        (startDate || endDate ? `Dates: ${startDate ?? "?"}–${endDate ?? "?"}${nights ? ` (${nights} nights)` : ""}. ` : "") +
+        (occasion ? `Vibe: ${occasion}. ` : "") +
+        `When relevant, prefer these tags from our internal vocabulary: ` +
+        `casual, work, date, workout, beach, formal, travel, lounge. ` +
+        `You may also include free-form ones like "museum days", "hiking", "wine tasting", "city dinners". ` +
+        `Keep each activity short (1–3 words). Return only the list.`;
+
+      const body = {
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: ACTIVITIES_SCHEMA,
+          temperature: 0.5,
+        },
+      };
+
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+          GEMINI_MODEL,
+        )}:generateContent?key=${encodeURIComponent(key)}`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const responseText = await res.text();
+        if (!res.ok) {
+          let detail = `HTTP ${res.status}`;
+          try {
+            const e = JSON.parse(responseText) as { error?: { message?: string } };
+            if (e.error?.message) detail = `HTTP ${res.status}: ${e.error.message}`;
+          } catch {
+            detail = `HTTP ${res.status}: ${responseText.slice(0, 200)}`;
+          }
+          return { activities: [], debug: { status: res.status, error: detail, rawText: responseText.slice(0, 400) } };
+        }
+        const data = JSON.parse(responseText) as {
+          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+          usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+        };
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+        if (!text) {
+          return { activities: [], debug: { status: 200, error: "Empty response", rawText: responseText.slice(0, 400) } };
+        }
+        const cleaned = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(cleaned);
+        } catch {
+          return { activities: [], debug: { status: 200, error: "Model response wasn't valid JSON", rawText: cleaned.slice(0, 400) } };
+        }
+        const r = parsed as { activities?: unknown };
+        const list = Array.isArray(r.activities)
+          ? r.activities
+              .filter((x): x is string => typeof x === "string")
+              .map((s) => s.trim().slice(0, 40))
+              .filter(Boolean)
+              .slice(0, 12)
+          : [];
+        return {
+          activities: list,
+          debug: {
+            status: 200,
+            rawText: cleaned.slice(0, 400),
+            promptTokens: data.usageMetadata?.promptTokenCount,
+            responseTokens: data.usageMetadata?.candidatesTokenCount,
+          },
+        };
+      } catch (err) {
+        return { activities: [], debug: { error: err instanceof Error ? err.message : String(err) } };
+      }
+    },
   };
+}
+
+function tripNights(start?: string, end?: string): number | null {
+  if (!start || !end) return null;
+  const s = Date.parse(start);
+  const e = Date.parse(end);
+  if (!Number.isFinite(s) || !Number.isFinite(e) || e < s) return null;
+  return Math.round((e - s) / (1000 * 60 * 60 * 24));
 }
 
 function sanitizeSuggestion(raw: unknown): import("./types").TagSuggestion {

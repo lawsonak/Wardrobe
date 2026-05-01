@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import { listToCsv } from "@/lib/constants";
 
 export const runtime = "nodejs";
 
 async function ownerCheck(id: string, userId: string) {
-  return prisma.capsule.findFirst({ where: { id, ownerId: userId }, select: { id: true } });
+  return prisma.collection.findFirst({ where: { id, ownerId: userId }, select: { id: true } });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -18,9 +19,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const body = await req.json().catch(() => ({}));
   const data: Record<string, unknown> = {};
   if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim();
+  if (body.kind === "trip" || body.kind === "general") data.kind = body.kind;
   if (typeof body.description === "string") data.description = body.description.trim() || null;
   if (typeof body.occasion === "string") data.occasion = body.occasion.trim() || null;
   if (typeof body.season === "string") data.season = body.season.trim() || null;
+  if (typeof body.destination === "string") data.destination = body.destination.trim() || null;
+  if (typeof body.notes === "string") data.notes = body.notes.trim() || null;
+  if ("startDate" in body) data.startDate = parseDate(body.startDate);
+  if ("endDate" in body) data.endDate = parseDate(body.endDate);
+  if (Array.isArray(body.activities)) {
+    data.activities = listToCsv(
+      (body.activities as unknown[])
+        .filter((a): a is string => typeof a === "string")
+        .map((a) => a.trim())
+        .filter(Boolean)
+        .slice(0, 20),
+    );
+  }
 
   // Replace the item set if provided. addItem/removeItem endpoints stay
   // simpler for incremental edits.
@@ -32,15 +47,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     });
     const validIds = owned.map((o) => o.id);
     await prisma.$transaction([
-      prisma.capsuleItem.deleteMany({ where: { capsuleId: id } }),
-      prisma.capsuleItem.createMany({
-        data: validIds.map((itemId) => ({ capsuleId: id, itemId })),
+      prisma.collectionItem.deleteMany({ where: { collectionId: id } }),
+      prisma.collectionItem.createMany({
+        data: validIds.map((itemId) => ({ collectionId: id, itemId })),
       }),
     ]);
   }
 
-  const capsule = await prisma.capsule.update({ where: { id }, data, include: { items: true } });
-  return NextResponse.json({ capsule });
+  const collection = await prisma.collection.update({ where: { id }, data, include: { items: true } });
+  return NextResponse.json({ collection });
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -50,6 +65,12 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params;
   if (!(await ownerCheck(id, userId))) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  await prisma.capsule.delete({ where: { id } });
+  await prisma.collection.delete({ where: { id } });
   return NextResponse.json({ ok: true });
+}
+
+function parseDate(v: unknown): Date | null {
+  if (typeof v !== "string" || !v.trim()) return null;
+  const d = new Date(v);
+  return Number.isFinite(d.getTime()) ? d : null;
 }

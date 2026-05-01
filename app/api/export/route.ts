@@ -13,7 +13,7 @@ export async function GET() {
   const userId = (session?.user as { id?: string } | undefined)?.id;
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const [user, items, outfits, wishlist, brands, capsules] = await Promise.all([
+  const [user, items, outfits, wishlist, brands, collections] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, email: true, name: true, createdAt: true },
@@ -28,7 +28,7 @@ export async function GET() {
       where: { ownerId: userId },
       include: { aliases: true },
     }),
-    prisma.capsule.findMany({
+    prisma.collection.findMany({
       where: { ownerId: userId },
       include: { items: { select: { itemId: true } } },
     }),
@@ -36,20 +36,20 @@ export async function GET() {
 
   const data = {
     exportedAt: new Date().toISOString(),
-    schemaVersion: 1,
+    schemaVersion: 2,
     user,
     counts: {
       items: items.length,
       outfits: outfits.length,
       wishlist: wishlist.length,
       brands: brands.length,
-      capsules: capsules.length,
+      collections: collections.length,
     },
     brands,
     items,
     outfits,
     wishlist,
-    capsules,
+    collections,
     notes:
       "Photos live on the server at data/uploads/ and are referenced by " +
       "imagePath / imageBgRemovedPath / labelImagePath in items, and " +

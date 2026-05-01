@@ -72,10 +72,10 @@ export default async function SettingsPage() {
             <span className="text-stone-500"> — pick a stack of photos at once, send to Needs Review.</span>
           </li>
           <li>
-            <Link href="/capsules" className="text-blush-600 hover:underline">
-              Capsules
+            <Link href="/collections" className="text-blush-600 hover:underline">
+              Collections
             </Link>
-            <span className="text-stone-500"> — group items into pack lists, capsule wardrobes, themes.</span>
+            <span className="text-stone-500"> — plan trips with destination + dates and AI-curated packing lists.</span>
           </li>
           <li>
             <Link href="/admin" className="text-blush-600 hover:underline">

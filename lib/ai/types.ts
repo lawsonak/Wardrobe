@@ -79,6 +79,39 @@ export interface TagProvider {
       activities?: string[];
     }>;
   }): Promise<OutfitSuggestion>;
+  /** Curate a packing list for a trip from the user's closet. Reasons
+   *  about destination climate, trip length and planned activities,
+   *  picks pieces from the catalog (never invents), and returns the
+   *  itemIds plus a 1-sentence reasoning and short packing tips. */
+  buildPackingList?(input: {
+    trip: {
+      destination?: string;
+      startDate?: string;
+      endDate?: string;
+      activities: string[];
+      occasion?: string;
+      notes?: string;
+    };
+    items: Array<{
+      id: string;
+      category: string;
+      subType?: string | null;
+      color?: string | null;
+      brand?: string | null;
+      seasons?: string[];
+      activities?: string[];
+    }>;
+  }): Promise<PackingListSuggestion>;
+  /** Suggest 4–8 activities the user is likely to do on a trip given
+   *  destination + dates. Helps the user fill the activities chips
+   *  without typing. Pulled from the ACTIVITIES enum where possible
+   *  plus free-form ones (hiking, museum days, …). */
+  suggestActivities?(input: {
+    destination?: string;
+    startDate?: string;
+    endDate?: string;
+    occasion?: string;
+  }): Promise<ActivitySuggestion>;
 }
 
 export type NotesResult = {
@@ -90,6 +123,21 @@ export type OutfitSuggestion = {
   itemIds: string[];
   name?: string;
   reasoning?: string;
+  debug?: TagDebug;
+};
+
+export type PackingListSuggestion = {
+  itemIds: string[];
+  reasoning?: string;
+  // Short freeform tips: "pack a light layer for evenings", "no umbrella
+  // needed in May", etc.
+  packingNotes?: string;
+  debug?: TagDebug;
+};
+
+export type ActivitySuggestion = {
+  // Mix of ACTIVITIES enum values and free-form strings.
+  activities: string[];
   debug?: TagDebug;
 };
 
