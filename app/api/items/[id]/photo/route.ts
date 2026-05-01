@@ -1,35 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { promises as fs } from "node:fs";
-import path from "node:path";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import { saveUpload as save, unlinkUpload as unlink } from "@/lib/uploads";
 
 export const runtime = "nodejs";
 
-const UPLOAD_ROOT = path.join(process.cwd(), "data", "uploads");
-
-async function saveUpload(userId: string, itemId: string, file: File, suffix: string) {
-  const userDir = path.join(UPLOAD_ROOT, userId);
-  await fs.mkdir(userDir, { recursive: true });
-  const ext = (file.type.split("/")[1] || "png").replace(/[^a-z0-9]/gi, "");
-  // Append a tiny random tag so a replacement gets a fresh path (browsers
-  // happily cache the old URL otherwise).
-  const tag = Math.random().toString(36).slice(2, 8);
-  const filename = `${itemId}-${suffix}-${tag}.${ext}`;
-  const fullPath = path.join(userDir, filename);
-  const buf = Buffer.from(await file.arrayBuffer());
-  await fs.writeFile(fullPath, buf);
-  return path.posix.join(userId, filename);
-}
-
-async function unlink(p: string | null | undefined) {
-  if (!p) return;
-  try {
-    await fs.unlink(path.join(UPLOAD_ROOT, p));
-  } catch {
-    /* ignore */
-  }
-}
+// Photo replacements append a random tag so the new URL doesn't collide
+// with the browser-cached old one.
+const saveUpload = (userId: string, itemId: string, file: File, suffix: string) =>
+  save(userId, itemId, file, suffix, { bust: true });
 
 // Replace photos on an existing item.
 //   - `image` (required for `which=main`): new main photo

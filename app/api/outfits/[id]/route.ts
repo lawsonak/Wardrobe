@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { SLOTS, type Slot } from "@/lib/constants";
-import { clearOutfitRender } from "@/lib/outfitRender";
+import { unlinkUpload } from "@/lib/uploads";
 
 export const runtime = "nodejs";
 
@@ -64,6 +64,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       await tx.outfitItem.createMany({
         data: pendingItems.map((p) => ({ outfitId: id, slot: p.slot, itemId: p.itemId })),
       });
+      // Replacing the item set invalidates any cached try-on. The image
+      // file is left on disk until next regeneration or the orphan sweep
+      // — serving a stale-but-related render is better than a broken
+      // card while the user is mid-edit.
+      data.tryOnHash = null;
     }
     return tx.outfit.update({
       where: { id },
@@ -80,9 +85,12 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const userId = (session?.user as { id?: string } | undefined)?.id;
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
-  const existing = await prisma.outfit.findFirst({ where: { id, ownerId: userId }, select: { id: true } });
+  const existing = await prisma.outfit.findFirst({
+    where: { id, ownerId: userId },
+    select: { id: true, tryOnImagePath: true },
+  });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
   await prisma.outfit.delete({ where: { id } });
-  await clearOutfitRender(userId, id);
+  await unlinkUpload(existing.tryOnImagePath);
   return NextResponse.json({ ok: true });
 }

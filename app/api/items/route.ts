@@ -1,25 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { promises as fs } from "node:fs";
-import path from "node:path";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { CATEGORIES, listToCsv } from "@/lib/constants";
 import { brandKey } from "@/lib/brand";
+import { saveUpload } from "@/lib/uploads";
 
 export const runtime = "nodejs";
-
-const UPLOAD_ROOT = path.join(process.cwd(), "data", "uploads");
-
-async function saveUpload(userId: string, itemId: string, file: File, suffix: string) {
-  const userDir = path.join(UPLOAD_ROOT, userId);
-  await fs.mkdir(userDir, { recursive: true });
-  const ext = (file.type.split("/")[1] || "png").replace(/[^a-z0-9]/gi, "");
-  const filename = `${itemId}-${suffix}.${ext}`;
-  const fullPath = path.join(userDir, filename);
-  const buf = Buffer.from(await file.arrayBuffer());
-  await fs.writeFile(fullPath, buf);
-  return path.posix.join(userId, filename);
-}
 
 export async function GET(req: NextRequest) {
   const session = await auth();

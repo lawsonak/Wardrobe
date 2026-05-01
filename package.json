@@ -12,6 +12,7 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "fetch-vendor": "node scripts/fetch-vendor.mjs",
+    "generate:mannequin": "node scripts/generate-mannequin.mjs",
     "deploy:update": "bash scripts/update.sh",
     "postinstall": "prisma generate && node scripts/fetch-vendor.mjs || true"
   },

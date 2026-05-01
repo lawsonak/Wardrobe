@@ -2,8 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import OutfitMiniCanvas from "@/components/OutfitMiniCanvas";
-import type { Landmarks } from "@/lib/ai/mannequinLandmarks";
 import { haptic } from "@/lib/haptics";
 import ProgressBar from "@/components/ProgressBar";
 import { useTimedProgress } from "@/lib/progress";
@@ -16,66 +14,34 @@ type PickedItem = {
   subType: string | null;
 };
 
-type LayoutEntry = {
-  itemId: string;
-  x: number;
-  y: number;
-  w: number;
-  rotation: number;
-};
-
 type Suggestion = {
   itemIds: string[];
   pickedItems: PickedItem[];
   name: string | null;
   reasoning: string | null;
   weather: string | null;
-  /** Serialized {layers:[…]} JSON forwarded to OutfitMiniCanvas. */
-  layoutJson: string | null;
 };
-
-// Build a layoutJson string from the AI fit result.
-function layoutToJson(layout: LayoutEntry[]): string | null {
-  if (!layout || layout.length === 0) return null;
-  const layers = layout.map((l, idx) => ({
-    id: l.itemId,
-    x: l.x,
-    y: l.y,
-    w: l.w,
-    rotation: l.rotation,
-    z: 4 + idx * 0.001,
-    hidden: false,
-  }));
-  return JSON.stringify({ layers });
-}
 
 // "Plan today's look".
 //
-// AI picks the items from the closet, then asks AI again for per-item
-// placement on the user's mannequin. Mannequin pixels are never
-// touched — we just render the items via the calibrated landmark
-// overlay using the AI-computed positions when available, falling
-// back to slot defaults otherwise. The pick + layout are server-
-// persisted; reloads paint instantly with no extra AI calls.
+// AI picks items from the closet (weather-aware when home city is set).
+// Items render as a clean tile grid — when the user wants to see them on
+// the mannequin, they save the outfit and visit the style canvas, where
+// the new Gemini-based AI try-on composites the dressed mannequin.
 export default function TodaysOutfitCard({
   homeCity,
   weatherSummary,
-  mannequinSrc,
-  landmarks,
   initialPick,
 }: {
   homeCity: string | null;
   weatherSummary: string | null;
-  mannequinSrc: string | null;
-  landmarks: Landmarks | null;
   initialPick?: Suggestion | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [picked, setPicked] = useState<Suggestion | null>(initialPick ?? null);
   const [error, setError] = useState<string | null>(null);
-  // Pick + AI fit pass take ~25-35s combined.
-  const pickProgress = useTimedProgress(busy, 30);
+  const pickProgress = useTimedProgress(busy, 12);
 
   async function pick(again = false) {
     setBusy(true);
@@ -97,14 +63,12 @@ export default function TodaysOutfitCard({
         setError(data?.debug?.error ?? "Couldn't pick an outfit.");
         return;
       }
-      const layout = (data.layout ?? null) as LayoutEntry[] | null;
       setPicked({
         itemIds: ids,
         pickedItems: enriched,
         name: data.name ?? null,
         reasoning: data.reasoning ?? null,
         weather: data.weather ?? null,
-        layoutJson: layout ? layoutToJson(layout) : null,
       });
       haptic("success");
     } catch (err) {
@@ -142,14 +106,25 @@ export default function TodaysOutfitCard({
       </div>
 
       {picked && picked.pickedItems.length > 0 && (
-        <div className="mt-4 flex justify-center">
-          <OutfitMiniCanvas
-            items={picked.pickedItems}
-            mannequinSrc={mannequinSrc}
-            landmarks={landmarks}
-            layoutJson={picked.layoutJson}
-            className="w-full max-w-[14rem]"
-          />
+        <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4">
+          {picked.pickedItems.map((it) => {
+            const src = it.imageBgRemovedPath
+              ? `/api/uploads/${it.imageBgRemovedPath}`
+              : `/api/uploads/${it.imagePath}`;
+            return (
+              <div
+                key={it.id}
+                className="tile-bg flex aspect-square items-center justify-center rounded-xl bg-white/60 p-1 ring-1 ring-stone-100"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={src}
+                  alt={it.subType ?? it.category}
+                  className="h-full w-full object-contain"
+                />
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -161,8 +136,8 @@ export default function TodaysOutfitCard({
         <div className="mt-3">
           <ProgressBar
             value={pickProgress}
-            label={picked ? "Picking your next look…" : "Picking + fitting your look…"}
-            hint="usually 20–40s"
+            label={picked ? "Picking your next look…" : "Picking your look…"}
+            hint="usually 5–15s"
           />
         </div>
       )}
@@ -185,7 +160,7 @@ export default function TodaysOutfitCard({
               disabled={busy}
               className="btn-ghost text-stone-500"
             >
-              {busy ? "…" : "Try another"}
+              {busy ? "…" : "✨ Try another"}
             </button>
           </>
         )}
