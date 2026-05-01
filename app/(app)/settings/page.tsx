@@ -5,8 +5,6 @@ import { prisma } from "@/lib/db";
 import { firstNameFromUser } from "@/lib/userName";
 import { getPrefs, setHomeCity, setStylePreferences } from "@/lib/userPrefs";
 import { getForecast, cToF } from "@/lib/weather";
-import { getMannequinForUser } from "@/lib/mannequin";
-import MannequinUpload from "@/components/MannequinUpload";
 
 export const dynamic = "force-dynamic";
 
@@ -31,13 +29,12 @@ export default async function SettingsPage() {
   const firstName = firstNameFromUser(session?.user);
   const prefs = await getPrefs();
 
-  const [items, outfits, wishlist, brands, forecast, mannequin] = await Promise.all([
+  const [items, outfits, wishlist, brands, forecast] = await Promise.all([
     prisma.item.count({ where: { ownerId: userId } }),
     prisma.outfit.count({ where: { ownerId: userId } }),
     prisma.wishlistItem.count({ where: { ownerId: userId } }),
     prisma.brand.count({ where: { ownerId: userId } }),
     prefs.homeCity ? getForecast(prefs.homeCity) : Promise.resolve(null),
-    getMannequinForUser(userId),
   ]);
 
   return (
@@ -49,23 +46,6 @@ export default async function SettingsPage() {
           {firstName ? `Hi ${firstName}.` : ""} Useful tools and a backup button.
         </p>
       </div>
-
-      <section className="card p-4">
-        <h2 className="font-display text-lg text-stone-800">Your mannequin</h2>
-        <p className="mt-1 text-sm text-stone-600">
-          Upload a photo of yourself and we&apos;ll turn it into a soft fashion-illustration
-          mannequin. It&apos;s used in the outfit style canvas so layouts feel like they&apos;re on you.
-        </p>
-        <div className="mt-3">
-          <MannequinUpload
-            initial={{
-              url: mannequin.url,
-              hasSource: mannequin.hasSource,
-              hasLandmarks: !!mannequin.landmarks,
-            }}
-          />
-        </div>
-      </section>
 
       <section className="card p-4">
         <h2 className="font-display text-lg text-stone-800">Home city</h2>

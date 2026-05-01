@@ -43,7 +43,7 @@ That runs `scripts/update.sh`: `git pull --ff-only` → `npm install` → `prism
 | `Item` | A clothing piece | category, subType, color, brand (free-form + canonical `Brand` ref), size, sizeSystem, fitDetails (JSON), seasons (CSV), activities (CSV), notes, isFavorite, status (`active\|needs_review\|draft`), imagePath, imageBgRemovedPath, labelImagePath, optional `setId` |
 | `ItemPhoto` | Extra angles per item | itemId, label, position |
 | `ItemSet` | Soft link of pieces sold/worn together | swimsuit top+bottom, pajamas — items stay independent |
-| `Outfit` | Bundle of items with slot map | name, activity, season, layoutJson (style canvas), optional `collectionId` back-link |
+| `Outfit` | Bundle of items with slot map | name, activity, season, layoutJson (manual style canvas), `tryOnImagePath` / `tryOnHash` / `tryOnGeneratedAt` (cached AI try-on render), optional `collectionId` back-link |
 | `OutfitItem` | Join row | outfitId, itemId, slot |
 | `Collection` | Trip or themed packing set | `kind` (`trip\|general`), name, description, destination, startDate, endDate, notes, occasion, season, activities (CSV) |
 | `CollectionItem` | Join row | collectionId, itemId |
@@ -83,12 +83,11 @@ The closet's tagged `activities` field is restricted to the enum, but Collection
 | `parseSearch` | `/api/ai/search` | Parse natural-language closet search into structured filters |
 
 **Other AI-adjacent routes** (not on the provider interface):
-- `/api/ai/render-items` — image-gen
 - `/api/ai/rotate-label` — auto-rotates label photos on upload
-- `/api/ai/outfit/today` — daily outfit pick (weather-aware)
-- `/api/outfits/[id]/fit` — AI auto-fit on the style canvas
-- `/api/outfits/[id]/render` — full-outfit image render
-- `/api/mannequin` — Gemini-generated mannequin from a user photo + landmark extraction (`lib/ai/mannequinLandmarks.ts`)
+- `/api/ai/outfit/today` — daily outfit pick (weather-aware, text-only — picks item ids; the dashboard card renders a tile grid)
+- `/api/outfits/[id]/tryon` — composites the outfit onto the canonical mannequin via Gemini 2.5 Flash Image. Hashes (mannequin id + sorted item ids + file mtimes + prompt version) and short-circuits when nothing has changed; otherwise persists the PNG and updates `Outfit.tryOnImagePath` / `tryOnHash` / `tryOnGeneratedAt`. See `lib/ai/tryon.ts`.
+
+**Canonical mannequin:** A single photoreal dress-form image lives at `public/mannequin/base.png` (with `base.json` carrying its `id`). Generated once via `npm run generate:mannequin` (script: `scripts/generate-mannequin.mjs`). The same image is used for every user — there is no per-user mannequin upload. Bumping the `id` in `base.json` invalidates every cached try-on.
 
 **Prompt conventions:**
 - All structured-response calls use Gemini's `responseMimeType: "application/json"` + `responseSchema` to force valid JSON.
@@ -112,7 +111,11 @@ The closet's tagged `activities` field is restricted to the enum, but Collection
 | Schema | `prisma/schema.prisma` |
 | Migrations | `prisma/migrations/` |
 | AI provider | `lib/ai/provider.ts`, `lib/ai/types.ts` |
-| Mannequin landmarks (Gemini) | `lib/ai/mannequinLandmarks.ts` |
+| AI try-on (Gemini Flash Image) | `lib/ai/tryon.ts`, `app/api/outfits/[id]/tryon/route.ts` |
+| Try-on UI shell | `components/TryOnView.tsx` |
+| Canonical mannequin asset | `public/mannequin/base.png` + `base.json` |
+| Mannequin generator | `scripts/generate-mannequin.mjs` |
+| Upload helpers (saveUpload, saveBuffer, unlinkUpload) | `lib/uploads.ts` |
 | Packing-target formula | `lib/packingTargets.ts` |
 | Constants | `lib/constants.ts` |
 | User prefs / weather | `lib/userPrefs.ts`, `lib/weather.ts` |
@@ -124,9 +127,8 @@ The closet's tagged `activities` field is restricted to the enum, but Collection
 | Collections editor (edit) | `app/(app)/collections/CollectionEditor.tsx` |
 | Reusable filtered item grid | `app/(app)/collections/ItemPicker.tsx` |
 | Outfit builder | `app/(app)/outfits/builder/OutfitBuilder.tsx` |
-| Style canvas | `components/StyleCanvas.tsx` |
+| Style canvas (manual layout fallback) | `components/StyleCanvas.tsx` |
 | Today's outfit card | `components/TodaysOutfitCard.tsx` |
-| Mannequin upload | `components/MannequinUpload.tsx` |
 | Deploy script | `scripts/update.sh` |
 
 ## Quick start for a new chat

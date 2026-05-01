@@ -8,7 +8,6 @@ import TodaysOutfitCard from "@/components/TodaysOutfitCard";
 import { firstNameFromUser } from "@/lib/userName";
 import { getPrefs } from "@/lib/userPrefs";
 import { getForecast, cToF } from "@/lib/weather";
-import { getMannequinForUser } from "@/lib/mannequin";
 import { readSavedPick } from "@/lib/todayOutfit";
 
 export const dynamic = "force-dynamic";
@@ -48,14 +47,13 @@ export default async function Dashboard() {
   };
 
   const prefs = await getPrefs();
-  const [forecast, mannequin, savedPick] = await Promise.all([
+  const [forecast, savedPick] = await Promise.all([
     prefs.homeCity ? getForecast(prefs.homeCity) : Promise.resolve(null),
-    getMannequinForUser(userId),
     readSavedPick(userId),
   ]);
 
-  // Rehydrate the saved itemIds → full item records so the card can
-  // render OutfitMiniCanvas without a client round-trip.
+  // Rehydrate the saved itemIds → full item records so the card paints
+  // instantly without a client round-trip.
   let initialPick:
     | {
         itemIds: string[];
@@ -69,7 +67,6 @@ export default async function Dashboard() {
         name: string | null;
         reasoning: string | null;
         weather: string | null;
-        layoutJson: string | null;
       }
     | null = null;
   if (savedPick) {
@@ -85,28 +82,12 @@ export default async function Dashboard() {
       .map((id) => byId.get(id))
       .filter((x): x is (typeof pickedItemRows)[number] => !!x);
     if (ordered.length > 0) {
-      // Serialize the AI fit (when present) into the same layoutJson
-      // shape that StyleCanvas / OutfitMiniCanvas already understand.
-      let layoutJson: string | null = null;
-      if (savedPick.layout && savedPick.layout.length > 0) {
-        const layers = savedPick.layout.map((l, idx) => ({
-          id: l.itemId,
-          x: l.x,
-          y: l.y,
-          w: l.w,
-          rotation: l.rotation,
-          z: 4 + idx * 0.001,
-          hidden: false,
-        }));
-        layoutJson = JSON.stringify({ layers });
-      }
       initialPick = {
         itemIds: savedPick.itemIds,
         pickedItems: ordered,
         name: savedPick.name,
         reasoning: savedPick.reasoning,
         weather: savedPick.weather,
-        layoutJson,
       };
     }
   }
@@ -163,8 +144,6 @@ export default async function Dashboard() {
               ? `${cToF(forecast.tempC)}°F · ${forecast.conditions} in ${forecast.city} (high ${cToF(forecast.highC)}°, low ${cToF(forecast.lowC)}°)`
               : null
           }
-          mannequinSrc={mannequin.url}
-          landmarks={mannequin.landmarks}
           initialPick={initialPick}
         />
       )}

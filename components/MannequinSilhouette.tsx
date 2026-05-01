@@ -1,33 +1,11 @@
-// Renders either:
-//   - a custom user-uploaded mannequin illustration (via `src` prop), or
-//   - a neutral SVG silhouette as a fallback.
+// Neutral SVG silhouette used as the manual-layout backdrop in StyleCanvas.
+// The AI try-on path renders the canonical photoreal mannequin (committed
+// to public/mannequin/base.png) directly via Gemini; this silhouette is
+// only shown when the user toggles to "Manual layout".
 //
-// Sized to viewBox 0 0 100 200 so the canvas can size against any
-// container. When `src` is set we still wrap in the same SVG so existing
-// callers don't need to change their absolute-positioned layout math.
-export default function MannequinSilhouette({
-  className,
-  src,
-}: {
-  className?: string;
-  src?: string | null;
-}) {
-  if (src) {
-    return (
-      // Plain <img> keeps caching/lazy-load behavior consistent with item
-      // photos elsewhere in the app and avoids the SVG-image CORS quirks
-      // some browsers have with <foreignObject>.
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={src}
-        alt="Your mannequin"
-        className={className}
-        style={{ objectFit: "contain", objectPosition: "center" }}
-        draggable={false}
-      />
-    );
-  }
-
+// Sized to viewBox 0 0 100 200 (1:2 portrait) so callers can drop it
+// into any aspect-[1/2] container.
+export default function MannequinSilhouette({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 100 200" preserveAspectRatio="xMidYMid meet" className={className}>
       <defs>
