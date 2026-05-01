@@ -69,8 +69,11 @@ export default function ItemPhotoCarousel({
     );
   }
 
+  // `data-no-item-swipe` opts the carousel out of the page-wide
+  // prev/next-item swipe gesture in ItemNav so horizontal flicks
+  // here only pan the carousel.
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" data-no-item-swipe>
       <div
         ref={trackRef}
         className="no-scrollbar flex aspect-square w-full snap-x snap-mandatory overflow-x-auto overflow-y-hidden rounded-2xl"

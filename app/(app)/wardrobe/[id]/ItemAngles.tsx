@@ -30,8 +30,9 @@ export default function ItemAngles({
   editing?: boolean;
 }) {
   const router = useRouter();
+  // Single <input>; `accept="image/*"` lets the OS prompt show both
+  // "Take Photo" and "Photo Library" on mobile.
   const fileRef = useRef<HTMLInputElement>(null);
-  const cameraRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<string | null>(null);
   const [bgProgress, setBgProgress] = useState(0);
@@ -159,37 +160,16 @@ export default function ItemAngles({
               if (e.target) e.target.value = "";
               if (f) add(f);
             }}
-            aria-label="Choose photo angle from library"
-          />
-          <input
-            ref={cameraRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (e.target) e.target.value = "";
-              if (f) add(f);
-            }}
-            aria-label="Take photo angle with camera"
+            aria-label="Add another angle photo"
           />
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               disabled={busy}
-              onClick={() => cameraRef.current?.click()}
+              onClick={() => fileRef.current?.click()}
               className="btn-secondary text-xs"
             >
               📸 Add another angle
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => fileRef.current?.click()}
-              className="btn-ghost text-xs"
-            >
-              From library
             </button>
             {error && (
               <p className="text-xs text-blush-700">
