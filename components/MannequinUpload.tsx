@@ -239,8 +239,18 @@ export default function MannequinUpload({ initial }: { initial: Info }) {
       )}
 
       {error && (
-        <div className="rounded-xl bg-blush-50 px-3 py-2 text-sm text-blush-800 ring-1 ring-blush-200">
-          {error}
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-blush-50 px-3 py-2 text-sm text-blush-800 ring-1 ring-blush-200">
+          <span className="min-w-0">{error}</span>
+          {info.hasSource && (
+            <button
+              type="button"
+              onClick={regenerate}
+              disabled={busy}
+              className="shrink-0 rounded-full bg-white px-3 py-1 text-xs text-blush-700 ring-1 ring-blush-200 hover:bg-blush-100 disabled:opacity-50"
+            >
+              Retry
+            </button>
+          )}
         </div>
       )}
     </div>
