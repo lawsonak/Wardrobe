@@ -27,6 +27,14 @@ export default async function OutfitsPage({
 
   const title = "Outfits";
 
+  // Active-filter chips mirror the wardrobe page pattern so the user
+  // can see what's filtered and tap × on a chip to remove it without
+  // re-submitting the form. Same shape, same dropParam helper.
+  const activeFilters: { label: string; href: string }[] = [];
+  if (sp.activity) activeFilters.push({ label: sp.activity, href: dropParam(sp, "activity") });
+  if (sp.season) activeFilters.push({ label: sp.season, href: dropParam(sp, "season") });
+  if (sp.fav === "1") activeFilters.push({ label: "favorites", href: dropParam(sp, "fav") });
+
   return (
     <div className="space-y-5">
       <div className="flex items-end justify-between">
@@ -56,6 +64,19 @@ export default async function OutfitsPage({
         </label>
         <button type="submit" className="btn-secondary">Filter</button>
       </form>
+
+      {activeFilters.length > 0 && (
+        <div className="-mt-2 flex flex-wrap items-center gap-2 text-xs text-stone-500">
+          <span>Filtering by:</span>
+          {activeFilters.map((f) => (
+            <Link key={f.label} href={f.href} className="chip chip-off pr-2">
+              {f.label}
+              <span aria-hidden className="ml-1 text-stone-400">×</span>
+              <span className="sr-only">Remove filter</span>
+            </Link>
+          ))}
+        </div>
+      )}
 
       {outfits.length === 0 ? (
         <div className="card p-10 text-center">
@@ -99,4 +120,14 @@ export default async function OutfitsPage({
       )}
     </div>
   );
+}
+
+function dropParam(sp: Record<string, string | undefined>, key: string): string {
+  const u = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) {
+    if (k === key || !v) continue;
+    u.set(k, v);
+  }
+  const qs = u.toString();
+  return qs ? `/outfits?${qs}` : "/outfits";
 }
