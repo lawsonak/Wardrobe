@@ -11,6 +11,7 @@ import { getPrefs } from "@/lib/userPrefs";
 import { getForecast, cToF } from "@/lib/weather";
 import { readSavedPick } from "@/lib/todayOutfit";
 import { readSavedSuggestion } from "@/lib/todaysSuggestion";
+import { getUserMannequin } from "@/lib/mannequin";
 
 export const dynamic = "force-dynamic";
 
@@ -49,10 +50,11 @@ export default async function Dashboard() {
   };
 
   const prefs = await getPrefs();
-  const [forecast, savedPick, savedSuggestion] = await Promise.all([
+  const [forecast, savedPick, savedSuggestion, mannequin] = await Promise.all([
     prefs.homeCity ? getForecast(prefs.homeCity) : Promise.resolve(null),
     readSavedPick(userId),
     readSavedSuggestion(userId),
+    getUserMannequin(userId),
   ]);
 
   // Rehydrate the saved itemIds → full item records so the card paints
@@ -150,6 +152,8 @@ export default async function Dashboard() {
               : null
           }
           initialPick={initialPick}
+          headUrl={mannequin.headUrl}
+          headBBox={mannequin.headBBox}
         />
       )}
 

@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import {
+  clearStylizedHead,
   clearUserMannequin,
   getUserMannequin,
   readSourcePhoto,
+  readUserMannequinPng,
   saveRendered,
   saveSourcePhoto,
+  saveStylizedHead,
 } from "@/lib/mannequin";
-import { generateMannequinFromPhoto } from "@/lib/ai/mannequin";
+import {
+  generateMannequinFromPhoto,
+  generateStylizedHead,
+} from "@/lib/ai/mannequin";
 import { prisma } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -27,13 +33,89 @@ export async function GET() {
   return NextResponse.json(info);
 }
 
-// POST handles both:
+// Best-effort: redraw the user's head in the mannequin's illustration
+// style and save it as a transparent PNG that the try-on UIs overlay
+// on top of the AI body. Failure is non-fatal — the mannequin still
+// works, the user just doesn't get a face overlay.
+async function tryGenerateHead(args: {
+  userId: string;
+  sourcePhoto: Buffer;
+  sourceMime: string;
+  mannequin: Buffer;
+  mannequinMime: string;
+}): Promise<void> {
+  try {
+    const head = await generateStylizedHead({
+      sourcePhoto: args.sourcePhoto,
+      sourceMime: args.sourceMime,
+      mannequin: args.mannequin,
+      mannequinMime: args.mannequinMime,
+    });
+    if (head.ok) {
+      await saveStylizedHead(args.userId, head.pngBuffer);
+    } else {
+      console.warn("stylized head generation failed:", head.error);
+    }
+  } catch (err) {
+    console.warn("stylized head threw:", err);
+  }
+}
+
+// POST handles:
 //   - multipart with `source` File: save source + generate illustration
 //   - JSON { mode: "regenerate" }: re-run on the saved source
+//   - JSON { mode: "regenerate-face" }: only re-run the head extraction
+//     (cheap way to retry the face overlay without redoing the body)
+//   - JSON { mode: "remove-face" }: drop the head overlay only
 export async function POST(req: NextRequest) {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id;
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const contentType = req.headers.get("content-type") || "";
+
+  // JSON-only modes that don't need the lock or the source photo flow.
+  if (!contentType.includes("multipart/form-data")) {
+    const body = await req.json().catch(() => ({} as { mode?: string }));
+    if (body?.mode === "remove-face") {
+      await clearStylizedHead(userId);
+      const info = await getUserMannequin(userId);
+      return NextResponse.json(info);
+    }
+    if (body?.mode === "regenerate-face") {
+      if (inflight.has(userId)) {
+        return NextResponse.json(
+          { error: "A mannequin generation is already in progress for your account." },
+          { status: 409 },
+        );
+      }
+      const source = await readSourcePhoto(userId);
+      const mannequin = await readUserMannequinPng(userId);
+      if (!source || !mannequin) {
+        return NextResponse.json(
+          { error: "Need both a source photo and a generated mannequin first." },
+          { status: 400 },
+        );
+      }
+      inflight.add(userId);
+      try {
+        await tryGenerateHead({
+          userId,
+          sourcePhoto: source.buf,
+          sourceMime: source.mime,
+          mannequin: mannequin.buf,
+          mannequinMime: "image/png",
+        });
+      } finally {
+        inflight.delete(userId);
+      }
+      const info = await getUserMannequin(userId);
+      return NextResponse.json(info);
+    }
+    if (body?.mode !== "regenerate") {
+      return NextResponse.json({ error: "Unknown request mode" }, { status: 400 });
+    }
+  }
 
   if (inflight.has(userId)) {
     return NextResponse.json(
@@ -42,7 +124,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const contentType = req.headers.get("content-type") || "";
   let photoBuf: Buffer | null = null;
   let photoMime = "image/jpeg";
 
@@ -56,10 +137,6 @@ export async function POST(req: NextRequest) {
     photoBuf = Buffer.from(await source.arrayBuffer());
     photoMime = source.type || "image/jpeg";
   } else {
-    const body = await req.json().catch(() => ({} as { mode?: string }));
-    if (body?.mode !== "regenerate") {
-      return NextResponse.json({ error: "Unknown request mode" }, { status: 400 });
-    }
     const saved = await readSourcePhoto(userId);
     if (!saved) {
       return NextResponse.json(
@@ -79,7 +156,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: result.error, ...info, debug: result.debug }, { status: 502 });
     }
 
-    const info = await saveRendered(userId, result.pngBuffer);
+    await saveRendered(userId, result.pngBuffer);
+    // Stylized-head overlay is generated as a follow-up call. Failure
+    // is non-fatal — the mannequin works without it.
+    await tryGenerateHead({
+      userId,
+      sourcePhoto: photoBuf,
+      sourceMime: photoMime,
+      mannequin: result.pngBuffer,
+      mannequinMime: result.mimeType || "image/png",
+    });
     // Bumping the user's mannequin id invalidates every cached try-on
     // for them — surface this with a single tryOnHash=null sweep so the
     // UI shows "regenerate" pills instead of stale renders.
@@ -87,6 +173,7 @@ export async function POST(req: NextRequest) {
       where: { ownerId: userId, tryOnHash: { not: null } },
       data: { tryOnHash: null },
     });
+    const info = await getUserMannequin(userId);
     return NextResponse.json(info);
   } finally {
     inflight.delete(userId);
@@ -104,5 +191,5 @@ export async function DELETE() {
     where: { ownerId: userId, tryOnHash: { not: null } },
     data: { tryOnHash: null },
   });
-  return NextResponse.json({ url: null, hasSource: false, id: null });
+  return NextResponse.json({ url: null, hasSource: false, id: null, headUrl: null, headBBox: null });
 }

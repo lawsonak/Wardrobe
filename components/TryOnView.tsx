@@ -28,12 +28,18 @@ export default function TryOnView({
   initialLayoutJson,
   initialTryOnImagePath,
   initialTryOnGeneratedAt,
+  headUrl,
+  headBBox,
 }: {
   outfitId: string;
   items: CanvasItem[];
   initialLayoutJson: string | null;
   initialTryOnImagePath: string | null;
   initialTryOnGeneratedAt: string | null;
+  /** Optional stylized head overlay served via /api/uploads/. */
+  headUrl?: string | null;
+  /** Where to place the head on the try-on image, normalized 0..1. */
+  headBBox?: { x: number; y: number; w: number; h: number } | null;
 }) {
   // Default to AI try-on. When there's no cached image yet, the
   // freshness check auto-fires generate() so the user sees the AI
@@ -192,6 +198,26 @@ export default function TryOnView({
                 "h-full w-full object-contain transition " + (generating ? "opacity-50" : "")
               }
             />
+            {headUrl && headBBox && (
+              // CSS-stacked stylized head overlay. The bbox is normalized
+              // 0..1 of the same 1:2 portrait frame the try-on uses, so
+              // these percentages line up with where the mannequin's head
+              // sits on the AI body. No AI in the merge.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={headUrl}
+                alt=""
+                aria-hidden
+                draggable={false}
+                className={"pointer-events-none absolute object-contain transition " + (generating ? "opacity-50" : "")}
+                style={{
+                  left: `${headBBox.x * 100}%`,
+                  top: `${headBBox.y * 100}%`,
+                  width: `${headBBox.w * 100}%`,
+                  height: `${headBBox.h * 100}%`,
+                }}
+              />
+            )}
             {generating && (
               <div className="absolute inset-0 grid place-items-center bg-white/40 text-sm text-stone-700">
                 <div className="rounded-full bg-white/80 px-3 py-1.5 shadow-card">
