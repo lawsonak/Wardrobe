@@ -329,7 +329,11 @@ export default function OutfitBuilder({
   const flatPicks = SLOTS.flatMap((s) => picks[s].map((p) => ({ slot: s, item: p })));
 
   return (
-    <div className="space-y-5">
+    // Extra bottom padding so the sticky save bar (~10rem on mobile,
+    // including the input row + button) doesn't permanently cover the
+    // last few item tiles in the bottom slot. Without this you can't
+    // scroll past the last picker row.
+    <div className="space-y-5 pb-44 sm:pb-32">
       <div className="card p-4">
         <div className="flex flex-wrap items-end gap-3">
           <div>
@@ -420,7 +424,7 @@ export default function OutfitBuilder({
       })}
 
       {/* Save */}
-      <div className="card sticky bottom-20 z-10 space-y-3 p-4 sm:bottom-4">
+      <div className="card sticky bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-10 space-y-3 p-4 sm:bottom-4">
         <div className="flex flex-wrap gap-2">
           <input
             className="input flex-1 min-w-[14rem]"
