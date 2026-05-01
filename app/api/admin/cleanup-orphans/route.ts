@@ -65,6 +65,7 @@ export async function POST() {
     name === "mannequin.png" ||
     name === "mannequin.json" ||
     name === "todays-outfit.json" ||
+    name === "todays-suggestion.json" ||
     name.startsWith("mannequin-source.") ||
     name.startsWith("todays-outfit-tryon-");
 

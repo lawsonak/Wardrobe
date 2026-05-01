@@ -5,10 +5,12 @@ import ItemCard from "@/components/ItemCard";
 import GiftBanner from "@/components/GiftBanner";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
 import TodaysOutfitCard from "@/components/TodaysOutfitCard";
+import TodaysSuggestionCard from "@/components/TodaysSuggestionCard";
 import { firstNameFromUser } from "@/lib/userName";
 import { getPrefs } from "@/lib/userPrefs";
 import { getForecast, cToF } from "@/lib/weather";
 import { readSavedPick } from "@/lib/todayOutfit";
+import { readSavedSuggestion } from "@/lib/todaysSuggestion";
 
 export const dynamic = "force-dynamic";
 
@@ -47,9 +49,10 @@ export default async function Dashboard() {
   };
 
   const prefs = await getPrefs();
-  const [forecast, savedPick] = await Promise.all([
+  const [forecast, savedPick, savedSuggestion] = await Promise.all([
     prefs.homeCity ? getForecast(prefs.homeCity) : Promise.resolve(null),
     readSavedPick(userId),
+    readSavedSuggestion(userId),
   ]);
 
   // Rehydrate the saved itemIds → full item records so the card paints
@@ -148,6 +151,13 @@ export default async function Dashboard() {
           }
           initialPick={initialPick}
         />
+      )}
+
+      {/* Today's suggestion — AI reads the closet's style and surfaces
+          one real product the user might like, hyperlinked to the
+          vendor. Auto-fires once per morning, opt-in regenerate. */}
+      {itemCount >= 3 && (
+        <TodaysSuggestionCard initialSaved={savedSuggestion} />
       )}
 
       {/* Alert cards */}

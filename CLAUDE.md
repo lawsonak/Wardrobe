@@ -93,7 +93,9 @@ The closet's tagged `activities` field is restricted to the enum, but Collection
 
 **Other AI-adjacent routes** (not on the provider interface):
 - `/api/ai/rotate-label` — auto-rotates label photos on upload
-- `/api/ai/outfit/today` — daily outfit pick (weather-aware, text-only — picks item ids; the dashboard card renders a tile grid)
+- `/api/ai/outfit/today` — daily outfit pick (weather-aware) + dressed-mannequin compose. Saves under `data/uploads/<userId>/todays-outfit.json` and `…/todays-outfit-tryon-<YYYY-MM-DD>.png`.
+- `/api/ai/lookup-product` — manual brand+subType web lookup via Gemini grounded search; returns material/care/description/retail price for the item edit page. See `lib/ai/productLookup.ts`.
+- `/api/ai/style-suggestion` — daily "Today's suggestion" card. Reads a closet summary (top brands, colors, categories, favorites, style notes) and asks Gemini's grounded search to surface ONE real product the user might like, hyperlinked to the vendor. Saves under `data/uploads/<userId>/todays-suggestion.json`. See `lib/ai/styleSuggestion.ts`.
 - `/api/outfits/[id]/tryon` — composites the outfit onto the user's mannequin via Gemini 2.5 Flash Image. Hashes (mannequin id + sorted item ids + file mtimes + prompt version) and short-circuits when nothing has changed; otherwise persists the PNG and updates `Outfit.tryOnImagePath` / `tryOnHash` / `tryOnGeneratedAt`. See `lib/ai/tryon.ts`.
 - `/api/mannequin` — per-user "personal mannequin": upload a photo (multipart `source` File) and Gemini 2.5 Flash Image generates a stylized fashion-illustration of a neutral dress-form matching that body type. JSON `{ mode: "regenerate" }` re-runs on the saved source. `DELETE` wipes back to the global default. See `lib/ai/mannequin.ts` + `lib/mannequin.ts`.
 
@@ -122,7 +124,10 @@ The closet's tagged `activities` field is restricted to the enum, but Collection
 | Migrations | `prisma/migrations/` |
 | AI provider | `lib/ai/provider.ts`, `lib/ai/types.ts` |
 | AI try-on (Gemini Flash Image) | `lib/ai/tryon.ts`, `app/api/outfits/[id]/tryon/route.ts` |
+| AI try-on shared compose helpers | `lib/ai/composeTryOn.ts` |
 | Try-on UI shell | `components/TryOnView.tsx` |
+| Today's suggestion (daily product pick) | `lib/ai/styleSuggestion.ts`, `lib/todaysSuggestion.ts`, `app/api/ai/style-suggestion/route.ts`, `components/TodaysSuggestionCard.tsx` |
+| Web product lookup (manual on item edit) | `lib/ai/productLookup.ts`, `app/api/ai/lookup-product/route.ts` |
 | Personal mannequin (per-user) | `lib/mannequin.ts`, `lib/ai/mannequin.ts`, `app/api/mannequin/route.ts`, `components/MannequinUpload.tsx` |
 | Global mannequin asset | `public/mannequin/base.png` + `base.json` |
 | Mannequin generator (global default) | `scripts/generate-mannequin.mjs` |
