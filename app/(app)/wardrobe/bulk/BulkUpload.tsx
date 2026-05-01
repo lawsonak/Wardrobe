@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { CATEGORIES, type Category } from "@/lib/constants";
 import { removeBackground, resetBackgroundRemover } from "@/lib/bgRemoval";
 import { heicToJpeg, isHeic } from "@/lib/heic";
+import { normalizeOrientation } from "@/lib/imageOrientation";
 
 // Sentinel for the "Let AI decide" option. The bulk endpoint accepts
 // this and stores a placeholder category until AI tagging fills the
@@ -111,22 +112,34 @@ export default function BulkUpload() {
     // batch of iPhone photos.
     const ready: Job[] = [];
     for (const j of pending) {
-      if (isHeic(j.file)) {
-        update(j.id, { state: "processing-heic" });
+      let working = j;
+      if (isHeic(working.file)) {
+        update(working.id, { state: "processing-heic" });
         try {
-          const converted = await heicToJpeg(j.file);
-          // Replace preview with the JPEG so the grid renders.
-          if (j.previewUrl) URL.revokeObjectURL(j.previewUrl);
+          const converted = await heicToJpeg(working.file);
+          if (working.previewUrl) URL.revokeObjectURL(working.previewUrl);
           const newPreview = URL.createObjectURL(converted);
-          update(j.id, { file: converted, previewUrl: newPreview });
-          ready.push({ ...j, file: converted, previewUrl: newPreview });
+          update(working.id, { file: converted, previewUrl: newPreview });
+          working = { ...working, file: converted, previewUrl: newPreview };
         } catch (err) {
           console.error("HEIC conversion failed", err);
-          update(j.id, { state: "error", error: "HEIC conversion failed" });
+          update(working.id, { state: "error", error: "HEIC conversion failed" });
+          continue;
         }
-      } else {
-        ready.push(j);
       }
+      // EXIF orientation → physical pixels for every queued photo.
+      try {
+        const reoriented = await normalizeOrientation(working.file);
+        if (reoriented !== working.file) {
+          if (working.previewUrl) URL.revokeObjectURL(working.previewUrl);
+          const newPreview = URL.createObjectURL(reoriented);
+          update(working.id, { file: reoriented, previewUrl: newPreview });
+          working = { ...working, file: reoriented, previewUrl: newPreview };
+        }
+      } catch (err) {
+        console.warn("orientation normalize failed for bulk job", err);
+      }
+      ready.push(working);
     }
 
     // One POST with every file attached.

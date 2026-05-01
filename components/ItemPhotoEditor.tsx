@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { removeBackground, resetBackgroundRemover } from "@/lib/bgRemoval";
 import { heicToJpeg, isHeic } from "@/lib/heic";
+import { normalizeOrientation, rotateImage } from "@/lib/imageOrientation";
 import ProgressBar from "@/components/ProgressBar";
 
 // Two stacked controls for the item-detail page:
@@ -44,6 +45,12 @@ export default function ItemPhotoEditor({
       if (isHeic(picked)) {
         setStage("Converting HEIC…");
         file = await heicToJpeg(picked);
+      }
+      // EXIF orientation → physical pixels, before bg removal.
+      try {
+        file = await normalizeOrientation(file);
+      } catch (err) {
+        console.warn("orientation normalize failed", err);
       }
       setStage(null);
       setBgProgress(0);
@@ -87,6 +94,30 @@ export default function ItemPhotoEditor({
       if (isHeic(picked)) {
         setStage("Converting HEIC…");
         file = await heicToJpeg(picked);
+      }
+      // Bake EXIF rotation into pixels first.
+      try {
+        file = await normalizeOrientation(file);
+      } catch (err) {
+        console.warn("orientation normalize failed", err);
+      }
+      // AI right-side-up pass: tag/label text often comes in at an
+      // arbitrary angle that EXIF can't fix. Server returns 0 if AI
+      // is disabled or unsure, so this is safe to always run.
+      setStage("Reading label…");
+      try {
+        const fd2 = new FormData();
+        fd2.append("image", file);
+        const r = await fetch("/api/ai/rotate-label", { method: "POST", body: fd2 });
+        if (r.ok) {
+          const data = (await r.json().catch(() => ({}))) as { rotation?: number };
+          const rot = data.rotation;
+          if (rot === 90 || rot === 180 || rot === 270) {
+            file = await rotateImage(file, rot);
+          }
+        }
+      } catch (err) {
+        console.warn("label rotate failed", err);
       }
       setStage("Saving…");
       const fd = new FormData();

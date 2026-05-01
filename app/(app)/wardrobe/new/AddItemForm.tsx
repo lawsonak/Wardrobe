@@ -15,6 +15,7 @@ import FitDetailsEditor from "@/components/FitDetailsEditor";
 import SubtypePicker from "@/components/SubtypePicker";
 import { removeBackground, resetBackgroundRemover } from "@/lib/bgRemoval";
 import { heicToJpeg, isHeic } from "@/lib/heic";
+import { normalizeOrientation, rotateImage } from "@/lib/imageOrientation";
 import { normalizeSize } from "@/lib/size";
 import { serializeFitDetails } from "@/lib/fitDetails";
 import { toast } from "@/lib/toast";
@@ -95,7 +96,35 @@ export default function AddItemForm() {
         return null;
       }
     }
+    // Bake EXIF orientation into pixels before any other processing
+    // so canvas-based steps (bg removal, rotation, etc.) see straight-up bytes.
+    try {
+      file = await normalizeOrientation(file);
+    } catch (err) {
+      console.warn("orientation normalize failed, using original", err);
+    }
     return file;
+  }
+
+  // Ask the AI which way the printed text on a label is facing, then
+  // physically rotate the bytes so the words are right-side-up. Falls
+  // back to the input on any failure (including AI off → rotation=0).
+  async function rotateLabelToUpright(file: File): Promise<File> {
+    try {
+      const fd = new FormData();
+      fd.append("image", file);
+      const res = await fetch("/api/ai/rotate-label", { method: "POST", body: fd });
+      if (!res.ok) return file;
+      const data = (await res.json().catch(() => ({}))) as { rotation?: number };
+      const r = data.rotation;
+      if (r === 90 || r === 180 || r === 270) {
+        return await rotateImage(file, r);
+      }
+      return file;
+    } catch (err) {
+      console.warn("label rotate failed", err);
+      return file;
+    }
   }
 
   async function runBgRemoval(file: File) {
@@ -295,8 +324,11 @@ export default function AddItemForm() {
     if (!picked) return;
 
     if (labelUrl) URL.revokeObjectURL(labelUrl);
-    const file = await processFile(picked);
-    if (!file) return;
+    const base = await processFile(picked);
+    if (!base) return;
+    // AI right-side-up pass — text on tags often gets shot at any
+    // angle. EXIF rotation only fixes camera tilt, not the tag itself.
+    const file = await rotateLabelToUpright(base);
     setLabelPhoto(file);
     setLabelUrl(URL.createObjectURL(file));
   }
