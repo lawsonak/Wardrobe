@@ -5,12 +5,9 @@ import { CATEGORIES, type Category } from "@/lib/constants";
 import ItemCard from "@/components/ItemCard";
 import { firstNameFromUser } from "@/lib/userName";
 import SmartSearchBar from "./SmartSearchBar";
-import { lastWearISO, daysSince } from "@/lib/wear";
 import { inferredCategoriesFor } from "@/lib/activities";
 
 export const dynamic = "force-dynamic";
-
-const DORMANT_THRESHOLD_DAYS = 60;
 
 export default async function WardrobePage({
   searchParams,
@@ -23,7 +20,6 @@ export default async function WardrobePage({
     color?: string;
     season?: string;
     activity?: string;
-    dormant?: string;
   }>;
 }) {
   const [sp, session] = await Promise.all([searchParams, auth()]);
@@ -37,7 +33,6 @@ export default async function WardrobePage({
   const color = sp.color?.trim() || undefined;
   const season = sp.season?.trim() || undefined;
   const activity = sp.activity?.trim() || undefined;
-  const dormantOnly = sp.dormant === "1";
 
   // Activity filter pulls in categories that strongly imply that
   // activity — e.g. "beach" surfaces every Swimwear item even when
@@ -80,16 +75,7 @@ export default async function WardrobePage({
     orderBy: { createdAt: "desc" },
   });
 
-  // Dormant filter is computed in JS because the wear stamp lives in
-  // notes (no schema migration). Cheap for closets up to a few thousand
-  // items, which a personal wardrobe will never hit.
-  const filtered = dormantOnly
-    ? items.filter((it) => {
-        const lastWore = lastWearISO(it.notes);
-        const isoDate = lastWore ?? it.updatedAt.toISOString().slice(0, 10);
-        return daysSince(isoDate) >= DORMANT_THRESHOLD_DAYS;
-      })
-    : items;
+  const filtered = items;
 
   const title = "Closet";
   const activeFilters: { label: string; href: string }[] = [];
@@ -98,7 +84,6 @@ export default async function WardrobePage({
   if (season) activeFilters.push({ label: season, href: dropParam(sp, "season") });
   if (activity) activeFilters.push({ label: activity, href: dropParam(sp, "activity") });
   if (favOnly) activeFilters.push({ label: "favorites", href: dropParam(sp, "fav") });
-  if (dormantOnly) activeFilters.push({ label: "haven't worn", href: dropParam(sp, "dormant") });
 
   return (
     <div className="space-y-5">
@@ -107,7 +92,6 @@ export default async function WardrobePage({
           <h1 className="font-display text-3xl text-blush-700">{title}</h1>
           <p className="text-sm text-stone-500">
             {filtered.length} item{filtered.length === 1 ? "" : "s"}
-            {dormantOnly ? " not worn lately" : ""}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -131,10 +115,6 @@ export default async function WardrobePage({
           <label className="chip chip-off cursor-pointer">
             <input type="checkbox" name="fav" value="1" defaultChecked={favOnly} className="mr-1" />
             Favorites
-          </label>
-          <label className="chip chip-off cursor-pointer">
-            <input type="checkbox" name="dormant" value="1" defaultChecked={dormantOnly} className="mr-1" />
-            Haven&apos;t worn lately
           </label>
           <button className="btn-secondary" type="submit">Apply</button>
         </form>
@@ -173,22 +153,9 @@ export default async function WardrobePage({
         </div>
       ) : (
         <div className="-mx-1 grid grid-cols-4 gap-1 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7">
-          {filtered.map((item) => {
-            const tags: string[] = [];
-            if (dormantOnly) {
-              const lastWore = lastWearISO(item.notes);
-              const iso = lastWore ?? item.updatedAt.toISOString().slice(0, 10);
-              tags.push(`${daysSince(iso)}d`);
-            }
-            return (
-              <div key={item.id} className="space-y-0.5">
-                <ItemCard item={item} href={`/wardrobe/${item.id}`} compact />
-                {tags.length > 0 && (
-                  <p className="px-1 text-[10px] uppercase tracking-wide text-stone-400">{tags.join(" · ")}</p>
-                )}
-              </div>
-            );
-          })}
+          {filtered.map((item) => (
+            <ItemCard key={item.id} item={item} href={`/wardrobe/${item.id}`} compact />
+          ))}
         </div>
       )}
     </div>

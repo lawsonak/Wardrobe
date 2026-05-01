@@ -101,7 +101,6 @@ export type SearchFilters = {
   season?: string;         // one of SEASONS
   activity?: string;       // one of ACTIVITIES
   favoritesOnly?: boolean;
-  dormantOnly?: boolean;   // "haven't worn in a while"
   freeText?: string;       // remainder for LIKE-search across notes etc.
 };
 

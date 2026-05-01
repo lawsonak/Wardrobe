@@ -87,7 +87,6 @@ const SEARCH_SCHEMA = {
     season: { type: "STRING", enum: [...ALLOWED_SEASONS] },
     activity: { type: "STRING", enum: [...ALLOWED_ACTIVITIES] },
     favoritesOnly: { type: "BOOLEAN" },
-    dormantOnly: { type: "BOOLEAN" },
     freeText: { type: "STRING" },
   },
 };
@@ -441,7 +440,6 @@ function makeGemini(): TagProvider {
           `Only set a field if the query clearly implies it. ` +
           `Use ONLY the enumerated values for category / color / season / activity. ` +
           `Map informal words: "dresses" → category=Dresses; "denim" → freeText=jeans; ` +
-          `"haven't worn in a while" / "forgotten" / "dormant" → dormantOnly=true; ` +
           `"favorites" / "I love" → favoritesOnly=true. ` +
           `Anything that doesn't fit a structured field goes in freeText (one or two short keywords). ` +
           `Query: "${query.slice(0, 200)}"`;
@@ -494,7 +492,6 @@ function makeGemini(): TagProvider {
         if (typeof r.season === "string") filters.season = r.season.toLowerCase();
         if (typeof r.activity === "string") filters.activity = r.activity.toLowerCase();
         if (typeof r.favoritesOnly === "boolean") filters.favoritesOnly = r.favoritesOnly;
-        if (typeof r.dormantOnly === "boolean") filters.dormantOnly = r.dormantOnly;
         if (typeof r.freeText === "string" && r.freeText.trim()) filters.freeText = r.freeText.trim().slice(0, 60);
         return {
           filters,

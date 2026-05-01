@@ -276,19 +276,6 @@ export default function EditItemForm({ item }: { item: Item }) {
     setTimeout(() => setSaved(false), 2000);
   }
 
-  async function markWorn() {
-    setBusy(true);
-    haptic("tap");
-    const res = await fetch(`/api/items/${item.id}/wear`, { method: "POST" });
-    setBusy(false);
-    if (res.ok) {
-      toast("Marked as worn today");
-      router.refresh();
-    } else {
-      toast("Couldn't update", "error");
-    }
-  }
-
   async function remove() {
     const ok = await confirmDialog({
       title: "Delete this item?",
@@ -423,15 +410,6 @@ export default function EditItemForm({ item }: { item: Item }) {
       <div className="flex flex-wrap gap-2 pt-2">
         <button onClick={save} className="btn-primary flex-1" disabled={busy}>
           {saved ? "Saved!" : busy ? "Saving…" : "Save changes"}
-        </button>
-        <button
-          type="button"
-          onClick={markWorn}
-          className="btn-secondary"
-          disabled={busy}
-          title="Bumps last-worn so dormant nudges leave it alone"
-        >
-          👕 Wore today
         </button>
         <button onClick={remove} className="btn-ghost text-blush-600" disabled={busy}>
           Delete

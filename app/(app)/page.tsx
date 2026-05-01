@@ -9,7 +9,6 @@ import TodaysOutfitCard from "@/components/TodaysOutfitCard";
 import { firstNameFromUser } from "@/lib/userName";
 import { getPrefs } from "@/lib/userPrefs";
 import { getForecast, cToF } from "@/lib/weather";
-import { maybeNudgeDormant } from "@/lib/dormancy";
 import { getMannequinForUser } from "@/lib/mannequin";
 import { readSavedPick } from "@/lib/todayOutfit";
 
@@ -136,10 +135,6 @@ export default async function Dashboard() {
     ORDER BY createdAt DESC
     LIMIT 6
   `;
-
-  // Drop a single dormancy nudge if it's been a while. Idempotent —
-  // safe on every render.
-  if (userId) await maybeNudgeDormant(userId);
 
   return (
     <div className="space-y-6">
