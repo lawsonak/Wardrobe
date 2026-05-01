@@ -85,9 +85,10 @@ The closet's tagged `activities` field is restricted to the enum, but Collection
 **Other AI-adjacent routes** (not on the provider interface):
 - `/api/ai/rotate-label` — auto-rotates label photos on upload
 - `/api/ai/outfit/today` — daily outfit pick (weather-aware, text-only — picks item ids; the dashboard card renders a tile grid)
-- `/api/outfits/[id]/tryon` — composites the outfit onto the canonical mannequin via Gemini 2.5 Flash Image. Hashes (mannequin id + sorted item ids + file mtimes + prompt version) and short-circuits when nothing has changed; otherwise persists the PNG and updates `Outfit.tryOnImagePath` / `tryOnHash` / `tryOnGeneratedAt`. See `lib/ai/tryon.ts`.
+- `/api/outfits/[id]/tryon` — composites the outfit onto the user's mannequin via Gemini 2.5 Flash Image. Hashes (mannequin id + sorted item ids + file mtimes + prompt version) and short-circuits when nothing has changed; otherwise persists the PNG and updates `Outfit.tryOnImagePath` / `tryOnHash` / `tryOnGeneratedAt`. See `lib/ai/tryon.ts`.
+- `/api/mannequin` — per-user "personal mannequin": upload a photo (multipart `source` File) and Gemini 2.5 Flash Image generates a stylized fashion-illustration of a neutral dress-form matching that body type. JSON `{ mode: "regenerate" }` re-runs on the saved source. `DELETE` wipes back to the global default. See `lib/ai/mannequin.ts` + `lib/mannequin.ts`.
 
-**Canonical mannequin:** A single photoreal dress-form image lives at `public/mannequin/base.png` (with `base.json` carrying its `id`). Generated once via `npm run generate:mannequin` (script: `scripts/generate-mannequin.mjs`). The same image is used for every user — there is no per-user mannequin upload. Bumping the `id` in `base.json` invalidates every cached try-on.
+**Mannequin selection:** the try-on route prefers the user's personal mannequin (`data/uploads/<userId>/mannequin.png` + `mannequin.json`) when present and falls back to the global default at `public/mannequin/base.png` (with `base.json`). The global default is generated via `npm run generate:mannequin` (script: `scripts/generate-mannequin.mjs`); regenerating either the user's or the global mannequin bumps the id and invalidates cached try-ons.
 
 **Prompt conventions:**
 - All structured-response calls use Gemini's `responseMimeType: "application/json"` + `responseSchema` to force valid JSON.
@@ -113,8 +114,9 @@ The closet's tagged `activities` field is restricted to the enum, but Collection
 | AI provider | `lib/ai/provider.ts`, `lib/ai/types.ts` |
 | AI try-on (Gemini Flash Image) | `lib/ai/tryon.ts`, `app/api/outfits/[id]/tryon/route.ts` |
 | Try-on UI shell | `components/TryOnView.tsx` |
-| Canonical mannequin asset | `public/mannequin/base.png` + `base.json` |
-| Mannequin generator | `scripts/generate-mannequin.mjs` |
+| Personal mannequin (per-user) | `lib/mannequin.ts`, `lib/ai/mannequin.ts`, `app/api/mannequin/route.ts`, `components/MannequinUpload.tsx` |
+| Global mannequin asset | `public/mannequin/base.png` + `base.json` |
+| Mannequin generator (global default) | `scripts/generate-mannequin.mjs` |
 | Upload helpers (saveUpload, saveBuffer, unlinkUpload) | `lib/uploads.ts` |
 | Packing-target formula | `lib/packingTargets.ts` |
 | Constants | `lib/constants.ts` |

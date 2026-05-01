@@ -11,13 +11,14 @@ import {
   TRY_ON_PROMPT_VERSION,
   type TryOnGarment,
 } from "@/lib/ai/tryon";
+import { readUserMannequinPng } from "@/lib/mannequin";
 
 export const runtime = "nodejs";
 // Image generation can take 5-15s; 60s gives margin without dragging on.
 export const maxDuration = 60;
 
-const MANNEQUIN_PNG = path.join(process.cwd(), "public", "mannequin", "base.png");
-const MANNEQUIN_META = path.join(process.cwd(), "public", "mannequin", "base.json");
+const GLOBAL_MANNEQUIN_PNG = path.join(process.cwd(), "public", "mannequin", "base.png");
+const GLOBAL_MANNEQUIN_META = path.join(process.cwd(), "public", "mannequin", "base.json");
 
 // Single-process lock so two parallel calls for the same outfit don't both
 // burn a Gemini call. Sufficient for a single-server personal app.
@@ -32,12 +33,18 @@ type ItemRow = {
   color: string | null;
 };
 
-async function readMannequin(): Promise<{ buf: Buffer; id: string } | null> {
+// Prefer the user's personal mannequin (uploaded photo → AI-stylized
+// illustration); fall back to the canonical one in public/mannequin.
+// The mannequin's `id` is included in the cache hash so swapping
+// between personal / global naturally invalidates cached try-ons.
+async function readMannequin(userId: string): Promise<{ buf: Buffer; id: string } | null> {
+  const personal = await readUserMannequinPng(userId);
+  if (personal) return personal;
   try {
-    const buf = await fs.readFile(MANNEQUIN_PNG);
+    const buf = await fs.readFile(GLOBAL_MANNEQUIN_PNG);
     let mqId = "mq-v1";
     try {
-      const meta = JSON.parse(await fs.readFile(MANNEQUIN_META, "utf8")) as { id?: string };
+      const meta = JSON.parse(await fs.readFile(GLOBAL_MANNEQUIN_META, "utf8")) as { id?: string };
       if (typeof meta.id === "string" && meta.id.trim()) mqId = meta.id;
     } catch {
       /* meta file is optional */
@@ -126,12 +133,12 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Add at least one piece before generating a try-on." }, { status: 400 });
   }
 
-  const mannequin = await readMannequin();
+  const mannequin = await readMannequin(userId);
   if (!mannequin) {
     return NextResponse.json(
       {
         error:
-          "Mannequin base image is missing. Run `npm run generate:mannequin` (or commit one to public/mannequin/base.png) before generating try-ons.",
+          "No mannequin available. Upload a photo in Settings → Your mannequin, or run `npm run generate:mannequin` to create the global default.",
       },
       { status: 500 },
     );
@@ -230,7 +237,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   });
   if (!outfit) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const mannequin = await readMannequin();
+  const mannequin = await readMannequin(userId);
   const items: ItemRow[] = outfit.items.map((oi) => ({
     id: oi.item.id,
     imagePath: oi.item.imagePath,
