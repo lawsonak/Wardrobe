@@ -40,10 +40,17 @@ export default function CapsuleEditor({
   capsule,
   items,
   mode,
+  cancelHref = "/capsules",
+  tripPlanInitiallyOpen = false,
 }: {
   capsule: CapsuleData;
   items: Selectable[];
   mode: "create" | "edit";
+  /** Where the Cancel link should navigate. Defaults to /capsules. */
+  cancelHref?: string;
+  /** Whether the Trip planning section starts expanded. The detail
+   *  page passes `true` when the capsule already has any trip data. */
+  tripPlanInitiallyOpen?: boolean;
 }) {
   const router = useRouter();
 
@@ -55,6 +62,9 @@ export default function CapsuleEditor({
   const [location, setLocation] = useState(capsule.location ?? "");
   const [targetCounts, setTargetCounts] = useState<TargetCounts>(capsule.targetCounts);
   const [activityTargets, setActivityTargets] = useState<ActivityTarget[]>(capsule.activityTargets);
+  // Trip planning is opt-in. Stays open whenever the capsule already
+  // has trip data so users don't lose track of it on edit.
+  const [tripOpen, setTripOpen] = useState(tripPlanInitiallyOpen);
   const [selected, setSelected] = useState<Set<string>>(new Set(capsule.itemIds));
 
   const [filterCategory, setFilterCategory] = useState<string>("");
@@ -183,40 +193,54 @@ export default function CapsuleEditor({
         </div>
       </div>
 
-      {/* Trip planning — optional, blank by default. Used by the AI
-          plan button on the detail page to factor in weather + outfit
-          targets when picking pieces. */}
-      <div className="card space-y-3 p-4">
-        <div>
-          <p className="font-display text-lg text-stone-800">Trip planning</p>
-          <p className="text-xs text-stone-500">
-            Optional — gives the AI plan button a date, location, and pack list to work from.
-          </p>
-        </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {/* Trip planning — collapsed by default. Toggling it on
+          reveals date / location / pack list / outfit targets. */}
+      <div className="card overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setTripOpen((v) => !v)}
+          className="flex w-full items-center justify-between gap-3 p-4 text-left"
+          aria-expanded={tripOpen}
+        >
           <div>
-            <label className="label">Date needed</label>
-            <input
-              type="date"
-              className="input"
-              value={dateNeeded}
-              onChange={(e) => setDateNeeded(e.target.value)}
-            />
+            <p className="font-display text-lg text-stone-800">Plan a trip</p>
+            <p className="text-xs text-stone-500">
+              Optional — date, weather, pack list, and AI-generated outfits.
+            </p>
           </div>
-          <div>
-            <label className="label">Location</label>
-            <input
-              type="text"
-              className="input"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder="e.g. Paris, France"
-            />
-          </div>
-        </div>
+          <span className="text-xs text-blush-600">
+            {tripOpen ? "Hide" : "Add"}
+          </span>
+        </button>
 
-        <TargetCountsEditor counts={targetCounts} onChange={setTargetCounts} />
-        <ActivityTargetsEditor targets={activityTargets} onChange={setActivityTargets} />
+        {tripOpen && (
+          <div className="space-y-3 border-t border-stone-100 p-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="label">Date needed</label>
+                <input
+                  type="date"
+                  className="input"
+                  value={dateNeeded}
+                  onChange={(e) => setDateNeeded(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="label">Location</label>
+                <input
+                  type="text"
+                  className="input"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder="e.g. Paris, France"
+                />
+              </div>
+            </div>
+
+            <TargetCountsEditor counts={targetCounts} onChange={setTargetCounts} />
+            <ActivityTargetsEditor targets={activityTargets} onChange={setActivityTargets} />
+          </div>
+        )}
       </div>
 
       <section>
@@ -303,7 +327,7 @@ export default function CapsuleEditor({
             Delete
           </button>
         )}
-        <Link href="/capsules" className="btn-secondary">Cancel</Link>
+        <Link href={cancelHref} className="btn-secondary">Cancel</Link>
       </div>
     </div>
   );
@@ -314,9 +338,10 @@ export type { Category };
 
 // ── Target counts (pack list) ──────────────────────────────────
 //
-// "How many of each category should this capsule contain?" Used to
-// surface a fulfilled-vs-target progress on the detail page and to
-// hint the AI plan ("aim for 3 tops, 4 bottoms…").
+// "How many of each category should this capsule contain?" The UI
+// only shows rows the user has actively added — empty pack list
+// means a single "+ Add a category" picker. Stepper buttons (− / +)
+// avoid keyboard-number-input churn on mobile.
 function TargetCountsEditor({
   counts,
   onChange,
@@ -324,59 +349,53 @@ function TargetCountsEditor({
   counts: TargetCounts;
   onChange: (next: TargetCounts) => void;
 }) {
-  // Show the most common 6 categories upfront; everything else is a
-  // single "+ Add another category" row to keep the form short.
-  const PRIMARY: Category[] = ["Tops", "Bottoms", "Dresses", "Shoes", "Underwear", "Outerwear"];
-  const extras = Object.keys(counts).filter((c) => !PRIMARY.includes(c as Category));
-
   function setCount(category: string, n: number) {
     const next: TargetCounts = { ...counts };
     if (!Number.isFinite(n) || n <= 0) delete next[category];
-    else next[category] = Math.floor(n);
+    else next[category] = Math.min(50, Math.max(1, Math.floor(n)));
     onChange(next);
   }
 
-  const remainingCategories = (CATEGORIES as readonly string[]).filter(
-    (c) => !PRIMARY.includes(c as Category) && !(c in counts),
-  );
+  const populated = Object.entries(counts).filter(([, n]) => n > 0);
+  const remaining = (CATEGORIES as readonly string[]).filter((c) => !(c in counts));
 
   return (
     <div>
-      <p className="label mb-1">Pack list — pieces I want to bring</p>
+      <p className="label mb-1">Pack list</p>
       <p className="mb-2 text-xs text-stone-500">
-        e.g. 3 tops, 4 bottoms, 6 underwear. Leave at 0 to skip a category.
+        How many pieces of each kind do you want to bring? Optional.
       </p>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        {PRIMARY.map((c) => (
-          <label key={c} className="flex items-center gap-2 text-sm">
-            <span className="flex-1 truncate text-stone-700">{c}</span>
-            <input
-              type="number"
-              min={0}
-              max={50}
-              className="input w-16 text-center"
-              value={counts[c] ?? ""}
-              onChange={(e) => setCount(c, Number(e.target.value))}
-              placeholder="0"
-            />
-          </label>
-        ))}
-        {extras.map((c) => (
-          <label key={c} className="flex items-center gap-2 text-sm">
-            <span className="flex-1 truncate text-stone-700">{c}</span>
-            <input
-              type="number"
-              min={0}
-              max={50}
-              className="input w-16 text-center"
-              value={counts[c] ?? ""}
-              onChange={(e) => setCount(c, Number(e.target.value))}
-              placeholder="0"
-            />
-          </label>
-        ))}
-      </div>
-      {remainingCategories.length > 0 && (
+      {populated.length === 0 ? (
+        <p className="mb-2 text-xs text-stone-400">No pack list yet.</p>
+      ) : (
+        <ul className="space-y-1">
+          {populated.map(([cat, n]) => (
+            <li key={cat} className="flex items-center justify-between gap-2 rounded-lg bg-cream-50 px-3 py-1.5">
+              <span className="text-sm text-stone-700">{cat}</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setCount(cat, n - 1)}
+                  className="grid h-7 w-7 place-items-center rounded-full bg-white text-stone-500 ring-1 ring-stone-200 hover:text-blush-600"
+                  aria-label={`Decrease ${cat}`}
+                >
+                  −
+                </button>
+                <span className="w-6 text-center text-sm font-medium tabular-nums text-stone-800">{n}</span>
+                <button
+                  type="button"
+                  onClick={() => setCount(cat, n + 1)}
+                  className="grid h-7 w-7 place-items-center rounded-full bg-white text-stone-500 ring-1 ring-stone-200 hover:text-blush-600"
+                  aria-label={`Increase ${cat}`}
+                >
+                  +
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {remaining.length > 0 && (
         <select
           className="input mt-2 w-auto text-xs"
           value=""
@@ -385,8 +404,8 @@ function TargetCountsEditor({
             setCount(e.target.value, 1);
           }}
         >
-          <option value="">+ Add another category…</option>
-          {remainingCategories.map((c) => (
+          <option value="">+ Add a category…</option>
+          {remaining.map((c) => (
             <option key={c} value={c}>
               {c}
             </option>
