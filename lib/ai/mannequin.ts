@@ -272,3 +272,131 @@ export async function generateStylizedHead(input: {
     return { ok: false, error: detail, debug: { status: httpStatus, error: detail, rawText } };
   }
 }
+
+// Final step in the per-user mannequin pipeline: take the headless body
+// (`generateMannequinFromPhoto` output) plus the cartoon head crop
+// (`generateStylizedHead` output) and ask Gemini Flash Image to merge
+// them into a single composite. The composite replaces the body PNG on
+// disk and becomes the canonical mannequin reference for try-ons —
+// no separate head overlay, no CSS stacking, no per-render bookkeeping.
+const COMPOSE_PROMPT = [
+  "You're given two images:",
+  "Image 1: a stylized fashion-illustration mannequin body, posed standing front-facing. The current head on this body is a blank featureless oval.",
+  "Image 2: a cartoon caricature head (Pixar-style, painterly).",
+  "Replace the blank head on the figure in image 1 with the head from image 2. Attach it cleanly at the neck — preserve the rest of image 1 EXACTLY (same body shape, pose, proportions, posture, fabric finish, lighting, framing, background).",
+  "Match the color palette and painterly style so the head reads as part of the same illustration. Adjust head size and angle to look natural on the body.",
+  "Keep image 1's full framing: head fully visible at top, feet fully visible at bottom, plain off-white background, portrait 9:16 aspect.",
+  "Output a single image. Do not output text.",
+].join(" ");
+
+export async function composeBodyWithHead(input: {
+  body: Buffer;
+  bodyMime: string;
+  head: Buffer;
+  headMime: string;
+}): Promise<MannequinResult> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) {
+    return { ok: false, error: "GEMINI_API_KEY not set", debug: { error: "GEMINI_API_KEY not set" } };
+  }
+
+  const reqBody = {
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: COMPOSE_PROMPT },
+          {
+            inlineData: {
+              mimeType: input.bodyMime || "image/png",
+              data: input.body.toString("base64"),
+            },
+          },
+          {
+            inlineData: {
+              mimeType: input.headMime || "image/png",
+              data: input.head.toString("base64"),
+            },
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      responseModalities: ["IMAGE"],
+      imageConfig: { aspectRatio: "9:16" },
+      temperature: 0.4,
+    },
+  };
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+    TRY_ON_MODEL,
+  )}:generateContent?key=${encodeURIComponent(key)}`;
+
+  let httpStatus: number | undefined;
+  let rawText = "";
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(reqBody),
+    });
+    httpStatus = res.status;
+    const responseText = await res.text();
+    rawText = responseText.slice(0, 400);
+
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        const err = JSON.parse(responseText) as { error?: { message?: string } };
+        if (err.error?.message) detail = `HTTP ${res.status}: ${err.error.message}`;
+      } catch {
+        detail = `HTTP ${res.status}: ${responseText.slice(0, 200)}`;
+      }
+      return { ok: false, error: detail, debug: { status: res.status, error: detail, rawText } };
+    }
+
+    const data = JSON.parse(responseText) as {
+      candidates?: Array<{
+        content?: { parts?: Array<{ text?: string; inlineData?: { mimeType?: string; data?: string } }> };
+        finishReason?: string;
+      }>;
+      promptFeedback?: { blockReason?: string };
+      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+    };
+
+    if (data.promptFeedback?.blockReason) {
+      return {
+        ok: false,
+        error: `Blocked by safety filter: ${data.promptFeedback.blockReason}`,
+        debug: { status: 200, error: data.promptFeedback.blockReason, rawText },
+      };
+    }
+
+    const partsOut = data.candidates?.[0]?.content?.parts ?? [];
+    const imagePart = partsOut.find((p) => p.inlineData?.data);
+    if (!imagePart?.inlineData?.data) {
+      const text = partsOut.map((p) => p.text).filter(Boolean).join(" ").slice(0, 200);
+      return {
+        ok: false,
+        error: `Model returned no composite image (finishReason=${data.candidates?.[0]?.finishReason ?? "?"}${text ? `, text=${text}` : ""})`,
+        debug: { status: 200, error: "no image in response", rawText },
+      };
+    }
+
+    return {
+      ok: true,
+      pngBuffer: Buffer.from(imagePart.inlineData.data, "base64"),
+      mimeType: imagePart.inlineData.mimeType || "image/png",
+      debug: {
+        status: 200,
+        rawText,
+        promptTokens: data.usageMetadata?.promptTokenCount,
+        responseTokens: data.usageMetadata?.candidatesTokenCount,
+      },
+    };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: detail, debug: { status: httpStatus, error: detail, rawText } };
+  }
+}

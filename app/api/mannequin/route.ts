@@ -1,25 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import {
-  clearStylizedHead,
   clearUserMannequin,
   getUserMannequin,
   readSourcePhoto,
-  readUserMannequinPng,
   saveRendered,
   saveSourcePhoto,
-  saveStylizedHead,
 } from "@/lib/mannequin";
 import {
+  composeBodyWithHead,
   generateMannequinFromPhoto,
   generateStylizedHead,
 } from "@/lib/ai/mannequin";
-import { whiteToTransparent, cropToSilhouette } from "@/lib/imageBg";
 import { prisma } from "@/lib/db";
 
 export const runtime = "nodejs";
-// Photo → illustration is a single Gemini Flash Image call, ~5-15s.
-export const maxDuration = 60;
+// Three Gemini Flash Image calls run sequentially (body → head → compose),
+// each ~5-15s. Bumping the timeout for headroom.
+export const maxDuration = 120;
 
 // In-process lock so two concurrent generation requests for the same
 // user don't both burn a Gemini call. Sufficient for a single-server
@@ -34,49 +32,55 @@ export async function GET() {
   return NextResponse.json(info);
 }
 
-// Best-effort: redraw the user's head in the mannequin's illustration
-// style and save it as a transparent PNG that the try-on UIs overlay
-// on top of the AI body. Failure is non-fatal — the mannequin still
-// works, the user just doesn't get a face overlay.
-async function tryGenerateHead(args: {
+// Generate the body, generate the cartoon head, then ask Gemini to
+// compose them into a single composite. Save whichever PNG is the best
+// available outcome (composite > body) — so a compose failure still
+// leaves the user with a usable headless mannequin. saveRendered is
+// called exactly once so the mannequin id (and try-on cache) flips
+// exactly once per "regenerate".
+async function generatePipeline(args: {
   userId: string;
   sourcePhoto: Buffer;
   sourceMime: string;
-  mannequin: Buffer;
-  mannequinMime: string;
-}): Promise<void> {
+}): Promise<{ ok: true } | { ok: false; error: string; debug?: unknown }> {
+  const body = await generateMannequinFromPhoto({ photo: args.sourcePhoto, mime: args.sourceMime });
+  if (!body.ok) return { ok: false, error: body.error, debug: body.debug };
+
+  let finalPng = body.pngBuffer;
+
   try {
     const head = await generateStylizedHead({
       sourcePhoto: args.sourcePhoto,
       sourceMime: args.sourceMime,
-      mannequin: args.mannequin,
-      mannequinMime: args.mannequinMime,
+      mannequin: body.pngBuffer,
+      mannequinMime: body.mimeType || "image/png",
     });
     if (head.ok) {
-      // Gemini's "transparent PNG" is unreliable — frequently returns
-      // a solid-white background. Chroma-key any white pixels to
-      // alpha=0 before saving so the overlay sits cleanly on the
-      // try-on without a visible white square. No-op when the model
-      // does honor the alpha channel request.
-      // Then tighten the canvas to the silhouette so the bbox in the
-      // try-on UI positions the head, not Gemini's incidental margin.
-      const cleaned = whiteToTransparent(head.pngBuffer);
-      const cropped = cropToSilhouette(cleaned);
-      await saveStylizedHead(args.userId, cropped);
+      const composed = await composeBodyWithHead({
+        body: body.pngBuffer,
+        bodyMime: body.mimeType || "image/png",
+        head: head.pngBuffer,
+        headMime: head.mimeType || "image/png",
+      });
+      if (composed.ok) {
+        finalPng = composed.pngBuffer;
+      } else {
+        console.warn("body+head compose failed:", composed.error);
+      }
     } else {
       console.warn("stylized head generation failed:", head.error);
     }
   } catch (err) {
-    console.warn("stylized head threw:", err);
+    console.warn("head/compose pipeline threw:", err);
   }
+
+  await saveRendered(args.userId, finalPng);
+  return { ok: true };
 }
 
 // POST handles:
-//   - multipart with `source` File: save source + generate illustration
+//   - multipart with `source` File: save source + run the full pipeline
 //   - JSON { mode: "regenerate" }: re-run on the saved source
-//   - JSON { mode: "regenerate-face" }: only re-run the head extraction
-//     (cheap way to retry the face overlay without redoing the body)
-//   - JSON { mode: "remove-face" }: drop the head overlay only
 export async function POST(req: NextRequest) {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id;
@@ -84,44 +88,8 @@ export async function POST(req: NextRequest) {
 
   const contentType = req.headers.get("content-type") || "";
 
-  // JSON-only modes that don't need the lock or the source photo flow.
   if (!contentType.includes("multipart/form-data")) {
     const body = await req.json().catch(() => ({} as { mode?: string }));
-    if (body?.mode === "remove-face") {
-      await clearStylizedHead(userId);
-      const info = await getUserMannequin(userId);
-      return NextResponse.json(info);
-    }
-    if (body?.mode === "regenerate-face") {
-      if (inflight.has(userId)) {
-        return NextResponse.json(
-          { error: "A mannequin generation is already in progress for your account." },
-          { status: 409 },
-        );
-      }
-      const source = await readSourcePhoto(userId);
-      const mannequin = await readUserMannequinPng(userId);
-      if (!source || !mannequin) {
-        return NextResponse.json(
-          { error: "Need both a source photo and a generated mannequin first." },
-          { status: 400 },
-        );
-      }
-      inflight.add(userId);
-      try {
-        await tryGenerateHead({
-          userId,
-          sourcePhoto: source.buf,
-          sourceMime: source.mime,
-          mannequin: mannequin.buf,
-          mannequinMime: "image/png",
-        });
-      } finally {
-        inflight.delete(userId);
-      }
-      const info = await getUserMannequin(userId);
-      return NextResponse.json(info);
-    }
     if (body?.mode !== "regenerate") {
       return NextResponse.json({ error: "Unknown request mode" }, { status: 400 });
     }
@@ -160,22 +128,11 @@ export async function POST(req: NextRequest) {
 
   inflight.add(userId);
   try {
-    const result = await generateMannequinFromPhoto({ photo: photoBuf, mime: photoMime });
+    const result = await generatePipeline({ userId, sourcePhoto: photoBuf, sourceMime: photoMime });
     if (!result.ok) {
       const info = await getUserMannequin(userId);
       return NextResponse.json({ error: result.error, ...info, debug: result.debug }, { status: 502 });
     }
-
-    await saveRendered(userId, result.pngBuffer);
-    // Stylized-head overlay is generated as a follow-up call. Failure
-    // is non-fatal — the mannequin works without it.
-    await tryGenerateHead({
-      userId,
-      sourcePhoto: photoBuf,
-      sourceMime: photoMime,
-      mannequin: result.pngBuffer,
-      mannequinMime: result.mimeType || "image/png",
-    });
     // Bumping the user's mannequin id invalidates every cached try-on
     // for them — surface this with a single tryOnHash=null sweep so the
     // UI shows "regenerate" pills instead of stale renders.
@@ -201,5 +158,5 @@ export async function DELETE() {
     where: { ownerId: userId, tryOnHash: { not: null } },
     data: { tryOnHash: null },
   });
-  return NextResponse.json({ url: null, hasSource: false, id: null, headUrl: null, headBBox: null });
+  return NextResponse.json({ url: null, hasSource: false, id: null });
 }

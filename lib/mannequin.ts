@@ -1,46 +1,28 @@
 // Per-user "personal mannequin" storage. The user uploads a photo of
 // themselves; Gemini generates a stylized fashion-illustration mannequin
-// from it; that illustration is saved here and used as the base image
-// when the AI try-on composites their outfits.
+// from it (body → cartoon head → composite via lib/ai/mannequin.ts);
+// the final composite is saved here and used as the base image when
+// the AI try-on composites their outfits.
 //
 // Files per user (under data/uploads/<userId>/):
-//   mannequin.png             — generated illustration (the actual
-//                                reference fed to the try-on model)
+//   mannequin.png             — final mannequin composite (body + head
+//                                merged by Gemini, the actual reference
+//                                fed to the try-on model)
 //   mannequin-source.<ext>    — original uploaded photo, kept so
 //                                "Regenerate" can re-run without
 //                                re-uploading
-//   mannequin-head.png        — optional: stylized head crop (matching
-//                                the mannequin's illustration style)
-//                                that the try-on UI overlays on top
-//                                of the AI-rendered body via CSS, no
-//                                AI in the merge step. Easy to remove
-//                                from Settings to back out of the
-//                                feature without losing the mannequin.
-//   mannequin.json            — metadata: { id, createdAt, headBBox? }.
-//                                The `id` is included in try-on cache
-//                                hashes so regenerating invalidates
-//                                the cache. headBBox positions the
-//                                head overlay (normalized 0..1).
+//   mannequin.json            — metadata: { id, createdAt }. The `id`
+//                                is included in try-on cache hashes so
+//                                regenerating invalidates the cache.
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { detectHeadBBox } from "@/lib/imageBg";
 
 const UPLOAD_ROOT = path.join(process.cwd(), "data", "uploads");
 const MANNEQUIN_FILENAME = "mannequin.png";
-const MANNEQUIN_HEAD_FILENAME = "mannequin-head.png";
 const MANNEQUIN_SOURCE_PREFIX = "mannequin-source";
 const MANNEQUIN_META_FILENAME = "mannequin.json";
-
-// Frame coordinates for where the head sits on a freshly generated
-// mannequin (head fully visible at the top per the prompt). Used as a
-// fallback when no per-mannequin bbox has been computed. Normalized
-// 0..1 of the rendered image — width × 9:16 → these % values stay
-// stable across screen sizes.
-const DEFAULT_HEAD_BBOX = { x: 0.34, y: 0.015, w: 0.32, h: 0.18 };
-
-export type HeadBBox = { x: number; y: number; w: number; h: number };
 
 export type UserMannequinInfo = {
   /** Path served via /api/uploads/<rel> when present, else null. */
@@ -48,21 +30,16 @@ export type UserMannequinInfo = {
   hasSource: boolean;
   /** Stable id used in try-on cache hashes. Null when no mannequin. */
   id: string | null;
-  /** Stylized head overlay served via /api/uploads/, when present. */
-  headUrl: string | null;
-  /** Where the head should sit on the mannequin image (0..1). Always
-   *  set when headUrl is set, falling back to DEFAULT_HEAD_BBOX. */
-  headBBox: HeadBBox | null;
 };
 
-type Meta = { id: string; createdAt: string; headBBox?: HeadBBox };
+type Meta = { id: string; createdAt: string };
 
 function userDir(userId: string): string {
   return path.join(UPLOAD_ROOT, userId);
 }
 
 export async function getUserMannequin(userId: string): Promise<UserMannequinInfo> {
-  if (!userId) return { url: null, hasSource: false, id: null, headUrl: null, headBBox: null };
+  if (!userId) return { url: null, hasSource: false, id: null };
   const dir = userDir(userId);
   const renderedAbs = path.join(dir, MANNEQUIN_FILENAME);
   let url: string | null = null;
@@ -81,25 +58,9 @@ export async function getUserMannequin(userId: string): Promise<UserMannequinInf
     /* dir may not exist yet */
   }
 
-  let headUrl: string | null = null;
-  const headAbs = path.join(dir, MANNEQUIN_HEAD_FILENAME);
-  try {
-    const stat = await fs.stat(headAbs);
-    headUrl = `/api/uploads/${userId}/${MANNEQUIN_HEAD_FILENAME}?v=${stat.mtimeMs.toFixed(0)}`;
-  } catch {
-    /* not present */
-  }
-
   const meta = await readMeta(userId);
-  const headBBox = headUrl ? meta?.headBBox ?? DEFAULT_HEAD_BBOX : null;
 
-  return {
-    url,
-    hasSource,
-    id: meta?.id ?? null,
-    headUrl,
-    headBBox,
-  };
+  return { url, hasSource, id: meta?.id ?? null };
 }
 
 export async function readUserMannequinPng(
@@ -162,19 +123,16 @@ export async function readSourcePhoto(
   return { buf, mime };
 }
 
+// Save (or overwrite) the mannequin PNG and bump its id. Bumping the
+// id is what invalidates cached try-ons — make sure to call this only
+// once per "regenerate" so the cache flips exactly once.
 export async function saveRendered(userId: string, png: Buffer): Promise<UserMannequinInfo> {
   const dir = userDir(userId);
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(path.join(dir, MANNEQUIN_FILENAME), png);
-  // Detect where the head sits on this specific mannequin so the
-  // overlay aligns with the chin/shoulders. Falls back to the static
-  // default later in saveStylizedHead if detection returns null.
-  const detected = detectHeadBBox(png);
-  // Bump the id on every generation so try-on caches invalidate.
   const meta: Meta = {
     id: `user-${userId.slice(0, 8)}-${crypto.randomBytes(4).toString("hex")}`,
     createdAt: new Date().toISOString(),
-    ...(detected ? { headBBox: detected } : {}),
   };
   await fs.writeFile(path.join(dir, MANNEQUIN_META_FILENAME), JSON.stringify(meta, null, 2));
   return getUserMannequin(userId);
@@ -190,7 +148,6 @@ export async function clearUserMannequin(userId: string): Promise<void> {
         .filter(
           (e) =>
             e === MANNEQUIN_FILENAME ||
-            e === MANNEQUIN_HEAD_FILENAME ||
             e === MANNEQUIN_META_FILENAME ||
             e.startsWith(`${MANNEQUIN_SOURCE_PREFIX}.`),
         )
@@ -201,59 +158,13 @@ export async function clearUserMannequin(userId: string): Promise<void> {
   }
 }
 
-export async function saveStylizedHead(userId: string, png: Buffer): Promise<void> {
-  const dir = userDir(userId);
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(path.join(dir, MANNEQUIN_HEAD_FILENAME), png);
-  // Mannequin id stays the same — the head overlay isn't baked into
-  // the try-on PNG, it's CSS-stacked, so cached try-ons don't need to
-  // invalidate. If meta has no bbox yet (mannequin generated before
-  // detection landed), try detecting from the saved mannequin.png so
-  // existing users get the upgrade on their next regenerate-face.
-  const meta = (await readMeta(userId)) ?? { id: `user-${userId.slice(0, 8)}`, createdAt: new Date().toISOString() };
-  if (!meta.headBBox) {
-    try {
-      const mannequinPng = await fs.readFile(path.join(dir, MANNEQUIN_FILENAME));
-      meta.headBBox = detectHeadBBox(mannequinPng) ?? DEFAULT_HEAD_BBOX;
-    } catch {
-      meta.headBBox = DEFAULT_HEAD_BBOX;
-    }
-  }
-  await fs.writeFile(path.join(dir, MANNEQUIN_META_FILENAME), JSON.stringify(meta, null, 2));
-}
-
-export async function clearStylizedHead(userId: string): Promise<void> {
-  if (!userId) return;
-  const dir = userDir(userId);
-  try {
-    await fs.unlink(path.join(dir, MANNEQUIN_HEAD_FILENAME));
-  } catch {
-    /* not present */
-  }
-  const meta = await readMeta(userId);
-  if (meta?.headBBox) {
-    delete meta.headBBox;
-    await fs.writeFile(path.join(dir, MANNEQUIN_META_FILENAME), JSON.stringify(meta, null, 2));
-  }
-}
-
 async function readMeta(userId: string): Promise<Meta | null> {
   const dir = userDir(userId);
   try {
     const raw = await fs.readFile(path.join(dir, MANNEQUIN_META_FILENAME), "utf8");
     const parsed = JSON.parse(raw) as Partial<Meta>;
     if (typeof parsed.id !== "string" || typeof parsed.createdAt !== "string") return null;
-    const bbox = parsed.headBBox;
-    const headBBox =
-      bbox &&
-      typeof bbox === "object" &&
-      typeof bbox.x === "number" &&
-      typeof bbox.y === "number" &&
-      typeof bbox.w === "number" &&
-      typeof bbox.h === "number"
-        ? { x: bbox.x, y: bbox.y, w: bbox.w, h: bbox.h }
-        : undefined;
-    return { id: parsed.id, createdAt: parsed.createdAt, ...(headBBox ? { headBBox } : {}) };
+    return { id: parsed.id, createdAt: parsed.createdAt };
   } catch {
     return null;
   }
