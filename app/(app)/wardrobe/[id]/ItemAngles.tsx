@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { removeBackground, resetBackgroundRemover } from "@/lib/bgRemoval";
 import { heicToJpeg, isHeic } from "@/lib/heic";
+import { normalizeOrientation } from "@/lib/imageOrientation";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import { haptic } from "@/lib/haptics";
@@ -47,6 +48,11 @@ export default function ItemAngles({
       if (isHeic(picked)) {
         setStage("Converting HEIC…");
         file = await heicToJpeg(picked);
+      }
+      try {
+        file = await normalizeOrientation(file);
+      } catch (err) {
+        console.warn("orientation normalize failed", err);
       }
       setStage(null);
       setBgProgress(0);
