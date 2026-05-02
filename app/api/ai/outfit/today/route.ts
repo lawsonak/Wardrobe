@@ -146,6 +146,13 @@ export async function POST(req: NextRequest) {
     weatherLine ? `weather: ${weatherLine}` : "",
   ].filter(Boolean).join(" · ");
 
+  // "Try another" path: pass the previous pick's item ids as a hard
+  // exclusion so the model can't return the same outfit. Without this,
+  // the catalog + occasion + preferences are nearly identical between
+  // runs and Gemini reliably converges on the same picks.
+  const previousPick = again ? await readSavedPick(userId) : null;
+  const avoidItemIds = previousPick?.itemIds ?? [];
+
   const result = await provider.buildOutfit({
     occasion,
     items: items.map((i) => ({
@@ -158,13 +165,14 @@ export async function POST(req: NextRequest) {
       activities: csvToList(i.activities),
     })),
     preferences: prefs.stylePreferences ?? undefined,
+    avoidItemIds,
   });
 
   const pickedItems = await rehydrate(userId, result.itemIds);
 
   // Read the previous saved pick (if any) so we can replace the old
   // tryon PNG on disk in lockstep with the new one.
-  const previous = await readSavedPick(userId);
+  const previous = previousPick ?? (await readSavedPick(userId));
   const previousTryOn = previous?.tryOnImagePath ?? null;
 
   // Try-on compose. Failure is non-fatal — the dashboard falls back

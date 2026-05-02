@@ -352,7 +352,7 @@ function makeGemini(): TagProvider {
       }
     },
 
-    async buildOutfit({ occasion, items, preferences }) {
+    async buildOutfit({ occasion, items, preferences, avoidItemIds }) {
       if (!key) return { itemIds: [], debug: { error: "GEMINI_API_KEY not set" } };
 
       // Compact the catalog so big closets don't blow our prompt budget.
@@ -373,9 +373,20 @@ function makeGemini(): TagProvider {
         ? `User style preferences (always honor unless they directly contradict the occasion): ${preferences.trim().slice(0, 600)}. `
         : "";
 
+      // "Try another" path: the previous pick's item ids get passed
+      // through as `avoidItemIds`. We restate it as a hard rule in
+      // the prompt + bump temperature so the model has more freedom
+      // to find a different combination.
+      const avoidIds = (avoidItemIds ?? []).filter((x) => typeof x === "string" && x);
+      const avoidLine = avoidIds.length > 0
+        ? `HARD RULE: do NOT include any of these item ids in your pick — they were the user's last suggestion and they want something different this time: ${JSON.stringify(avoidIds)}. Build the outfit from the rest of the catalog. `
+        : "";
+      const temperature = avoidIds.length > 0 ? 0.85 : 0.4;
+
       const prompt =
         `You're a personal stylist for a wardrobe app. The user is asking for an outfit for: "${occasion}". ` +
         prefsLine +
+        avoidLine +
         `Pick a small set of pieces from THIS catalog (you may NOT invent items not in the catalog). ` +
         `Return their ids in the response. Aim for one cohesive outfit: include either a dress OR a top+bottom, ` +
         `usually shoes, and only add outerwear/accessories/bags/jewelry if they fit the occasion. ` +
@@ -402,7 +413,7 @@ function makeGemini(): TagProvider {
         generationConfig: {
           responseMimeType: "application/json",
           responseSchema: OUTFIT_SCHEMA,
-          temperature: 0.4,
+          temperature,
         },
       };
 
