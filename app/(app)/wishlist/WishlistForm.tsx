@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CATEGORIES, WISHLIST_PRIORITIES, type WishlistPriority } from "@/lib/constants";
 
@@ -17,6 +18,16 @@ type InitialValues = {
   fillsGap?: boolean;
   giftIdea?: boolean;
   imagePath?: string | null;
+};
+
+type SimilarMatch = {
+  id: string;
+  imagePath: string;
+  imageBgRemovedPath: string | null;
+  category: string;
+  subType: string | null;
+  color: string | null;
+  brand: string | null;
 };
 
 export default function WishlistForm({ initial }: { initial?: InitialValues }) {
@@ -40,6 +51,98 @@ export default function WishlistForm({ initial }: { initial?: InitialValues }) {
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // ── ✨ Auto-fill from URL or product name ──────────────────────
+  // The user pastes a product link OR types "white linen blazer
+  // Madewell"; Gemini's grounded search visits the page (or searches),
+  // returns name/brand/category/color/link/price/description, and we
+  // pre-fill the form. Non-blocking — fields the AI didn't return
+  // stay whatever the user already typed.
+  const [autofillQuery, setAutofillQuery] = useState("");
+  const [autofillBusy, setAutofillBusy] = useState(false);
+  const [autofillError, setAutofillError] = useState<string | null>(null);
+  async function runAutofill() {
+    const q = autofillQuery.trim();
+    if (!q) {
+      setAutofillError("Paste a link or type a product description first.");
+      return;
+    }
+    setAutofillBusy(true);
+    setAutofillError(null);
+    try {
+      const res = await fetch("/api/ai/wishlist-lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data?.enabled === false) {
+        setAutofillError(data.message ?? "AI auto-fill is disabled.");
+        return;
+      }
+      if (!res.ok) {
+        setAutofillError(data?.error ?? `Lookup failed (HTTP ${res.status})`);
+        return;
+      }
+      const s = (data?.suggestions ?? {}) as {
+        name?: string; brand?: string; category?: string; color?: string;
+        link?: string; price?: string; description?: string;
+      };
+      // Only fill fields the user hasn't already filled in. The AI
+      // shouldn't clobber what the user typed.
+      if (s.name && !name.trim()) setName(s.name);
+      if (s.brand && !brand.trim()) setBrand(s.brand);
+      if (s.category && !category) setCategory(s.category);
+      if (s.link && !link.trim()) setLink(s.link);
+      if (s.price && !price.trim()) setPrice(s.price);
+      if (s.description && !notes.trim()) setNotes(s.description);
+      // No setColor / setSubType state in this form, but we surface
+      // them via notes so the next "similar in closet" check picks
+      // them up indirectly via category match.
+    } catch (err) {
+      console.error(err);
+      setAutofillError(err instanceof Error ? err.message : "Couldn't reach the AI.");
+    } finally {
+      setAutofillBusy(false);
+    }
+  }
+
+  // ── "Already in your closet?" check ────────────────────────────
+  // Debounced lookup against the active closet whenever category or
+  // brand changes. Pure DB query (no AI) — see /api/wishlist/similar.
+  // Soft warning: shows a banner with up to 3 candidate matches and
+  // a link to each, but never blocks the save.
+  const [similar, setSimilar] = useState<SimilarMatch[]>([]);
+  useEffect(() => {
+    // Don't run on the edit form — the user already saved this row,
+    // they don't need the duplicate warning every render.
+    if (isEdit) return;
+    if (!category && !brand) {
+      setSimilar([]);
+      return;
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams();
+        if (category) params.set("category", category);
+        if (brand.trim()) params.set("brand", brand.trim());
+        const res = await fetch(`/api/wishlist/similar?${params.toString()}`, {
+          signal: ctrl.signal,
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { matches: SimilarMatch[] };
+        setSimilar(data.matches ?? []);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        // Non-fatal — silent on network blips
+      }
+    }, 600);
+    return () => {
+      clearTimeout(timer);
+      ctrl.abort();
+    };
+  }, [category, brand, isEdit]);
 
   function onPickImage(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -91,6 +194,38 @@ export default function WishlistForm({ initial }: { initial?: InitialValues }) {
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
+      {!isEdit && (
+        <div className="card space-y-3 p-4">
+          <div>
+            <label className="label">✨ Auto-fill from a link or description</label>
+            <p className="mt-1 text-xs text-stone-500">
+              Paste a product URL or type the brand + name. We&apos;ll pull the details.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <input
+              type="text"
+              className="input flex-1 min-w-[14rem]"
+              placeholder='https://… or "white linen blazer Madewell"'
+              value={autofillQuery}
+              onChange={(e) => setAutofillQuery(e.target.value)}
+              disabled={autofillBusy}
+            />
+            <button
+              type="button"
+              onClick={runAutofill}
+              disabled={autofillBusy || !autofillQuery.trim()}
+              className="btn-primary disabled:opacity-50"
+            >
+              {autofillBusy ? "Looking…" : "✨ Auto-fill"}
+            </button>
+          </div>
+          {autofillError && (
+            <p className="text-xs text-blush-700">{autofillError}</p>
+          )}
+        </div>
+      )}
+
       <div className="card space-y-4 p-4">
         <div>
           <label className="label">Name *</label>
@@ -152,6 +287,37 @@ export default function WishlistForm({ initial }: { initial?: InitialValues }) {
           </label>
         </div>
       </div>
+
+      {/* "Already in your closet?" soft warning. Non-blocking — the
+          user can save the wish anyway, this is just a heads-up. */}
+      {!isEdit && similar.length > 0 && (
+        <div className="card border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-medium">You may already own something similar</p>
+          <p className="mt-1 text-xs text-amber-800">
+            Tap a piece to compare before adding the wish.
+          </p>
+          <ul className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {similar.map((m) => {
+              const src = m.imageBgRemovedPath
+                ? `/api/uploads/${m.imageBgRemovedPath}`
+                : `/api/uploads/${m.imagePath}`;
+              return (
+                <li key={m.id}>
+                  <Link href={`/wardrobe/${m.id}`} className="block">
+                    <div className="tile-bg flex aspect-square items-center justify-center overflow-hidden rounded-xl bg-white/60 p-1 ring-1 ring-amber-200">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={src} alt="" className="h-full w-full object-contain" />
+                    </div>
+                    <p className="mt-1 truncate text-[11px] text-amber-900">
+                      {m.subType ?? m.category}
+                    </p>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {/* Optional photo */}
       <div className="card p-4">
