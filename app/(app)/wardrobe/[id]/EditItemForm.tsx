@@ -67,8 +67,42 @@ export default function EditItemForm({ item }: { item: Item }) {
   const [status, setStatus] = useState<ItemStatus>(item.status as ItemStatus);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [autoTagState, setAutoTagState] = useState<"idle" | "running" | "done" | "disabled" | "error">("idle");
+  const [autoTagState, setAutoTagState] = useState<"idle" | "running" | "pending" | "done" | "disabled" | "error">("idle");
   const [autoTagMessage, setAutoTagMessage] = useState<string | null>(null);
+  // When the auto-tag call returns suggestions for ALREADY-SET fields,
+  // we don't apply them silently — the user reviews a clear current →
+  // suggested diff first and ticks which ones to accept. Empty fields
+  // default to checked (the AI is filling a gap); changes to set
+  // fields default to unchecked (preserve what the user typed unless
+  // they explicitly opt in). Notes are still append-only — they
+  // never conflict and stay outside this review.
+  type AutoTagChange =
+    | {
+        kind: "new" | "change";
+        field: "category" | "subType" | "color" | "brand" | "size";
+        label: string;
+        currentDisplay: string;
+        suggestedDisplay: string;
+        suggestedValue: string;
+      }
+    | {
+        kind: "new" | "change";
+        field: "seasons" | "activities";
+        label: string;
+        currentDisplay: string;
+        suggestedDisplay: string;
+        suggestedValue: string[];
+      }
+    | {
+        kind: "new" | "change";
+        field: "material";
+        label: string;
+        currentDisplay: string;
+        suggestedDisplay: string;
+        suggestedValue: string;
+      };
+  const [autoTagChanges, setAutoTagChanges] = useState<AutoTagChange[] | null>(null);
+  const [autoTagAccept, setAutoTagAccept] = useState<Record<string, boolean>>({});
   const autoTagProgress = useTimedProgress(autoTagState === "running", 18);
   const [lookupState, setLookupState] = useState<"idle" | "running" | "pending" | "applied" | "disabled" | "error">("idle");
   const [lookupMessage, setLookupMessage] = useState<string | null>(null);
@@ -179,24 +213,120 @@ export default function EditItemForm({ item }: { item: Item }) {
           tagRawText = debug?.rawText;
           suggestionKeyCount = Object.keys(s).length;
 
+          // Build a list of proposed changes. Each entry knows whether
+          // the current field is empty ("new") or differs ("change"),
+          // and renders a clear current → suggested diff. Default
+          // accept state: ON for "new" rows, OFF for "change" rows so
+          // the user has to opt in to overwrite anything they typed.
+          const changes: AutoTagChange[] = [];
           if (s.category && CATEGORIES.includes(s.category) && s.category !== category) {
-            setCategory(s.category);
-            applied++;
+            changes.push({
+              kind: category ? "change" : "new",
+              field: "category",
+              label: "Category",
+              currentDisplay: category || "(not set)",
+              suggestedDisplay: s.category,
+              suggestedValue: s.category,
+            });
           }
-          if (s.subType && !subType) { setSubType(s.subType); applied++; }
-          if (s.color && !color) { setColor(s.color); applied++; }
-          if (s.brand && !brand) { setBrand(s.brand); setBrandId(null); applied++; }
-          if (s.size && !size) { setSize(s.size); applied++; }
-          if (s.seasons && seasons.length === 0) {
+          if (s.subType && s.subType.trim() && s.subType.trim() !== subType.trim()) {
+            changes.push({
+              kind: subType ? "change" : "new",
+              field: "subType",
+              label: "Sub-type",
+              currentDisplay: subType || "(not set)",
+              suggestedDisplay: s.subType,
+              suggestedValue: s.subType,
+            });
+          }
+          if (s.color && s.color !== color) {
+            changes.push({
+              kind: color ? "change" : "new",
+              field: "color",
+              label: "Color",
+              currentDisplay: color || "(not set)",
+              suggestedDisplay: s.color,
+              suggestedValue: s.color,
+            });
+          }
+          if (s.brand && s.brand.trim() && s.brand.trim() !== (brand ?? "").trim()) {
+            changes.push({
+              kind: brand ? "change" : "new",
+              field: "brand",
+              label: "Brand",
+              currentDisplay: brand || "(not set)",
+              suggestedDisplay: s.brand,
+              suggestedValue: s.brand,
+            });
+          }
+          if (s.size && s.size.trim() && s.size.trim() !== (size ?? "").trim()) {
+            changes.push({
+              kind: size ? "change" : "new",
+              field: "size",
+              label: "Size",
+              currentDisplay: size || "(not set)",
+              suggestedDisplay: s.size,
+              suggestedValue: s.size,
+            });
+          }
+          if (s.seasons) {
             const valid = s.seasons.filter((x) => SEASONS.includes(x as never));
-            if (valid.length > 0) { setSeasons(valid); applied++; }
+            const cur = [...seasons].sort().join(",");
+            const sug = [...valid].sort().join(",");
+            if (valid.length > 0 && cur !== sug) {
+              changes.push({
+                kind: seasons.length === 0 ? "new" : "change",
+                field: "seasons",
+                label: "Seasons",
+                currentDisplay: seasons.length > 0 ? seasons.join(", ") : "(not set)",
+                suggestedDisplay: valid.join(", "),
+                suggestedValue: valid,
+              });
+            }
           }
-          if (s.activities && activities.length === 0) {
+          if (s.activities) {
             const valid = s.activities.filter((x) => ACTIVITIES.includes(x as never));
-            if (valid.length > 0) { setActivities(valid); applied++; }
+            const cur = [...activities].sort().join(",");
+            const sug = [...valid].sort().join(",");
+            if (valid.length > 0 && cur !== sug) {
+              changes.push({
+                kind: activities.length === 0 ? "new" : "change",
+                field: "activities",
+                label: "Activities",
+                currentDisplay: activities.length > 0 ? activities.join(", ") : "(not set)",
+                suggestedDisplay: valid.join(", "),
+                suggestedValue: valid,
+              });
+            }
           }
-          if (s.material && !fitNotes) {
-            setFitNotes(`Material: ${s.material}`);
+          if (s.material && s.material.trim()) {
+            const matLine = `Material: ${s.material}`;
+            if (!fitNotes.toLowerCase().includes("material:")) {
+              changes.push({
+                kind: fitNotes.trim() ? "new" : "new",
+                field: "material",
+                label: "Material",
+                currentDisplay: "(not in fit notes)",
+                suggestedDisplay: s.material,
+                suggestedValue: matLine,
+              });
+            } else if (!fitNotes.includes(matLine)) {
+              changes.push({
+                kind: "change",
+                field: "material",
+                label: "Material",
+                currentDisplay: extractFitNotesLine(fitNotes, "material:") || "(set differently)",
+                suggestedDisplay: s.material,
+                suggestedValue: matLine,
+              });
+            }
+          }
+          if (changes.length > 0) {
+            setAutoTagChanges(changes);
+            const acceptDefaults: Record<string, boolean> = {};
+            for (const c of changes) acceptDefaults[c.field] = c.kind === "new";
+            setAutoTagAccept(acceptDefaults);
+            applied = changes.length;
           }
         }
       } else if (tagSettled.status === "rejected") {
@@ -224,18 +354,19 @@ export default function EditItemForm({ item }: { item: Item }) {
         return;
       }
 
-      const parts: string[] = [];
+      // Two outcomes:
+      //  - There are field-level changes to review → state="pending"
+      //    (the panel below shows current → suggested for each, user
+      //    approves per-row before any setX() runs).
+      //  - Only notes were added (or nothing changed) → state="done".
       if (applied > 0) {
-        parts.push(
-          `pre-filled ${applied} field${applied === 1 ? "" : "s"}${usedLabel ? " (read brand/size/care from label)" : ""}`,
+        setAutoTagState("pending");
+        setAutoTagMessage(
+          `${applied} suggestion${applied === 1 ? "" : "s"} to review${usedLabel ? " (label scanned)" : ""}${notesAdded ? "; notes added below" : ""}.`,
         );
-      }
-      if (notesAdded) parts.push("added notes");
-
-      if (parts.length > 0) {
-        const head = parts.join(" + ");
+      } else if (notesAdded) {
         setAutoTagState("done");
-        setAutoTagMessage(`${head.charAt(0).toUpperCase()}${head.slice(1)} — review and save.`);
+        setAutoTagMessage("Added notes from the photo. No other field changes.");
       } else if (tagError) {
         setAutoTagState("error");
         setAutoTagMessage(tagError);
@@ -244,13 +375,81 @@ export default function EditItemForm({ item }: { item: Item }) {
         setAutoTagMessage(`Model returned: ${tagRawText.slice(0, 200)}`);
       } else {
         setAutoTagState("done");
-        setAutoTagMessage("No new suggestions — fields already filled or model couldn't tell.");
+        setAutoTagMessage("No new suggestions — current values match what the model saw.");
       }
     } catch (err) {
       console.error(err);
       setAutoTagState("error");
       setAutoTagMessage(friendlyFetchError(err, "Auto-tag failed."));
     }
+  }
+
+  // Apply only the rows the user ticked. setX() finally fires here for
+  // accepted suggestions; the rest are discarded. Save still requires
+  // an explicit "Save changes" click — same pattern as the
+  // productLookup flow (pending → applied → save).
+  function applyAutoTagChanges() {
+    if (!autoTagChanges) return;
+    let appliedCount = 0;
+    for (const c of autoTagChanges) {
+      if (!autoTagAccept[c.field]) continue;
+      switch (c.field) {
+        case "category":
+          setCategory(c.suggestedValue as Category);
+          break;
+        case "subType":
+          setSubType(c.suggestedValue as string);
+          break;
+        case "color":
+          setColor(c.suggestedValue as string);
+          break;
+        case "brand":
+          setBrand(c.suggestedValue as string);
+          setBrandId(null);
+          break;
+        case "size":
+          setSize(c.suggestedValue as string);
+          break;
+        case "seasons":
+          setSeasons(c.suggestedValue as string[]);
+          break;
+        case "activities":
+          setActivities(c.suggestedValue as string[]);
+          break;
+        case "material": {
+          const matLine = c.suggestedValue as string;
+          // Replace existing "Material:" line if present, otherwise
+          // append. Avoids the "Material: cotton\nMaterial: linen"
+          // pile-up when the user re-runs auto-tag.
+          setFitNotes((prev) => {
+            const lines = prev.split(/\r?\n/);
+            const idx = lines.findIndex((l) => l.toLowerCase().startsWith("material:"));
+            if (idx >= 0) {
+              lines[idx] = matLine;
+              return lines.join("\n");
+            }
+            return prev.trim() ? `${prev.trim()}\n${matLine}` : matLine;
+          });
+          break;
+        }
+      }
+      appliedCount++;
+    }
+    setAutoTagChanges(null);
+    setAutoTagAccept({});
+    setAutoTagState("done");
+    setAutoTagMessage(
+      appliedCount > 0
+        ? `Applied ${appliedCount} suggestion${appliedCount === 1 ? "" : "s"} — review and save.`
+        : "Rejected all suggestions.",
+    );
+  }
+
+  function rejectAutoTagChanges() {
+    setAutoTagChanges(null);
+    setAutoTagAccept({});
+    setAutoTagState("done");
+    setAutoTagMessage("Rejected — your existing values are unchanged.");
   }
 
   // Two-step flow shared between the brand-search button and the
@@ -592,6 +791,100 @@ export default function EditItemForm({ item }: { item: Item }) {
           </p>
         )}
 
+        {/* Auto-tag review panel. Lists every field the AI wants to
+            change, shows current → suggested clearly, and defaults
+            "new" rows to checked + "change" rows to unchecked so
+            existing values are preserved unless the user opts in. */}
+        {autoTagState === "pending" && autoTagChanges && autoTagChanges.length > 0 && (
+          <div className="rounded-xl bg-blush-50 p-3 ring-1 ring-blush-200">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-blush-800">
+                ✨ AI suggestions — pick which to apply
+              </p>
+              <div className="flex items-center gap-2 text-[11px] text-blush-700">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next: Record<string, boolean> = {};
+                    for (const c of autoTagChanges) next[c.field] = true;
+                    setAutoTagAccept(next);
+                  }}
+                  className="hover:underline"
+                >
+                  Select all
+                </button>
+                <span aria-hidden>·</span>
+                <button
+                  type="button"
+                  onClick={() => setAutoTagAccept({})}
+                  className="hover:underline"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+            <ul className="mt-3 space-y-2">
+              {autoTagChanges.map((c) => {
+                const checked = !!autoTagAccept[c.field];
+                return (
+                  <li
+                    key={c.field}
+                    className="flex items-start gap-3 rounded-lg bg-white/70 px-3 py-2 ring-1 ring-blush-100"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) =>
+                        setAutoTagAccept((prev) => ({ ...prev, [c.field]: e.target.checked }))
+                      }
+                      className="mt-1"
+                      aria-label={`Apply ${c.label} suggestion`}
+                    />
+                    <div className="min-w-0 flex-1 text-xs">
+                      <div className="flex flex-wrap items-baseline gap-x-2">
+                        <span className="font-semibold text-stone-700">{c.label}</span>
+                        <span
+                          className={
+                            "rounded-full px-1.5 py-0.5 text-[10px] " +
+                            (c.kind === "new"
+                              ? "bg-sage-100 text-sage-700"
+                              : "bg-amber-100 text-amber-800")
+                          }
+                        >
+                          {c.kind === "new" ? "new" : "change"}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-stone-700">
+                        <span className="text-stone-500 line-through decoration-stone-300">
+                          {c.currentDisplay}
+                        </span>
+                        <span aria-hidden className="mx-1 text-stone-400">→</span>
+                        <span className="font-medium text-blush-700">{c.suggestedDisplay}</span>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={applyAutoTagChanges}
+                className="btn-primary text-xs"
+              >
+                Apply selected
+              </button>
+              <button
+                type="button"
+                onClick={rejectAutoTagChanges}
+                className="btn-ghost text-xs text-stone-500"
+              >
+                Reject all
+              </button>
+            </div>
+          </div>
+        )}
+
         {lookupState === "pending" && lookupCandidate && (
           <div className="rounded-xl bg-blush-50 p-3 ring-1 ring-blush-200">
             <p className="mb-2 text-xs font-medium text-blush-800">
@@ -703,4 +996,18 @@ function hostnameOf(url: string): string {
   } catch {
     return url;
   }
+}
+
+// Pull the value off a "Material: cotton" or "Care: machine wash"
+// style line in the fit-notes block so the auto-tag review panel can
+// show "current → suggested" without the user having to flip back to
+// the form.
+function extractFitNotesLine(notes: string, prefix: string): string | null {
+  for (const line of notes.split(/\r?\n/)) {
+    const lower = line.toLowerCase().trim();
+    if (lower.startsWith(prefix.toLowerCase())) {
+      return line.slice(line.indexOf(":") + 1).trim() || null;
+    }
+  }
+  return null;
 }
