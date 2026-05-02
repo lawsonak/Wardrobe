@@ -120,9 +120,20 @@ export default function ItemCard({
           <path d="M12 21s-7-4.35-9.5-8.5C.5 8.5 3 5 6.5 5c2 0 3.5 1 5.5 3 2-2 3.5-3 5.5-3 3.5 0 6 3.5 4 7.5C19 16.65 12 21 12 21z" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
-      {item.subType && !compact && (
-        <div className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/30 to-transparent px-3 py-2 text-xs font-medium text-white">
-          {item.subType}
+      {/* Subtype caption — same gradient/white-text treatment in both
+          compact (closet gallery) and full (outfit-builder picker)
+          modes so the gallery isn't a sea of unlabeled photos. Falls
+          back to the category when no subType is set. Compact gets
+          tighter padding + slightly smaller text to fit the 3-col
+          mobile grid. */}
+      {(item.subType || item.category) && (
+        <div
+          className={cn(
+            "pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/45 to-transparent font-medium text-white",
+            compact ? "px-2 py-1 text-[11px]" : "px-3 py-2 text-xs",
+          )}
+        >
+          {item.subType ?? item.category}
         </div>
       )}
     </div>
