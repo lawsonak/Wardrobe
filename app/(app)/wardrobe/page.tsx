@@ -2,9 +2,9 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { CATEGORIES, type Category } from "@/lib/constants";
-import ItemCard from "@/components/ItemCard";
 import { firstNameFromUser } from "@/lib/userName";
 import SmartSearchBar from "./SmartSearchBar";
+import ClosetGallery from "./ClosetGallery";
 import { inferredCategoriesFor } from "@/lib/activities";
 
 export const dynamic = "force-dynamic";
@@ -251,11 +251,7 @@ export default async function WardrobePage({
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
-          {filtered.map((item) => (
-            <ItemCard key={item.id} item={item} href={`/wardrobe/${item.id}`} compact />
-          ))}
-        </div>
+        <ClosetGallery items={filtered} />
       )}
     </div>
   );
