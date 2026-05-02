@@ -17,6 +17,7 @@
     "postinstall": "prisma generate && node scripts/fetch-vendor.mjs || true"
   },
   "dependencies": {
+    "@imgly/background-removal-node": "^1.4.5",
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^2.4.3",
     "clsx": "^2.1.1",

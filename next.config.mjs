@@ -4,7 +4,15 @@ const nextConfig = {
   experimental: {
     serverActions: { bodySizeLimit: "20mb" },
     // Don't try to bundle Prisma — Next mangles its engine resolution.
-    serverComponentsExternalPackages: ["@prisma/client", ".prisma/client"],
+    // Same applies to onnxruntime-node + @imgly/background-removal-node:
+    // they ship native .node binaries and on-disk model assets that
+    // webpack can't (and shouldn't) bundle.
+    serverComponentsExternalPackages: [
+      "@prisma/client",
+      ".prisma/client",
+      "onnxruntime-node",
+      "@imgly/background-removal-node",
+    ],
   },
   async headers() {
     // ONNX Runtime Web's threaded backend needs the page to be in a

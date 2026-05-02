@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CATEGORIES, type Category } from "@/lib/constants";
-import { removeBackground, resetBackgroundRemover } from "@/lib/bgRemoval";
 import { heicToJpeg, isHeic } from "@/lib/heic";
 import { normalizeOrientation } from "@/lib/imageOrientation";
 import ProgressBar from "@/components/ProgressBar";
@@ -17,21 +16,18 @@ const AUTO_CATEGORY = "__auto__" as const;
 type DefaultCategory = Category | typeof AUTO_CATEGORY;
 
 type Step = 1 | 2 | 3;
-type Phase = "idle" | "uploading" | "bg" | "done";
+type Phase = "idle" | "uploading" | "done";
 
 type Job = {
   id: string;             // local id while queued
   itemId?: string;        // server id once uploaded
   file: File;             // possibly HEIC-converted file we send to server
   previewUrl: string;
-  bgUrl?: string;
   state:
     | "queued"
     | "processing-heic"
     | "uploading"
     | "uploaded"
-    | "removing-bg"
-    | "done"
     | "error";
   error?: string;
 };
@@ -66,6 +62,7 @@ export default function BulkUpload() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [phase, setPhase] = useState<Phase>("idle");
   const [aiBanner, setAiBanner] = useState<string | null>(null);
+  const [bgBanner, setBgBanner] = useState<string | null>(null);
   // Set when the user taps Cancel on step 2. The pipeline checks this
   // between each photo and stops cleanly without aborting whatever's
   // currently in flight (we don't want to leave half-written files).
@@ -75,27 +72,24 @@ export default function BulkUpload() {
     return () => {
       for (const j of jobs) {
         if (j.previewUrl) URL.revokeObjectURL(j.previewUrl);
-        if (j.bgUrl) URL.revokeObjectURL(j.bgUrl);
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Auto-advance from step 2 → step 3 once every job has reached a
-  // terminal state (done / error / removed). The user can also tap
-  // "Finish" on step 2 to advance early.
+  // terminal state. With server-side bg removal, "uploaded" is now
+  // terminal — the model runs in the background on the server and
+  // the user can leave the wizard the moment uploads finish.
   useEffect(() => {
     if (step !== 2) return;
     if (jobs.length === 0) return;
-    const allTerminal = jobs.every((j) => j.state === "done" || j.state === "uploaded" || j.state === "error");
-    // "uploaded" counts as terminal when bg removal is off (otherwise
-    // we're waiting for it to finish those).
-    const stillRunningBg = removeBg && jobs.some((j) => j.state === "removing-bg");
-    if (allTerminal && !stillRunningBg && phase !== "uploading") {
+    const allTerminal = jobs.every((j) => j.state === "uploaded" || j.state === "error");
+    if (allTerminal && phase !== "uploading") {
       setStep(3);
       setPhase("done");
     }
-  }, [jobs, removeBg, step, phase]);
+  }, [jobs, step, phase]);
 
   async function onFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files ? Array.from(e.target.files) : [];
@@ -121,34 +115,43 @@ export default function BulkUpload() {
   function remove(id: string) {
     setJobs((prev) => {
       const j = prev.find((x) => x.id === id);
-      if (j) {
-        if (j.previewUrl) URL.revokeObjectURL(j.previewUrl);
-        if (j.bgUrl) URL.revokeObjectURL(j.bgUrl);
-      }
+      if (j && j.previewUrl) URL.revokeObjectURL(j.previewUrl);
       return prev.filter((x) => x.id !== id);
     });
   }
 
   // Continue from step 1: kick off the whole pipeline, transition to
   // step 2 immediately so the user sees progress.
+  //
+  // Order of operations:
+  //   1. Sequential per-file uploads (upload phase has its own progress
+  //      bar). HEIC convert + EXIF normalize happen per file as part of
+  //      the same loop.
+  //   2. AI tagging dispatch — server-side, fire-and-forget. Returns
+  //      quickly with a "queued" response; the actual tagging keeps
+  //      running on the server even after the tab closes.
+  //   3. Background removal dispatch — server-side, fire-and-forget,
+  //      same fire-and-forget shape as tagging. The server's worker
+  //      pool runs the model with concurrency 3.
+  //
+  // Once dispatch is done, phase flips to "done" and the auto-advance
+  // useEffect sends the user to step 3 — no waiting required.
   async function startPipeline() {
     if (phase !== "idle" && phase !== "done") return;
     cancelRef.current = false;
     setStep(2);
     await runUploadPhase();
-    // At this point uploads are either complete, errored, or cancelled.
     if (cancelRef.current) {
       setPhase("done");
       return;
     }
-    if (aiTag) {
-      await dispatchAiTagging();
-    }
-    if (removeBg) {
-      await runBgRemovalPhase();
-    } else {
-      setPhase("done");
-    }
+    // Both dispatches return quickly (server kicks off background work
+    // and acks). Run them in parallel so we don't add their latencies.
+    const tasks: Promise<unknown>[] = [];
+    if (aiTag) tasks.push(dispatchAiTagging());
+    if (removeBg) tasks.push(dispatchBgRemoval());
+    await Promise.all(tasks);
+    setPhase("done");
   }
 
   async function runUploadPhase() {
@@ -265,40 +268,37 @@ export default function BulkUpload() {
     }
   }
 
-  async function runBgRemovalPhase() {
-    const pending = (jobsRef.current ?? []).filter((j) => j.state === "uploaded");
-    if (pending.length === 0) {
-      setPhase("done");
-      return;
-    }
-    setPhase("bg");
-    for (const j of pending) {
-      if (cancelRef.current) break;
-      if (!j.itemId) continue;
-      update(j.id, { state: "removing-bg" });
-      try {
-        const out = await removeBackground(j.file);
-        const fd = new FormData();
-        fd.append("which", "bg");
-        fd.append("imageBgRemoved", new File([out], "bg.png", { type: "image/png" }));
-        const res = await fetch(`/api/items/${j.itemId}/photo`, { method: "POST", body: fd });
-        if (!res.ok) throw new Error(await res.text());
-        const url = URL.createObjectURL(out);
-        update(j.id, { state: "done", bgUrl: url });
-      } catch (err) {
-        console.error(err);
-        update(j.id, { state: "error", error: "BG removal failed" });
+  // Server-side bg removal dispatch. Mirrors the AI-tag flow above —
+  // returns immediately, the server runs the model with concurrency 3
+  // and fires a notification when done. The user can close the tab.
+  async function dispatchBgRemoval() {
+    const uploadedIds = (jobsRef.current ?? [])
+      .map((j) => j.itemId)
+      .filter((x): x is string => !!x);
+    if (uploadedIds.length === 0) return;
+    try {
+      const res = await fetch("/api/items/bg-remove-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemIds: uploadedIds, background: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data?.queued) {
+        setBgBanner(
+          `Cutting out backgrounds for ${data.count} item${data.count === 1 ? "" : "s"} on the server — close this tab any time, you'll get a notification when it's done.`,
+        );
+      } else if (!res.ok) {
+        setBgBanner(data?.error ?? "Couldn't start background removal.");
       }
+    } catch (err) {
+      console.error(err);
+      setBgBanner("Couldn't reach the server to start background removal.");
     }
-    setPhase("done");
-    router.refresh();
   }
 
   async function retryFailed() {
-    resetBackgroundRemover();
     cancelRef.current = false;
     await runUploadPhase();
-    if (removeBg) await runBgRemovalPhase();
   }
 
   // Mirror the latest jobs into a ref for use inside async callbacks.
@@ -309,34 +309,25 @@ export default function BulkUpload() {
     return jobs.reduce(
       (acc, j) => {
         acc.total++;
-        if (j.state === "done") acc.done++;
         if (j.state === "uploaded") acc.uploaded++;
         if (j.state === "error") acc.error++;
         return acc;
       },
-      { total: 0, done: 0, uploaded: 0, error: 0 },
+      { total: 0, uploaded: 0, error: 0 },
     );
   }, [jobs]);
 
-  // Aggregate progress across the active phase.
+  // Aggregate progress for the upload phase. Bg removal + AI tagging
+  // both run server-side asynchronously after uploads finish, so they
+  // don't show per-job progress here — banners on step 3 surface their
+  // status instead.
   const progressTotal = jobs.length;
-  const progressDone =
-    phase === "bg"
-      ? jobs.filter((j) => j.state === "done" || j.state === "error").length
-      : jobs.filter(
-          (j) =>
-            j.state === "uploaded" ||
-            j.state === "removing-bg" ||
-            j.state === "done" ||
-            j.state === "error",
-        ).length;
+  const progressDone = jobs.filter(
+    (j) => j.state === "uploaded" || j.state === "error",
+  ).length;
   const progressFraction = progressTotal === 0 ? 0 : progressDone / progressTotal;
   const progressLabel =
-    phase === "uploading"
-      ? `Uploading ${progressDone} / ${progressTotal}`
-      : phase === "bg"
-        ? `Removing backgrounds ${progressDone} / ${progressTotal}`
-        : "";
+    phase === "uploading" ? `Uploading ${progressDone} / ${progressTotal}` : "";
 
   const autoCategoryWithoutAi = defaultCategory === AUTO_CATEGORY && !aiTag;
 
@@ -373,7 +364,7 @@ export default function BulkUpload() {
           progressTotal={progressTotal}
           progressDone={progressDone}
           aiBanner={aiBanner}
-          removeBg={removeBg}
+          bgBanner={bgBanner}
           onCancel={() => {
             cancelRef.current = true;
           }}
@@ -387,17 +378,18 @@ export default function BulkUpload() {
         <Step3Done
           counts={counts}
           aiBanner={aiBanner}
+          bgBanner={bgBanner}
           defaultStatus={defaultStatus}
           onUploadAnother={() => {
             // Reset state for a fresh batch. Existing items are durable
             // on the server and can be reviewed via Needs Review.
             for (const j of jobs) {
               if (j.previewUrl) URL.revokeObjectURL(j.previewUrl);
-              if (j.bgUrl) URL.revokeObjectURL(j.bgUrl);
             }
             setJobs([]);
             setPhase("idle");
             setAiBanner(null);
+            setBgBanner(null);
             setStep(1);
           }}
         />
@@ -547,7 +539,7 @@ function Step1Choose({
                 <span className="font-medium">✂️ Remove backgrounds</span>
                 <span className="block text-xs text-stone-500">
                   {removeBg
-                    ? "Runs in this tab — keep it open until backgrounds finish."
+                    ? "Runs on the server. Safe to close the tab — you'll get a notification when it's done."
                     : "Skip background removal for this batch."}
                 </span>
               </span>
@@ -650,7 +642,7 @@ function Step2Processing({
   progressFraction,
   progressTotal,
   aiBanner,
-  removeBg,
+  bgBanner,
   onCancel,
   onRetryFailed,
   onRemove,
@@ -663,14 +655,14 @@ function Step2Processing({
   progressTotal: number;
   progressDone: number;
   aiBanner: string | null;
-  removeBg: boolean;
+  bgBanner: string | null;
   onCancel: () => void;
   onRetryFailed: () => void;
   onRemove: (id: string) => void;
   onFinishEarly: () => void;
 }) {
   const hasFailures = jobs.some((j) => j.state === "error");
-  const stillRunning = phase === "uploading" || phase === "bg";
+  const stillRunning = phase === "uploading";
   return (
     <>
       {progressTotal > 0 && (
@@ -680,22 +672,20 @@ function Step2Processing({
           hint={
             phase === "uploading"
               ? "one photo at a time — already-uploaded photos are safe even if you close this tab"
-              : phase === "bg"
-                ? "running in your browser — keep this tab open"
-                : undefined
+              : undefined
           }
         />
-      )}
-
-      {removeBg && stillRunning && (
-        <div className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 ring-1 ring-amber-200">
-          Background removal stops if you close this tab. AI tagging keeps running on the server.
-        </div>
       )}
 
       {aiBanner && (
         <div className="rounded-xl bg-blush-100/60 px-3 py-2 text-sm text-blush-800 ring-1 ring-blush-200">
           🤖 {aiBanner}
+        </div>
+      )}
+
+      {bgBanner && (
+        <div className="rounded-xl bg-blush-100/60 px-3 py-2 text-sm text-blush-800 ring-1 ring-blush-200">
+          ✂️ {bgBanner}
         </div>
       )}
 
@@ -705,7 +695,7 @@ function Step2Processing({
             <div className="tile-bg flex aspect-square items-center justify-center p-2">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={j.bgUrl ?? j.previewUrl}
+                src={j.previewUrl}
                 alt=""
                 className="h-full w-full object-contain"
               />
@@ -714,13 +704,9 @@ function Step2Processing({
               <p className="truncate text-stone-700">{j.file.name}</p>
               <p
                 className={cn(
-                  j.state === "done" && "text-sage-600",
-                  j.state === "uploaded" && "text-blush-600",
+                  j.state === "uploaded" && "text-sage-600",
                   j.state === "error" && "text-blush-700",
-                  j.state !== "done" &&
-                    j.state !== "uploaded" &&
-                    j.state !== "error" &&
-                    "text-stone-500",
+                  j.state !== "uploaded" && j.state !== "error" && "text-stone-500",
                 )}
               >
                 {labelFor(j.state)}{j.error ? ` — ${j.error}` : ""}
@@ -731,7 +717,7 @@ function Step2Processing({
                     Open
                   </Link>
                 )}
-                {(j.state === "queued" || j.state === "error" || j.state === "done" || j.state === "uploaded") && (
+                {(j.state === "queued" || j.state === "error" || j.state === "uploaded") && (
                   <button
                     type="button"
                     onClick={() => onRemove(j.id)}
@@ -773,39 +759,42 @@ function Step2Processing({
 function Step3Done({
   counts,
   aiBanner,
+  bgBanner,
   defaultStatus,
   onUploadAnother,
 }: {
-  counts: { total: number; done: number; uploaded: number; error: number };
+  counts: { total: number; uploaded: number; error: number };
   aiBanner: string | null;
+  bgBanner: string | null;
   defaultStatus: "needs_review" | "active";
   onUploadAnother: () => void;
 }) {
-  const savedCount = counts.done + counts.uploaded;
   const reviewHref = defaultStatus === "needs_review" ? "/wardrobe/needs-review" : "/wardrobe";
   return (
     <>
       <div className="card space-y-2 p-6">
         <p className="text-2xl">✓</p>
         <h2 className="font-display text-2xl text-stone-800">
-          {savedCount === 0
+          {counts.uploaded === 0
             ? "Nothing saved this round"
-            : `${savedCount} item${savedCount === 1 ? "" : "s"} saved`}
+            : `${counts.uploaded} item${counts.uploaded === 1 ? "" : "s"} saved`}
         </h2>
-        <p className="text-sm text-stone-600">
-          {counts.done > 0 && (
-            <>{counts.done} with backgrounds removed{counts.uploaded > 0 || counts.error > 0 ? " · " : ""}</>
-          )}
-          {counts.uploaded > 0 && (
-            <>{counts.uploaded} without bg removal{counts.error > 0 ? " · " : ""}</>
-          )}
-          {counts.error > 0 && <span className="text-blush-700">{counts.error} failed</span>}
-        </p>
+        {counts.error > 0 && (
+          <p className="text-sm text-blush-700">
+            {counts.error} failed — see the queue above for details.
+          </p>
+        )}
       </div>
 
       {aiBanner && (
         <div className="rounded-xl bg-blush-100/60 px-3 py-2 text-sm text-blush-800 ring-1 ring-blush-200">
           🤖 {aiBanner}
+        </div>
+      )}
+
+      {bgBanner && (
+        <div className="rounded-xl bg-blush-100/60 px-3 py-2 text-sm text-blush-800 ring-1 ring-blush-200">
+          ✂️ {bgBanner}
         </div>
       )}
 
@@ -829,9 +818,7 @@ function labelFor(state: Job["state"]): string {
     case "queued": return "Queued";
     case "processing-heic": return "Converting HEIC…";
     case "uploading": return "Uploading…";
-    case "uploaded": return "Uploaded — safe to leave";
-    case "removing-bg": return "Removing background…";
-    case "done": return "Saved with cutout";
+    case "uploaded": return "Saved";
     case "error": return "Failed";
   }
 }
