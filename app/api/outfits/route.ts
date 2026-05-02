@@ -7,7 +7,8 @@ export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = (session?.user as { id?: string } | undefined)?.id;
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = req.nextUrl;
   const activity = searchParams.get("activity") || undefined;
@@ -16,6 +17,9 @@ export async function GET(req: NextRequest) {
 
   const outfits = await prisma.outfit.findMany({
     where: {
+      // Owner-scope guard. Without this the endpoint returned every
+      // user's outfits to any authenticated caller.
+      ownerId: userId,
       ...(activity ? { activity } : {}),
       ...(season ? { season } : {}),
       ...(fav ? { isFavorite: true } : {}),

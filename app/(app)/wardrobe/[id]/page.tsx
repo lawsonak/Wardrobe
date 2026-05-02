@@ -29,7 +29,13 @@ export default async function ItemDetail({
       // every field (notes, fitDetails, …) for every companion item in
       // every outfit. With the gallery's average outfit holding ~4
       // pieces and this take=6, that was ~24 fat rows per detail view.
+      // The item itself is owner-scoped above (line 25), but the
+      // nested `outfit` relation isn't bounded by default. Filtering
+      // outfitItems on outfit.ownerId belt-and-suspenders against
+      // any cross-user join leak (e.g. via a shared item id between
+      // accounts on the same DB).
       outfitItems: {
+        where: { outfit: { ownerId: userId } },
         select: {
           outfit: {
             select: {
