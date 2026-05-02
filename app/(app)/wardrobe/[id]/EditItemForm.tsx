@@ -276,9 +276,14 @@ export default function EditItemForm({ item }: { item: Item }) {
     return { image, label };
   }
 
-  // Single AI button — runs the tag + notes calls in parallel and
-  // applies whichever results come back. One round-trip from the
-  // user's perspective.
+  // Single AI button.
+  //
+  // Sequence: notes call first (free-form prose that's good at
+  // describing fabric, neckline, fit, pattern), then the structured
+  // tag call with the notes string passed as `notesContext`. The
+  // tagger uses the notes as ground truth to commit to enum values
+  // it would otherwise hedge to null on. ~5s slower than running in
+  // parallel but visibly higher commit-rate on borderline shots.
   async function autoTag() {
     if (autoTagState === "running") return;
     setAutoTagState("running");
@@ -286,10 +291,7 @@ export default function EditItemForm({ item }: { item: Item }) {
     try {
       const photos = await loadPhotos();
 
-      const tagFd = new FormData();
-      tagFd.append("image", photos.image);
-      if (photos.label) tagFd.append("labelImage", photos.label);
-
+      // ---- Notes first ----
       const notesFd = new FormData();
       notesFd.append("image", photos.image);
       if (photos.label) notesFd.append("labelImage", photos.label);
@@ -307,10 +309,27 @@ export default function EditItemForm({ item }: { item: Item }) {
         }),
       );
 
-      const [tagSettled, notesSettled] = await Promise.allSettled([
-        fetchWithRetry("/api/ai/tag", { method: "POST", body: tagFd }, { timeoutMs: 60_000 }),
+      const notesSettled = await Promise.allSettled([
         fetchWithRetry("/api/ai/notes", { method: "POST", body: notesFd }, { timeoutMs: 60_000 }),
-      ]);
+      ]).then((r) => r[0]);
+
+      let generatedNotes: string = "";
+      if (notesSettled.status === "fulfilled" && notesSettled.value.ok) {
+        const data = await notesSettled.value.json().catch(() => ({}));
+        if (data?.enabled !== false) {
+          generatedNotes = String(data?.notes ?? "").trim();
+        }
+      }
+
+      // ---- Structured tag, with notes as context ----
+      const tagFd = new FormData();
+      tagFd.append("image", photos.image);
+      if (photos.label) tagFd.append("labelImage", photos.label);
+      if (generatedNotes) tagFd.append("notesContext", generatedNotes);
+
+      const tagSettled = await Promise.allSettled([
+        fetchWithRetry("/api/ai/tag", { method: "POST", body: tagFd }, { timeoutMs: 60_000 }),
+      ]).then((r) => r[0]);
 
       let applied = 0;
       let notesAdded = false;
@@ -465,17 +484,11 @@ export default function EditItemForm({ item }: { item: Item }) {
       }
 
       // ---- Notes ----
-      if (notesSettled.status === "fulfilled" && notesSettled.value.ok) {
-        const data = await notesSettled.value.json().catch(() => ({}));
-        if (data?.enabled === false) {
-          disabledMessage = disabledMessage ?? data.message ?? "AI is disabled.";
-        } else {
-          const generated = String(data?.notes ?? "").trim();
-          if (generated) {
-            setNotes((prev) => (prev.trim() ? `${prev.trim()}\n\n${generated}` : generated));
-            notesAdded = true;
-          }
-        }
+      // Already fetched above (we needed the text for notesContext).
+      // Just append to the form's notes field if anything came back.
+      if (generatedNotes) {
+        setNotes((prev) => (prev.trim() ? `${prev.trim()}\n\n${generatedNotes}` : generatedNotes));
+        notesAdded = true;
       }
 
       // ---- Combined message ----

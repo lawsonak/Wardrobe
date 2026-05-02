@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
   const form = await req.formData().catch(() => null);
   const image = form?.get("image");
   const labelImageRaw = form?.get("labelImage");
+  const notesContextRaw = form?.get("notesContext");
   if (!image || !(image instanceof File) || image.size === 0) {
     return NextResponse.json({ error: "Missing image" }, { status: 400 });
   }
@@ -35,6 +36,11 @@ export async function POST(req: NextRequest) {
     labelImageRaw && labelImageRaw instanceof File && labelImageRaw.size > 0
       ? labelImageRaw
       : undefined;
+  // Optional descriptive notes (already generated for the same image)
+  // that the structured tagger uses as ground truth — improves
+  // enum-commit rate on borderline shots.
+  const notesContext =
+    typeof notesContextRaw === "string" && notesContextRaw.trim() ? notesContextRaw : undefined;
 
   // Provide existing brands so the provider can prefer canonical names
   // instead of inventing variants.
@@ -46,7 +52,7 @@ export async function POST(req: NextRequest) {
   const existingBrands = brands.map((b) => b.name);
 
   try {
-    const result = await provider.tagImage({ image, labelImage, existingBrands });
+    const result = await provider.tagImage({ image, labelImage, existingBrands, notesContext });
     return NextResponse.json({
       enabled: true,
       provider: provider.name,

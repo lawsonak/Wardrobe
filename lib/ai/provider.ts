@@ -29,6 +29,12 @@ export function getProvider(): TagProvider {
 // fails or returns nothing useful so the UI can surface a real reason.
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+// Structured-tag calls benefit from a stronger reasoning model. Free-
+// form text helpers (notes, search-parser, outfit-pick) keep using
+// GEMINI_MODEL since their failure modes are different (and the
+// volume is higher). Override per-deployment via env if cost is a
+// concern; gemini-2.5-flash is a cheaper middle ground.
+const GEMINI_TAG_MODEL = process.env.GEMINI_TAG_MODEL || "gemini-2.5-pro";
 
 const ALLOWED_CATEGORIES = [
   "Tops","Bottoms","Dresses","Outerwear","Shoes","Accessories","Activewear",
@@ -113,7 +119,7 @@ function makeGemini(): TagProvider {
   return {
     name: "gemini",
     available: () => !!key,
-    async tagImage({ image, labelImage, existingBrands }) {
+    async tagImage({ image, labelImage, existingBrands, notesContext }) {
       if (!key) return { suggestions: {}, debug: { error: "GEMINI_API_KEY not set" } };
 
       let rawText = "";
@@ -140,6 +146,20 @@ function makeGemini(): TagProvider {
           `An item can have multiple activities (e.g. a sundress can be "casual" + "beach" + "travel"). ` +
           `Be generous: if the piece could plausibly suit an activity, include it.`;
 
+        // Free-form description from the notes call, if the caller ran
+        // it first. The structured tag model treats this as an
+        // additional ground-truth signal — useful because the notes
+        // model often catches details (material weight, neckline shape,
+        // print pattern) the structured model would otherwise hedge to
+        // null on.
+        const notesLine = notesContext && notesContext.trim()
+          ? ` Here's a detailed description of this item, already generated for the notes field — treat it as ground truth and resolve any ambiguity in your tags using it: "${notesContext.trim().slice(0, 1500)}".`
+          : "";
+
+        const commitRule =
+          ` Commit to the CLOSEST enum value whenever the photo OR the description gives clear evidence — null is reserved for truly unreadable images, not "I'm not 100% sure". ` +
+          `If you find yourself debating between two enum values, pick the one a thoughtful human stylist would call it.`;
+
         const prompt = labelBuf
           ? `You are tagging a single piece of clothing or accessory in a personal wardrobe app. ` +
             `You're given two images: the FIRST is the garment itself, the SECOND is a close-up of its brand/size/care label. ` +
@@ -147,12 +167,12 @@ function makeGemini(): TagProvider {
             `Use the garment image for category, subType, color, seasons, activities. ` +
             `Use the enumerated values for category / color / seasons / activities — pick the CLOSEST match even if imperfect. ` +
             `Always return at least: category and color (snap to the nearest enum value — e.g. a dusty rose top is "mauve", a sage knit is "olive", a heather charcoal sweatshirt is "charcoal", a powder blue is "sky blue"). ` +
-            `Fill in as many other fields as you reasonably can. Only leave a field empty if the image is genuinely unreadable.${activityHint}${brandHint}`
+            `Fill in as many other fields as you reasonably can.${commitRule}${activityHint}${brandHint}${notesLine}`
           : `You are tagging a single piece of clothing or accessory in a personal wardrobe app. ` +
             `Look at the image and fill in as many fields of the response schema as you can. ` +
             `Use the enumerated values for category / color / seasons / activities — pick the CLOSEST match even if imperfect. ` +
             `Always return at least: category and color (snap to the nearest enum value — e.g. a dusty rose top is "mauve", a sage knit is "olive", a heather charcoal sweatshirt is "charcoal", a powder blue is "sky blue"). ` +
-            `Fill in as many other fields as you reasonably can. Only leave a field empty if the image is genuinely unreadable.${activityHint}${brandHint}`;
+            `Fill in as many other fields as you reasonably can.${commitRule}${activityHint}${brandHint}${notesLine}`;
 
         const parts: Array<Record<string, unknown>> = [
           { text: prompt },
@@ -171,8 +191,11 @@ function makeGemini(): TagProvider {
           },
         };
 
+        // Stronger reasoning model for the structured tag call (the
+        // other helpers below stay on GEMINI_MODEL where the task is
+        // easier and the volume is higher).
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-          GEMINI_MODEL,
+          GEMINI_TAG_MODEL,
         )}:generateContent?key=${encodeURIComponent(key)}`;
 
         const res = await fetch(url, {
