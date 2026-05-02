@@ -12,6 +12,7 @@
 // non-fatal — the UI keeps whatever the user already typed.
 
 import { CATEGORIES, COLOR_NAMES } from "@/lib/constants";
+import { fetchProductMeta, type ProductMeta } from "@/lib/productMeta";
 
 const TEXT_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
@@ -113,6 +114,45 @@ export async function lookupWishlistProduct(
   // stable address. No-op for non-Amazon input.
   const cleanedQuery = urlForm ? canonicalizeAmazonUrl(urlForm) : query;
   const inputHost = urlForm ? safeHost(cleanedQuery) : null;
+
+  // For URL inputs, try a direct server-side fetch first. Most retailers
+  // embed Open Graph + JSON-LD Product metadata in their HTML; pulling
+  // it ourselves is faster than asking Gemini to "visit the URL" and
+  // sidesteps the hallucination footgun where grounded search wanders
+  // to a different product when the page can't be reached. We only
+  // call Gemini afterward to classify the extracted text into
+  // category + color (a narrow, fast text-only call).
+  if (isUrl) {
+    const direct = await fetchProductMeta(cleanedQuery);
+    if (direct.ok) {
+      const classified = await classifyFromMeta(key, direct.meta);
+      const merged: WishlistLookupSuggestion = {
+        name: direct.meta.name,
+        brand: direct.meta.brand,
+        link: direct.meta.productUrl ?? cleanedQuery,
+        price: direct.meta.price,
+        description: direct.meta.description,
+        category: classified.category,
+        color: classified.color,
+      };
+      // Prune empty fields so the form-side "only fill empties" guard
+      // doesn't see lots of empty strings.
+      const sanitized = pruneEmpty(merged);
+      return {
+        ok: true,
+        suggestions: sanitized,
+        debug: {
+          status: 200,
+          rawText: `direct-fetch from ${direct.debug.source} (jsonld=${direct.debug.usedJsonLd ? "y" : "n"} og=${direct.debug.usedOg ? "y" : "n"})`,
+          sources: [direct.meta.productUrl ?? cleanedQuery],
+        },
+      };
+    }
+    // Direct fetch failed (404, blocked, no metadata, etc.). Fall
+    // through to grounded search — that gives Gemini a chance via
+    // its own crawler index. The downstream domain-mismatch guard
+    // and stronger prompt rules still apply.
+  }
 
   const taskLine = isUrl
     ? `Visit this exact URL: ${cleanedQuery}\nIt's a product page on a clothing or accessory retailer's site.`
@@ -319,4 +359,91 @@ function sanitize(raw: unknown, fallbackLink?: string): WishlistLookupSuggestion
     out.description = r.description.trim().slice(0, 600);
   }
   return out;
+}
+
+// Drop empty / undefined keys from a suggestion so the form's "only
+// fill empties" merge logic doesn't see noise. Also normalizes a
+// trailing-whitespace title from JSON-LD ("  Linen Blazer  ").
+function pruneEmpty(s: WishlistLookupSuggestion): WishlistLookupSuggestion {
+  const out: WishlistLookupSuggestion = {};
+  for (const [k, v] of Object.entries(s) as Array<[keyof WishlistLookupSuggestion, string | undefined]>) {
+    if (typeof v !== "string") continue;
+    const trimmed = v.trim();
+    if (!trimmed) continue;
+    out[k] = trimmed;
+  }
+  return out;
+}
+
+// Classify already-extracted product text into category + color via
+// a narrow text-only Gemini call. Cheaper and faster than the
+// grounded-search call because there's nothing to fetch — we already
+// have the page's name/brand/description in hand. Returns empty
+// suggestions on any failure (the caller already has the rest of the
+// fields from the direct fetch).
+async function classifyFromMeta(
+  apiKey: string,
+  meta: ProductMeta,
+): Promise<{ category?: string; color?: string }> {
+  const text = [meta.name, meta.brand, meta.description]
+    .filter((x): x is string => !!x && !!x.trim())
+    .join(" — ")
+    .slice(0, 1200);
+  if (!text) return {};
+
+  const allowedColors = COLOR_NAMES.join(", ");
+  const allowedCategories = CATEGORIES.join(", ");
+  const prompt = [
+    "You're given product details from a clothing or accessory retailer's page:",
+    text,
+    "Return a SINGLE JSON object — nothing else, no prose, no markdown — with two fields:",
+    `  - category: closest match from this list: ${allowedCategories}. Null if you genuinely can't tell.`,
+    `  - color: closest match from this list: ${allowedColors}. Null if multi-color, photo-only, or unknown.`,
+    "Use null (not empty string) if you don't have confident evidence. Don't invent.",
+  ].join("\n");
+
+  const body = {
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: "OBJECT",
+        properties: {
+          category: { type: "STRING", nullable: true },
+          color: { type: "STRING", nullable: true },
+        },
+      },
+      temperature: 0.1,
+    },
+  };
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+    TEXT_MODEL,
+  )}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return {};
+    const data = (await res.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    };
+    const t = data.candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join("") ?? "";
+    if (!t.trim()) return {};
+    const parsed = JSON.parse(t) as { category?: string | null; color?: string | null };
+    const out: { category?: string; color?: string } = {};
+    if (typeof parsed.category === "string" && (CATEGORIES as readonly string[]).includes(parsed.category)) {
+      out.category = parsed.category;
+    }
+    if (typeof parsed.color === "string") {
+      const lower = parsed.color.toLowerCase().trim();
+      if ((COLOR_NAMES as readonly string[]).includes(lower)) out.color = lower;
+    }
+    return out;
+  } catch {
+    return {};
+  }
 }
