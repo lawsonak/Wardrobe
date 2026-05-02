@@ -125,6 +125,12 @@ export default async function Dashboard() {
     <div className="space-y-6">
       <GiftBanner />
 
+      {/* Onboarding checklist — pinned above the greeting so first-time
+          users see what's left to set up before scrolling to the rest of
+          the dashboard. Auto-hides when complete (or after the user
+          dismisses it from Settings → Maintenance). */}
+      <OnboardingChecklist progress={progress} />
+
       <section>
         <h1 className="font-display text-2xl text-stone-800">{greet(now, firstName)}</h1>
         {itemCount === 0 && (
@@ -196,9 +202,6 @@ export default async function Dashboard() {
           </Link>
         )}
       </div>
-
-      {/* Onboarding checklist — auto-hides when complete */}
-      <OnboardingChecklist progress={progress} />
 
       {/* On this day */}
       {onThisDay.length > 0 && (
