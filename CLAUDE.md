@@ -71,7 +71,7 @@ Other conventions:
 - **14 categories**: Tops, Bottoms, Dresses, Outerwear, Shoes, Accessories, Activewear, Loungewear, Bags, Jewelry, Bras, Underwear, Swimwear, Socks & Hosiery
 - **8 activities (enum)**: casual, work, date, workout, beach, formal, travel, lounge
 - **4 seasons**: spring, summer, fall, winter
-- **22-color palette** with hex codes (white through multi-gradient)
+- **34-color palette** (33 named + a `multi` gradient sentinel) with hex codes, grouped by visual family. Edit in `lib/constants.ts` — `COLOR_NAMES` is derived from it and feeds the AI tagger's enum, so the two never drift.
 - **7 outfit slots**: top, bottom, dress, outerwear, shoes, accessory, bag (with `CATEGORY_TO_SLOT` mapping)
 
 The closet's tagged `activities` field is restricted to the enum, but Collections accept free-form custom activities ("hiking", "wine tasting"). Prompts mix the two — be aware.

@@ -3,6 +3,7 @@
 // secrets out of the bundle and lets the user opt in deliberately.
 
 import { DisabledProvider, type TagProvider, type TagResult } from "./types";
+import { COLOR_NAMES } from "@/lib/constants";
 
 let _cached: TagProvider | null = null;
 
@@ -33,11 +34,9 @@ const ALLOWED_CATEGORIES = [
   "Tops","Bottoms","Dresses","Outerwear","Shoes","Accessories","Activewear",
   "Loungewear","Bags","Jewelry","Bras","Underwear","Swimwear","Socks & Hosiery",
 ] as const;
-const ALLOWED_COLORS = [
-  "white","cream","beige","tan","brown","black","gray","navy","blue","teal",
-  "green","olive","yellow","orange","red","burgundy","pink","blush","purple",
-  "lavender","gold","silver","multi",
-] as const;
+// Derived from the swatch palette in lib/constants.ts so the AI's
+// enum can never drift from what the UI actually shows.
+const ALLOWED_COLORS = COLOR_NAMES;
 const ALLOWED_SEASONS = ["spring","summer","fall","winter"] as const;
 const ALLOWED_ACTIVITIES = [
   "casual","work","date","workout","beach","formal","travel","lounge",
@@ -147,12 +146,12 @@ function makeGemini(): TagProvider {
             `Read the label text carefully — extract brand, size (alpha or numeric, exactly as printed), material/composition, and care instructions. ` +
             `Use the garment image for category, subType, color, seasons, activities. ` +
             `Use the enumerated values for category / color / seasons / activities — pick the CLOSEST match even if imperfect. ` +
-            `Always return at least: category and color (snap color to the nearest enum value — for example a maroon item is "burgundy", a beige item is "tan"). ` +
+            `Always return at least: category and color (snap to the nearest enum value — e.g. a dusty rose top is "mauve", a sage knit is "olive", a heather charcoal sweatshirt is "charcoal", a powder blue is "sky blue"). ` +
             `Fill in as many other fields as you reasonably can. Only leave a field empty if the image is genuinely unreadable.${activityHint}${brandHint}`
           : `You are tagging a single piece of clothing or accessory in a personal wardrobe app. ` +
             `Look at the image and fill in as many fields of the response schema as you can. ` +
             `Use the enumerated values for category / color / seasons / activities — pick the CLOSEST match even if imperfect. ` +
-            `Always return at least: category and color (snap color to the nearest enum value — for example a maroon item is "burgundy", a beige item is "tan"). ` +
+            `Always return at least: category and color (snap to the nearest enum value — e.g. a dusty rose top is "mauve", a sage knit is "olive", a heather charcoal sweatshirt is "charcoal", a powder blue is "sky blue"). ` +
             `Fill in as many other fields as you reasonably can. Only leave a field empty if the image is genuinely unreadable.${activityHint}${brandHint}`;
 
         const parts: Array<Record<string, unknown>> = [

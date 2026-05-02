@@ -398,31 +398,66 @@ export function slotForItem(
   return "accessory";
 }
 
+// 33 named colors + a "multi" gradient sentinel for prints. Tuned for
+// AI tagging: the previous 22-color palette forced the model to map
+// shades like dusty rose, sage, charcoal, and rust onto the nearest
+// blunt color (e.g. "pink" for mauve, "gray" for charcoal), which lost
+// useful detail in outfit suggestions and search filters. The added
+// shades fill the most common gaps without exploding the swatch grid.
+//
+// Order is roughly visual-family grouped: neutrals → warm earth →
+// dark/cool neutrals → blues → greens → yellows/warm brights → reds →
+// pinks/purples → metallic + multi.
 export const COLOR_PALETTE = [
+  // Light neutrals
   { name: "white", hex: "#ffffff" },
   { name: "cream", hex: "#f8f1e7" },
+  // Warm earth
   { name: "beige", hex: "#d6c4a8" },
+  { name: "khaki", hex: "#a8a47a" },
   { name: "tan", hex: "#b08866" },
+  { name: "rust", hex: "#a44b2a" },
   { name: "brown", hex: "#6e4a2a" },
+  // Dark / cool neutrals
   { name: "black", hex: "#1a1a1a" },
+  { name: "charcoal", hex: "#3a3f47" },
   { name: "gray", hex: "#9aa0a6" },
+  { name: "light gray", hex: "#cfd5db" },
+  { name: "silver", hex: "#b0b8c1" },
+  // Blues
   { name: "navy", hex: "#1f2a4a" },
+  { name: "royal blue", hex: "#1e4cb5" },
   { name: "blue", hex: "#4a7bc8" },
+  { name: "sky blue", hex: "#a8c8e6" },
   { name: "teal", hex: "#2f8f8a" },
+  // Greens
+  { name: "forest", hex: "#2d5a3a" },
   { name: "green", hex: "#4f8b4a" },
   { name: "olive", hex: "#7a8049" },
+  { name: "mint", hex: "#9ed8b6" },
+  // Yellows / warm brights
+  { name: "mustard", hex: "#d4a73a" },
   { name: "yellow", hex: "#f0c43a" },
   { name: "orange", hex: "#e08a3c" },
+  { name: "coral", hex: "#e87a6f" },
+  // Reds
   { name: "red", hex: "#c2424a" },
   { name: "burgundy", hex: "#7a1f2e" },
+  // Pinks / purples
   { name: "pink", hex: "#f4a8c0" },
   { name: "blush", hex: "#f7d6df" },
+  { name: "mauve", hex: "#b886a2" },
   { name: "purple", hex: "#7d5cb5" },
   { name: "lavender", hex: "#c8b6e0" },
+  // Metallic + special
   { name: "gold", hex: "#d4a843" },
-  { name: "silver", hex: "#b0b8c1" },
   { name: "multi", hex: "linear-gradient(135deg,#f4a8c0,#c8b6e0,#4a7bc8)" },
 ] as const;
+
+// All color names from the palette, used as the AI tagger's enum so
+// the model can only pick names that actually exist in the swatch.
+// Derived to keep the two lists from drifting.
+export const COLOR_NAMES = COLOR_PALETTE.map((c) => c.name);
 
 export const ITEM_STATUSES = ["active", "needs_review", "draft"] as const;
 export type ItemStatus = (typeof ITEM_STATUSES)[number];
