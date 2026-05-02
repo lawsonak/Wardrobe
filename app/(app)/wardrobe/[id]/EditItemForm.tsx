@@ -225,7 +225,12 @@ export default function EditItemForm({ item }: { item: Item }) {
     }
     setAutoTagChanges(changes);
     const acceptDefaults: Record<string, boolean> = {};
-    for (const c of changes) acceptDefaults[c.field] = c.kind === "new";
+    // Pre-check every row by default — the user asked for previously-
+    // set values to be reconsidered every run, not silently preserved.
+    // The change-vs-new distinction stays as a visual badge so it's
+    // obvious which fields are getting overwritten, but the user has
+    // to actively UNTICK to keep an existing value.
+    for (const c of changes) acceptDefaults[c.field] = true;
     setAutoTagAccept(acceptDefaults);
     setAutoTagState("pending");
     setAutoTagMessage(
@@ -474,7 +479,10 @@ export default function EditItemForm({ item }: { item: Item }) {
           if (changes.length > 0) {
             setAutoTagChanges(changes);
             const acceptDefaults: Record<string, boolean> = {};
-            for (const c of changes) acceptDefaults[c.field] = c.kind === "new";
+            // Pre-check every row — re-tagging existing values by
+            // default. See the matching block in the pending-blob
+            // mount effect for the full rationale.
+            for (const c of changes) acceptDefaults[c.field] = true;
             setAutoTagAccept(acceptDefaults);
             applied = changes.length;
           }
@@ -961,7 +969,7 @@ export default function EditItemForm({ item }: { item: Item }) {
           <div className="rounded-xl bg-blush-50 p-3 ring-1 ring-blush-200">
             <div className="flex items-center justify-between">
               <p className="text-xs font-medium text-blush-800">
-                ✨ AI suggestions — pick which to apply
+                ✨ AI suggestions — untick anything you want to keep as-is
               </p>
               <div className="flex items-center gap-2 text-[11px] text-blush-700">
                 <button
