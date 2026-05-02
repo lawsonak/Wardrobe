@@ -7,6 +7,7 @@ import { getPrefs, setHomeCity, setStylePreferences } from "@/lib/userPrefs";
 import { getForecast, cToF } from "@/lib/weather";
 import { getUserMannequin } from "@/lib/mannequin";
 import MannequinUpload from "@/components/MannequinUpload";
+import ShowOnboardingLink from "@/components/ShowOnboardingLink";
 
 export const dynamic = "force-dynamic";
 
@@ -177,6 +178,10 @@ export default async function SettingsPage() {
               Maintenance
             </Link>
             <span className="text-stone-500"> — storage stats, orphaned photo cleanup, AI status.</span>
+          </li>
+          <li>
+            <ShowOnboardingLink />
+            <span className="text-stone-500"> — bring back the dashboard checklist if you dismissed it.</span>
           </li>
         </ul>
       </section>
