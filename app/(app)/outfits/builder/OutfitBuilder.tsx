@@ -265,7 +265,11 @@ export default function OutfitBuilder({
       // dress and a top+bottom.
       if (next.dress.length > 0) { next.top = []; next.bottom = []; }
       setPicks(next);
-      if (data.name && !name) setName(data.name);
+      // Always replace the name with the AI's suggestion on each
+      // Surprise-me run — the user explicitly asked for a fresh
+      // pick, so a fresh AI-suggested name is the natural pair. They
+      // can still type their own afterward and Save will use that.
+      if (data.name) setName(data.name);
     } catch (err) {
       console.error("AI surprise failed", err);
       localRandomSurprise();

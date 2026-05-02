@@ -56,10 +56,17 @@ export default function SmartSearchBar({
       if (f.season) params.season = f.season;
       if (f.activity) params.activity = f.activity;
       if (f.favoritesOnly) params.fav = "1";
-      if (f.freeText) params.q = f.freeText;
-      // If the parser found nothing structured, fall back to LIKE on
-      // the original phrase.
-      if (Object.keys(params).length === 0) params.q = text;
+      // Always carry the original prose through as `q` (preferring the
+      // AI's extracted freeText when it gave us a tighter substring).
+      // The wardrobe page's loose-match fallback drops `q` first if
+      // the strict combo returns 0 hits, so keeping it here doesn't
+      // over-narrow — but it ensures the notes column is searched
+      // every run, even when the AI also extracted a category or
+      // color filter. Previously `q` was only set if the AI itself
+      // returned a freeText slice, which meant prose like "soft
+      // cotton" got lost the moment it picked up "cotton" → category=
+      // Tops or similar.
+      params.q = (f.freeText && f.freeText.trim()) ? f.freeText.trim() : text;
       navigateTo(params);
     } catch (err) {
       console.error(err);
