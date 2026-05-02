@@ -139,10 +139,14 @@ export default function NotificationBell() {
             aria-label="Notifications"
             className={cn(
               "z-40 overflow-hidden bg-white shadow-card ring-1 ring-stone-100",
-              // Mobile: full-width sheet anchored to bottom
-              "fixed inset-x-0 bottom-0 max-h-[80vh] rounded-t-2xl pb-[max(0.5rem,env(safe-area-inset-bottom))]",
-              // Desktop: dropdown anchored to the bell
-              "sm:absolute sm:bottom-auto sm:left-auto sm:right-0 sm:mt-2 sm:w-80 sm:rounded-2xl sm:pb-0",
+              // Mobile: full-width sheet anchored to the TOP (the bell
+              // lives in the header, so a sheet sliding down from the
+              // top reads as "this came from the bell"). Tucks under
+              // the iOS status bar via the safe-area top inset.
+              "fixed inset-x-0 top-0 max-h-[85dvh] rounded-b-2xl pt-[max(0.5rem,env(safe-area-inset-top))]",
+              // Desktop: dropdown anchored to the bell. Wider than
+              // before so notification bodies have room to breathe.
+              "sm:absolute sm:inset-x-auto sm:top-auto sm:left-auto sm:right-0 sm:mt-2 sm:w-96 sm:rounded-2xl sm:pt-0",
             )}
           >
             <div className="flex items-center justify-between border-b border-stone-100 px-4 py-3 sm:px-3 sm:py-2">
@@ -168,11 +172,20 @@ export default function NotificationBell() {
             {list.length === 0 ? (
               <p className="px-4 py-10 text-center text-sm text-stone-500">All caught up.</p>
             ) : (
-              <ul className="max-h-[60vh] divide-y divide-stone-100 overflow-auto">
+              <ul className="max-h-[70vh] divide-y divide-stone-100 overflow-auto">
                 {list.map((n) => (
-                  <li key={n.id} className={"flex items-start gap-2 px-4 py-3 text-sm sm:px-3 sm:py-2 " + (n.read ? "" : "bg-blush-50/40")}>
-                    <span className={"mt-1 h-2 w-2 shrink-0 rounded-full " + (n.read ? "bg-stone-200" : "bg-blush-500")} aria-hidden />
-                    <div className="min-w-0 flex-1">
+                  <li
+                    key={n.id}
+                    className={
+                      "flex items-start gap-3 px-4 py-4 text-sm sm:px-3 sm:py-3 " +
+                      (n.read ? "" : "bg-blush-50/40")
+                    }
+                  >
+                    <span
+                      className={"mt-1.5 h-2 w-2 shrink-0 rounded-full " + (n.read ? "bg-stone-200" : "bg-blush-500")}
+                      aria-hidden
+                    />
+                    <div className="min-w-0 flex-1 space-y-0.5">
                       {n.href ? (
                         <Link
                           href={n.href}
@@ -182,20 +195,28 @@ export default function NotificationBell() {
                           }}
                           className="block"
                         >
-                          <p className="truncate font-medium text-stone-800">{n.title}</p>
-                          {n.body && <p className="truncate text-xs text-stone-500">{n.body}</p>}
+                          <p className="font-medium leading-snug text-stone-800">{n.title}</p>
+                          {n.body && (
+                            <p className="mt-0.5 whitespace-pre-line break-words text-xs leading-relaxed text-stone-600">
+                              {n.body}
+                            </p>
+                          )}
                         </Link>
                       ) : (
                         <>
-                          <p className="truncate font-medium text-stone-800">{n.title}</p>
-                          {n.body && <p className="truncate text-xs text-stone-500">{n.body}</p>}
+                          <p className="font-medium leading-snug text-stone-800">{n.title}</p>
+                          {n.body && (
+                            <p className="mt-0.5 whitespace-pre-line break-words text-xs leading-relaxed text-stone-600">
+                              {n.body}
+                            </p>
+                          )}
                         </>
                       )}
-                      <p className="mt-0.5 text-[10px] text-stone-400">{new Date(n.createdAt).toLocaleString()}</p>
+                      <p className="pt-1 text-xs text-stone-400">{new Date(n.createdAt).toLocaleString()}</p>
                     </div>
                     <button
                       onClick={() => dismiss(n.id)}
-                      className="text-stone-400 hover:text-stone-700"
+                      className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-stone-400 hover:bg-stone-100 hover:text-stone-700"
                       aria-label="Dismiss notification"
                     >
                       ×
