@@ -13,10 +13,15 @@ export default async function OutfitsPage({
   searchParams: Promise<{ activity?: string; season?: string; fav?: string }>;
 }) {
   const [sp, session] = await Promise.all([searchParams, auth()]);
+  const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
   const firstName = firstNameFromUser(session?.user);
 
   const outfits = await prisma.outfit.findMany({
     where: {
+      // Owner-scope guard: never leak another user's outfits, even
+      // when filters are wide-open. An empty userId still produces an
+      // empty result set since no row's ownerId is "".
+      ownerId: userId,
       ...(sp.activity ? { activity: sp.activity } : {}),
       ...(sp.season ? { season: sp.season } : {}),
       ...(sp.fav === "1" ? { isFavorite: true } : {}),
