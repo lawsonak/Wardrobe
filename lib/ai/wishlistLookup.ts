@@ -45,6 +45,32 @@ export type WishlistLookupResult =
 
 const URL_RE = /^https?:\/\//i;
 
+// Amazon URLs come with long tracking suffixes ("/ref=…", marketplace
+// query strings, etc.) and the site often blocks bots — both push the
+// grounded search toward an unrelated result. Strip to the canonical
+// `/dp/<ASIN>` form before passing to the model. ASINs are exactly 10
+// chars of `[A-Z0-9]`. Returns the input unchanged if not Amazon or
+// no ASIN is recoverable (short links like amzn.to fall through).
+function canonicalizeAmazonUrl(input: string): string {
+  try {
+    const u = new URL(input);
+    if (!/(^|\.)amazon\.[a-z.]+$/i.test(u.hostname)) return input;
+    const m = u.pathname.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})(?:\/|$)/i);
+    if (!m) return input;
+    return `https://${u.hostname}/dp/${m[1].toUpperCase()}`;
+  } catch {
+    return input;
+  }
+}
+
+function safeHost(input: string): string | null {
+  try {
+    return new URL(input).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
 export async function lookupWishlistProduct(
   input: WishlistLookupInput,
 ): Promise<WishlistLookupResult> {
@@ -68,9 +94,15 @@ export async function lookupWishlistProduct(
   }
 
   const isUrl = URL_RE.test(query);
+  // Amazon URLs in particular drop a lot of tracking junk and the site
+  // routinely blocks scrapers — canonicalize first so the model sees a
+  // stable address. No-op for non-Amazon input.
+  const cleanedQuery = isUrl ? canonicalizeAmazonUrl(query) : query;
+  const inputHost = isUrl ? safeHost(cleanedQuery) : null;
+
   const taskLine = isUrl
-    ? `Visit this URL: ${query}\nIt's a product page on a clothing or accessory retailer's site.`
-    : `Search the web for "${query}" and find the manufacturer's product page (or a reliable retailer listing).`;
+    ? `Visit this exact URL: ${cleanedQuery}\nIt's a product page on a clothing or accessory retailer's site.`
+    : `Search the web for "${cleanedQuery}" and find the manufacturer's product page (or a reliable retailer listing).`;
 
   const allowedColors = COLOR_NAMES.join(", ");
   const allowedCategories = CATEGORIES.join(", ");
@@ -86,6 +118,10 @@ export async function lookupWishlistProduct(
     "  - price: original retail price as a string with currency (e.g. \"$98 USD\"). Null if you can't find it.",
     "  - description: 1-2 sentences describing the cut, fit, or notable features. Null if no real description.",
     "Hard rules:",
+    "- CRITICAL: if the URL fails to load, returns an error, blocks scraping, or you can't extract verifiable details from a real product page, return null for EVERY field. Do not guess from the URL string. Do not pivot to a different product that happened to come up in a search. A 'no result' response is correct when you can't confirm what you're looking at.",
+    isUrl
+      ? `- The user pasted a URL on ${inputHost ?? "this domain"}. The 'link' field in your response MUST point to the same domain. If the only product you can confirm is from a different domain, return null for every field instead of substituting it.`
+      : "- Only return fields you have grounding evidence for. Don't fabricate brand or price.",
     "- Use null (not empty string) for any field you don't have confident evidence for. Never invent details.",
     "- Output ONLY the JSON object. No commentary before or after.",
     "- The user is adding this to their personal wishlist, so prioritize the buyer-facing details (name, brand, category, color) over technical ones.",
@@ -191,7 +227,31 @@ export async function lookupWishlistProduct(
       }
     }
 
-    const sanitized = sanitize(parsed, isUrl ? query : undefined);
+    const sanitized = sanitize(parsed, isUrl ? cleanedQuery : undefined);
+
+    // Cross-domain mismatch guard. When the user pasted a URL but the
+    // model's returned `link` points to a different host, the model
+    // probably couldn't load the original page and pivoted to whatever
+    // came up in a fallback search — the rest of the response is
+    // unreliable. Better to fail loudly than silently fill the form
+    // with the wrong product.
+    if (isUrl && inputHost && sanitized.link) {
+      const returnedHost = safeHost(sanitized.link);
+      if (returnedHost && returnedHost !== inputHost) {
+        return {
+          ok: false,
+          error: `Couldn't reliably load that page (the AI returned details from ${returnedHost} instead of ${inputHost}). Try the manufacturer's product URL or just type the name and brand.`,
+          suggestions: {},
+          debug: {
+            status: 200,
+            error: "domain mismatch",
+            rawText: cleaned.slice(0, 400),
+            sources,
+          },
+        };
+      }
+    }
+
     return {
       ok: true,
       suggestions: sanitized,
