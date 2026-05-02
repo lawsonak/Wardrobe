@@ -35,6 +35,12 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 // volume is higher). Override per-deployment via env if cost is a
 // concern; gemini-2.5-flash is a cheaper middle ground.
 const GEMINI_TAG_MODEL = process.env.GEMINI_TAG_MODEL || "gemini-2.5-pro";
+// Capacity fallback for the tag call. When the primary model returns
+// 503 (overloaded) or 429 (rate limited) twice in a row, we retry on
+// this lighter sibling so the user doesn't see a hard error during a
+// transient capacity spike. Defaults to flash, which has materially
+// more headroom than pro at the cost of a bit of accuracy.
+const GEMINI_TAG_FALLBACK_MODEL = process.env.GEMINI_TAG_FALLBACK_MODEL || "gemini-2.5-flash";
 
 const ALLOWED_CATEGORIES = [
   "Tops","Bottoms","Dresses","Outerwear","Shoes","Accessories","Activewear",
@@ -199,35 +205,85 @@ function makeGemini(): TagProvider {
           },
         };
 
-        // Stronger reasoning model for the structured tag call (the
-        // other helpers below stay on GEMINI_MODEL where the task is
-        // easier and the volume is higher).
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-          GEMINI_TAG_MODEL,
-        )}:generateContent?key=${encodeURIComponent(key)}`;
+        // Walk the retry plan: primary model with one retry on
+        // transient failure (503 / 429 / 5xx), then the fallback
+        // model with the same backoff. Each transient retry waits
+        // 1.5 * attemptIndex seconds. Non-transient errors (400
+        // invalid request, 401 bad key) bail immediately — those
+        // won't fix themselves with a retry.
+        const plan: Array<{ model: string; attempt: number }> = [
+          { model: GEMINI_TAG_MODEL, attempt: 1 },
+          { model: GEMINI_TAG_MODEL, attempt: 2 },
+          { model: GEMINI_TAG_FALLBACK_MODEL, attempt: 1 },
+          { model: GEMINI_TAG_FALLBACK_MODEL, attempt: 2 },
+        ];
 
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        httpStatus = res.status;
-        const responseText = await res.text();
+        let res: Response | null = null;
+        let responseText = "";
+        let usedModel = GEMINI_TAG_MODEL;
+        let lastDetail = "Unknown error";
 
-        if (!res.ok) {
-          // Surface the API error message directly. These usually carry
-          // a clear `error.message` like "API key not valid" or "Quota
-          // exceeded for…" so the user knows what to fix.
-          let detail = `HTTP ${res.status}`;
-          try {
-            const err = JSON.parse(responseText) as { error?: { message?: string } };
-            if (err.error?.message) detail = `HTTP ${res.status}: ${err.error.message}`;
-          } catch {
-            detail = `HTTP ${res.status}: ${responseText.slice(0, 200)}`;
+        for (let i = 0; i < plan.length; i++) {
+          const step = plan[i];
+          // 1.5s before any non-first attempt — gives transient
+          // overloads a moment to clear.
+          if (i > 0) await new Promise((r) => setTimeout(r, 1500));
+
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+            step.model,
+          )}:generateContent?key=${encodeURIComponent(key)}`;
+          const r = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          httpStatus = r.status;
+          const text = await r.text();
+          if (r.ok) {
+            res = r;
+            responseText = text;
+            usedModel = step.model;
+            break;
           }
-          console.warn(`Gemini ${detail}`);
-          return { suggestions: {}, debug: { status: res.status, error: detail, rawText: responseText.slice(0, 400) } };
+          // Decode the error so we can decide retry vs bail.
+          let detail = `HTTP ${r.status}`;
+          try {
+            const err = JSON.parse(text) as { error?: { message?: string } };
+            if (err.error?.message) detail = `HTTP ${r.status}: ${err.error.message}`;
+          } catch {
+            detail = `HTTP ${r.status}: ${text.slice(0, 200)}`;
+          }
+          lastDetail = detail;
+          // Transient = retryable. Includes 5xx (server-side blips
+          // including the famous "model overloaded" 503) and 429
+          // (rate limit). Anything else (auth, permission, bad
+          // request) won't change on retry — bail.
+          const transient = r.status === 429 || (r.status >= 500 && r.status < 600);
+          console.warn(`Gemini tag call ${detail} on ${step.model} (attempt ${step.attempt}; ${transient ? "transient — retrying" : "permanent — bailing"})`);
+          if (!transient) {
+            return { suggestions: {}, debug: { status: r.status, error: detail, rawText: text.slice(0, 400) } };
+          }
+          // Loop continues — next plan step.
         }
+
+        if (!res) {
+          // Every attempt failed transiently. Surface a
+          // user-actionable message instead of the raw HTTP code.
+          const friendly =
+            "AI tagging is busy right now (Google capacity spike). Please try again in a minute.";
+          console.warn(`Gemini tag exhausted retries: ${lastDetail}`);
+          return {
+            suggestions: {},
+            debug: { status: httpStatus, error: friendly, rawText: lastDetail.slice(0, 400) },
+          };
+        }
+        // Stash the model that ultimately answered so the debug
+        // payload tells us if we ended up on the fallback.
+        const usedModelForDebug = usedModel;
+
+        // (Below: response parsing path runs once we have a
+        // successful response from whichever model accepted the
+        // request.)
 
         const data = JSON.parse(responseText) as {
           candidates?: Array<{
@@ -279,7 +335,10 @@ function makeGemini(): TagProvider {
           suggestions: sanitized,
           debug: {
             status: 200,
-            rawText: rawText.slice(0, 400),
+            // Tag the debug rawText with which model ended up
+            // answering so we can see if the fallback caught a 503
+            // spike on the primary.
+            rawText: `[${usedModelForDebug}] ${rawText.slice(0, 400)}`,
             promptTokens: data.usageMetadata?.promptTokenCount,
             responseTokens: data.usageMetadata?.candidatesTokenCount,
           },
