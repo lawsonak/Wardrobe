@@ -253,6 +253,7 @@ export default async function ItemDetail({
               activities: csvToList(item.activities),
               isFavorite: item.isFavorite,
               status: item.status,
+              pendingAiSuggestions: item.pendingAiSuggestions ?? null,
             }}
           />
         </div>

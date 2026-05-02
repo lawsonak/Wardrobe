@@ -5,7 +5,8 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { getProvider } from "@/lib/ai/provider";
 import { brandKey } from "@/lib/brand";
-import { CATEGORIES, listToCsv, SEASONS, ACTIVITIES, type Category } from "@/lib/constants";
+import { CATEGORIES, csvToList, listToCsv, SEASONS, ACTIVITIES, type Category } from "@/lib/constants";
+import { mergePending, parse as parsePending, serialize as serializePending, type PendingAiSuggestions } from "@/lib/pendingAi";
 
 export const runtime = "nodejs";
 // Generous max so a 50-item batch can finish before Next aborts the
@@ -106,6 +107,11 @@ type BatchResult = {
   processed: number;
   tagged: number;
   promoted: number;
+  /** Items where the AI suggested overwriting an already-set field —
+   *  staged on the row's pendingAiSuggestions blob for the user to
+   *  review from the item edit page. Surfaces in the closet's
+   *  "Pending AI" filter pill. */
+  pendingCount: number;
   errors: number;
   errorList: Array<{ itemId: string; reason: string }>;
 };
@@ -127,6 +133,7 @@ async function runBatch(
 
   let tagged = 0;
   let promoted = 0;
+  let pendingCount = 0;
   let errors = 0;
   const errorList: Array<{ itemId: string; reason: string }> = [];
 
@@ -150,39 +157,93 @@ async function runBatch(
       const s = result.suggestions ?? {};
 
       const data: Record<string, unknown> = {};
+      const pending: PendingAiSuggestions = {};
+
+      // For each field: if currently empty → apply directly. If
+      // currently set AND the AI suggestion differs → stage as
+      // pending review (so the user opens the item and approves /
+      // rejects per row from the existing edit-page panel). If the
+      // AI suggestion matches what's already there → skip silently.
       if (s.category && CATEGORIES.includes(s.category as Category) && s.category !== item.category) {
-        data.category = s.category;
+        // Category was previously the only field that always
+        // overwrote silently. Now subject to the same review flow.
+        if (item.category) pending.category = s.category as Category;
+        else data.category = s.category;
       }
-      if (s.subType && !item.subType) data.subType = s.subType;
-      if (s.color && !item.color) data.color = s.color;
-      if (s.brand && !item.brand) {
-        const text = s.brand.trim();
-        const key = brandKey(text);
-        if (key) {
-          const upserted = await prisma.brand.upsert({
-            where: { ownerId_nameKey: { ownerId: userId, nameKey: key } },
-            update: {},
-            create: { ownerId: userId, name: text, nameKey: key },
-          });
-          data.brand = upserted.name;
-          data.brandId = upserted.id;
+      if (s.subType && s.subType.trim() !== (item.subType ?? "").trim()) {
+        if (item.subType) pending.subType = s.subType;
+        else data.subType = s.subType;
+      }
+      if (s.color && s.color !== item.color) {
+        if (item.color) pending.color = s.color;
+        else data.color = s.color;
+      }
+      if (s.brand && s.brand.trim() !== (item.brand ?? "").trim()) {
+        if (item.brand) {
+          pending.brand = s.brand;
+        } else {
+          const text = s.brand.trim();
+          const key = brandKey(text);
+          if (key) {
+            const upserted = await prisma.brand.upsert({
+              where: { ownerId_nameKey: { ownerId: userId, nameKey: key } },
+              update: {},
+              create: { ownerId: userId, name: text, nameKey: key },
+            });
+            data.brand = upserted.name;
+            data.brandId = upserted.id;
+          }
         }
       }
-      if (s.size && !item.size) data.size = s.size;
-      if (s.seasons && (!item.seasons || item.seasons.length === 0)) {
-        const valid = s.seasons.filter((x) => SEASONS.includes(x as never));
-        if (valid.length > 0) data.seasons = listToCsv(valid as string[]);
+      if (s.size && s.size.trim() !== (item.size ?? "").trim()) {
+        if (item.size) pending.size = s.size;
+        else data.size = s.size;
       }
-      if (s.activities && (!item.activities || item.activities.length === 0)) {
-        const valid = s.activities.filter((x) => ACTIVITIES.includes(x as never));
-        if (valid.length > 0) data.activities = listToCsv(valid as string[]);
+      if (s.seasons) {
+        const valid = s.seasons.filter((x) => SEASONS.includes(x as never)) as string[];
+        const cur = csvToList(item.seasons).sort().join(",");
+        const sug = [...valid].sort().join(",");
+        if (valid.length > 0 && cur !== sug) {
+          if (cur.length > 0) pending.seasons = valid;
+          else data.seasons = listToCsv(valid);
+        }
+      }
+      if (s.activities) {
+        const valid = s.activities.filter((x) => ACTIVITIES.includes(x as never)) as string[];
+        const cur = csvToList(item.activities).sort().join(",");
+        const sug = [...valid].sort().join(",");
+        if (valid.length > 0 && cur !== sug) {
+          if (cur.length > 0) pending.activities = valid;
+          else data.activities = listToCsv(valid);
+        }
       }
       const extras: string[] = [];
       if (s.material) extras.push(`Material: ${s.material}`);
       if (s.careNotes) extras.push(`Care: ${s.careNotes}`);
       if (s.notes) extras.push(s.notes);
       if (extras.length > 0 && !item.notes) data.notes = extras.join("\n");
-      if (s.material && !item.fitNotes) data.fitNotes = `Material: ${s.material}`;
+      if (s.material) {
+        if (!item.fitNotes) {
+          data.fitNotes = `Material: ${s.material}`;
+        } else if (!item.fitNotes.toLowerCase().includes("material:")) {
+          // Append-only when fit notes exist but no "Material:" line
+          // is present yet — additive, no conflict, no review needed.
+          data.fitNotes = `${item.fitNotes.trim()}\nMaterial: ${s.material}`;
+        } else {
+          // fitNotes already has a "Material:" line — pending review.
+          pending.material = s.material;
+        }
+      }
+
+      // Merge pending into the existing pending blob (last run wins
+      // per field). Drop the column entirely when there's nothing to
+      // review so the closet's "Pending AI" filter doesn't show the
+      // item.
+      const existingPending = parsePending(item.pendingAiSuggestions);
+      const hasNewPending = Object.keys(pending).length > 0;
+      if (hasNewPending) {
+        data.pendingAiSuggestions = serializePending(mergePending(existingPending, pending));
+      }
 
       const confidence = typeof s.confidence === "number" ? s.confidence : null;
       const willPromote = confidence !== null && confidence >= promoteAtConfidence;
@@ -192,6 +253,15 @@ async function runBatch(
         await prisma.item.update({ where: { id: item.id }, data });
         tagged++;
         if (willPromote) promoted++;
+        if (hasNewPending) pendingCount++;
+      } else if (hasNewPending) {
+        // Edge case: only conflicts, nothing applied. Still write the
+        // pending blob so the user can review.
+        await prisma.item.update({
+          where: { id: item.id },
+          data: { pendingAiSuggestions: data.pendingAiSuggestions as string | null },
+        });
+        pendingCount++;
       }
     } catch (err) {
       errors++;
@@ -200,17 +270,30 @@ async function runBatch(
   }
 
   if (notify) {
+    const parts: string[] = [`Tagged ${tagged} of ${items.length} item${items.length === 1 ? "" : "s"}`];
+    if (promoted > 0) parts.push(`promoted ${promoted} to active`);
+    if (pendingCount > 0) {
+      parts.push(`${pendingCount} item${pendingCount === 1 ? "" : "s"} need${pendingCount === 1 ? "s" : ""} review`);
+    }
+    if (errors > 0) parts.push(`${errors} error${errors === 1 ? "" : "s"}`);
+    // Pending review takes precedence — that's where the user has
+    // pending decisions to make.
+    const href = pendingCount > 0
+      ? "/wardrobe?pending=1"
+      : promoted < items.length
+        ? "/wardrobe/needs-review"
+        : "/wardrobe";
     await prisma.notification
       .create({
         data: {
           ownerId: userId,
           title: `AI tagging complete`,
-          body: `Tagged ${tagged} of ${items.length} item${items.length === 1 ? "" : "s"}${promoted > 0 ? `, promoted ${promoted} to active` : ""}${errors > 0 ? `, ${errors} error${errors === 1 ? "" : "s"}` : ""}.`,
-          href: promoted < items.length ? "/wardrobe/needs-review" : "/wardrobe",
+          body: `${parts.join(", ")}.`,
+          href,
         },
       })
       .catch(() => {});
   }
 
-  return { processed: items.length, tagged, promoted, errors, errorList };
+  return { processed: items.length, tagged, promoted, pendingCount, errors, errorList };
 }
