@@ -22,7 +22,12 @@ import { UPLOAD_ROOT, saveBuffer, unlinkUpload } from "@/lib/uploads";
 
 const MAX_CONCURRENT = 3;
 
-type RemoveBackgroundFn = (input: Blob) => Promise<Blob>;
+// The package's ImageSource union includes Uint8Array, and Node's
+// Buffer extends Uint8Array, so we can pass the file Buffer straight
+// through — no need for the Blob wrap that the previous version did.
+// Skipping the wrap removes one layer that could fail silently in
+// older Node Blob implementations.
+type RemoveBackgroundFn = (input: Buffer) => Promise<Blob>;
 
 let removerPromise: Promise<RemoveBackgroundFn> | null = null;
 
@@ -30,18 +35,19 @@ async function getRemover(): Promise<RemoveBackgroundFn> {
   if (!removerPromise) {
     removerPromise = (async () => {
       const mod = await import("@imgly/background-removal-node");
-      // The node package exports `removeBackground` with a slightly
-      // different signature than the web one — but for our purposes
-      // (Blob in, Blob out, default config) it's interchangeable.
-      const fn = mod.removeBackground as (input: Blob | Buffer | string, config?: unknown) => Promise<Blob>;
+      const fn = mod.removeBackground as (input: Buffer, config?: unknown) => Promise<Blob>;
       if (typeof fn !== "function") {
         throw new Error("background-removal-node missing removeBackground()");
       }
-      // Wrap so callers can ignore the slight type variance.
-      return ((input: Blob) => fn(input, { model: "small", output: { format: "image/png" } })) as RemoveBackgroundFn;
+      return ((input: Buffer) =>
+        fn(input, { model: "small", output: { format: "image/png" } })) as RemoveBackgroundFn;
     })().catch((err) => {
+      // Drop the cache so a future call gets a fresh shot. Without
+      // this, a transient model-download failure would persist for
+      // the whole process lifetime.
       removerPromise = null;
-      throw err;
+      console.error("background-removal-node failed to load:", err);
+      throw err instanceof Error ? err : new Error(String(err));
     });
   }
   return removerPromise;
@@ -49,14 +55,17 @@ async function getRemover(): Promise<RemoveBackgroundFn> {
 
 // Read the file the bulk upload saved earlier, run bg removal, write
 // the result alongside it, and return the new relative path.
-async function processOne(userId: string, itemId: string, sourceRelPath: string): Promise<string> {
-  const remove = await getRemover();
+async function processOne(
+  remove: RemoveBackgroundFn,
+  userId: string,
+  itemId: string,
+  sourceRelPath: string,
+): Promise<string> {
   const sourceAbs = path.join(UPLOAD_ROOT, sourceRelPath);
   const buf = await fs.readFile(sourceAbs);
-  const blob = new Blob([buf]);
-  const out = await remove(blob);
+  const out = await remove(buf);
   const outBuf = Buffer.from(await out.arrayBuffer());
-  // Use a random suffix on every run so the existing /api/uploads/
+  // Random suffix on every run so the existing /api/uploads/
   // immutable cache headers don't pin stale art if the user
   // regenerates.
   const tag = Math.random().toString(36).slice(2, 8);
@@ -94,6 +103,24 @@ export async function runBgRemovalBatch(
     select: { id: true, imagePath: true, imageBgRemovedPath: true },
   });
 
+  // Resolve the model up front. If the dynamic import or the model
+  // assets fail to load, every item would otherwise come back with the
+  // same per-item error and the user would see a generic "0 of N
+  // succeeded" notification with no top-level diagnostic. Failing here
+  // bubbles a single, clear "model failed to load" error to the
+  // notification body.
+  let remove: RemoveBackgroundFn;
+  try {
+    remove = await getRemover();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("bg removal: model load failed, marking entire batch:", message);
+    return {
+      succeeded: [],
+      failed: items.map((it) => ({ id: it.id, error: `model load failed: ${message.slice(0, 160)}` })),
+    };
+  }
+
   const result: BgRemovalResult = { succeeded: [], failed: [] };
   let cursor = 0;
 
@@ -103,7 +130,7 @@ export async function runBgRemovalBatch(
       if (i >= items.length) return;
       const it = items[i];
       try {
-        const newBgPath = await processOne(userId, it.id, it.imagePath);
+        const newBgPath = await processOne(remove, userId, it.id, it.imagePath);
         // If the item already had a bg cutout, unlink the old one so we
         // don't accumulate orphans. Best-effort.
         if (it.imageBgRemovedPath && it.imageBgRemovedPath !== newBgPath) {
@@ -116,7 +143,13 @@ export async function runBgRemovalBatch(
         result.succeeded.push(it.id);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        console.warn(`bg removal failed for item ${it.id}:`, message);
+        // First failure gets the full stack so we can diagnose; the
+        // rest just log the message to keep stdout sane.
+        if (result.failed.length === 0 && err instanceof Error) {
+          console.error(`bg removal failed for item ${it.id}:`, err);
+        } else {
+          console.warn(`bg removal failed for item ${it.id}:`, message);
+        }
         result.failed.push({ id: it.id, error: message.slice(0, 200) });
       }
     }
