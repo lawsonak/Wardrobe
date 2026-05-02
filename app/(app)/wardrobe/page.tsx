@@ -57,48 +57,93 @@ export default async function WardrobePage({
       })()
     : null;
 
+  // Build the strict WHERE clause once so the loose-match fallback can
+  // selectively drop pieces of it without re-deriving everything.
+  const filterLabels: Record<string, string> = {
+    color: color ? color : "",
+    activity: activity ? activity : "",
+    season: season ? season : "",
+    q: q ? `"${q}"` : "",
+    category: category ? category : "",
+  };
+  const buildWhere = (drop: Set<string>) => ({
+    ownerId: userId,
+    ...(!drop.has("category") && category ? { category } : {}),
+    ...(favOnly ? { isFavorite: true } : {}),
+    ...(statusFilter ? { status: statusFilter } : { status: "active" }),
+    ...(!drop.has("color") && color ? { color } : {}),
+    ...(!drop.has("season") && season ? { seasons: { contains: season } } : {}),
+    ...(!drop.has("activity") && activityClause ? activityClause : {}),
+    ...(!drop.has("q") && q
+      ? {
+          OR: [
+            { subType: { contains: q } },
+            { brand: { contains: q } },
+            { color: { contains: q } },
+            { notes: { contains: q } },
+          ],
+        }
+      : {}),
+  });
+
   // Always show how many items are unlabeled so the pill carries a
   // badge even when the filter isn't active. Cheap COUNT query, owner-
   // scoped, fires in parallel with the gallery fetch below.
-  const [unlabeledCount, items] = await Promise.all([
+  const select = {
+    id: true,
+    imagePath: true,
+    imageBgRemovedPath: true,
+    category: true,
+    subType: true,
+    color: true,
+    isFavorite: true,
+  } as const;
+
+  const [unlabeledCount, strictItems] = await Promise.all([
     prisma.item.count({ where: { ownerId: userId, status: "needs_review" } }),
     prisma.item.findMany({
-    where: {
-      ownerId: userId,
-      ...(category ? { category } : {}),
-      ...(favOnly ? { isFavorite: true } : {}),
-      ...(statusFilter ? { status: statusFilter } : { status: "active" }),
-      ...(color ? { color } : {}),
-      ...(season ? { seasons: { contains: season } } : {}),
-      ...(activityClause ?? {}),
-      ...(q
-        ? {
-            OR: [
-              { subType: { contains: q } },
-              { brand: { contains: q } },
-              { color: { contains: q } },
-              { notes: { contains: q } },
-            ],
-          }
-        : {}),
-    },
-    // Only fields the gallery's <ItemCard> actually renders. Without
-    // `select` Prisma pulls every column (notes, fitDetails, fitNotes,
-    // sizeSystem…) for every item, which is slow on large closets.
-    select: {
-      id: true,
-      imagePath: true,
-      imageBgRemovedPath: true,
-      category: true,
-      subType: true,
-      color: true,
-      isFavorite: true,
-    },
-    orderBy: { createdAt: "desc" },
+      where: buildWhere(new Set()),
+      select,
+      orderBy: { createdAt: "desc" },
     }),
   ]);
 
+  // Loose-match fallback: when the strict query returns nothing AND a
+  // narrowing filter is set, drop one filter at a time until results
+  // appear or only the user's most-likely intent (category, favorites,
+  // unlabeled) remains. Drop order is "most variable" first — color
+  // and activity rarely match exactly, free text and category are
+  // closer to user intent. Drop is never to less than ownerId+status.
+  let items = strictItems;
+  let droppedFilter: string | null = null;
+  if (items.length === 0) {
+    const dropOrder = ["color", "activity", "season", "q"];
+    const dropped = new Set<string>();
+    for (const key of dropOrder) {
+      if (!filterLabels[key]) continue;
+      dropped.add(key);
+      const next = await prisma.item.findMany({
+        where: buildWhere(dropped),
+        select,
+        orderBy: { createdAt: "desc" },
+      });
+      if (next.length > 0) {
+        items = next;
+        droppedFilter = key;
+        break;
+      }
+    }
+  }
+
   const filtered = items;
+  // Human-friendly notice for the loose-match banner.
+  const looseMatchBanner = droppedFilter
+    ? (() => {
+        const dropped = filterLabels[droppedFilter];
+        const what = droppedFilter === "q" ? `text match` : droppedFilter;
+        return `No exact matches for ${dropped ? dropped + " " : ""}— showing close-enough results without the ${what} filter.`;
+      })()
+    : null;
 
   const title = "Closet";
   const activeFilters: { label: string; href: string }[] = [];
@@ -178,6 +223,12 @@ export default async function WardrobePage({
               <span className="sr-only">Remove filter</span>
             </Link>
           ))}
+        </div>
+      )}
+
+      {looseMatchBanner && (
+        <div className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-200">
+          {looseMatchBanner}
         </div>
       )}
 
