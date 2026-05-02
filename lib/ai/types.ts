@@ -81,6 +81,10 @@ export interface TagProvider {
     /** Free-form style notes from the user — e.g. "I don't pair pink and blue".
      *  Honored unless directly contradicted by the occasion. */
     preferences?: string;
+    /** Item ids the model must NOT pick (e.g. yesterday's pick when
+     *  the user taps "Try another"). When supplied, the prompt nudges
+     *  toward variety on top of the strict exclusion. */
+    avoidItemIds?: string[];
   }): Promise<OutfitSuggestion>;
   /** Curate a packing list for a trip from the user's closet. Reasons
    *  about destination climate, trip length and planned activities,
