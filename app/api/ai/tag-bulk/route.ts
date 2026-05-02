@@ -147,12 +147,44 @@ async function runBatch(
     const label = item.labelImagePath ? await readUpload(item.labelImagePath) : null;
 
     try {
+      // Two-pass: describe the item first (free-form prose where the
+      // model is more confident), then run the structured tagger with
+      // those notes as ground truth. Same approach as the per-item
+      // edit-page Auto-tag flow — borderline shots commit to enum
+      // values much more reliably this way.
+      const imageFile = new File([new Uint8Array(main.buf)], "item", { type: main.mime });
+      const labelFile = label
+        ? new File([new Uint8Array(label.buf)], "label", { type: label.mime })
+        : undefined;
+
+      let notesContext: string | undefined;
+      if (typeof provider.describeItem === "function") {
+        try {
+          const notesRes = await provider.describeItem({
+            image: imageFile,
+            labelImage: labelFile,
+            context: {
+              category: item.category || undefined,
+              subType: item.subType || undefined,
+              color: item.color || undefined,
+              brand: item.brand || undefined,
+              size: item.size || undefined,
+              seasons: csvToList(item.seasons),
+              activities: csvToList(item.activities),
+              existingNotes: item.notes || undefined,
+            },
+          });
+          if (notesRes.notes && notesRes.notes.trim()) notesContext = notesRes.notes.trim();
+        } catch {
+          /* notes are best-effort; tag call still runs without them */
+        }
+      }
+
       const result = await provider.tagImage({
-        image: new File([new Uint8Array(main.buf)], "item", { type: main.mime }),
-        labelImage: label
-          ? new File([new Uint8Array(label.buf)], "label", { type: label.mime })
-          : undefined,
+        image: imageFile,
+        labelImage: labelFile,
         existingBrands,
+        notesContext,
       });
       const s = result.suggestions ?? {};
 

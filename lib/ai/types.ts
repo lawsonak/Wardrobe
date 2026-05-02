@@ -45,6 +45,13 @@ export interface TagProvider {
     image: Blob;
     labelImage?: Blob;
     existingBrands?: string[];
+    /** Already-generated descriptive notes for this image. When
+     *  provided, the structured tagger is told to use them as ground
+     *  truth for category/color/etc. — same task we already trust the
+     *  notes call to do well. Significantly improves enum-commit rate
+     *  on borderline shots where the bare image alone leaves the model
+     *  hedging to null. */
+    notesContext?: string;
   }): Promise<TagResult>;
   /** Write 1-3 short, specific sentences describing the piece for the
    *  notes field. Aware of any existing metadata so it doesn't repeat

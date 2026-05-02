@@ -84,7 +84,7 @@ The closet's tagged `activities` field is restricted to the enum, but Collection
 
 | Provider method | Route | Purpose |
 |---|---|---|
-| `tagImage` | `/api/ai/tag`, `/api/ai/tag-bulk` | Auto-tag from photo + optional label close-up |
+| `tagImage` | `/api/ai/tag`, `/api/ai/tag-bulk` | Auto-tag from photo + optional label close-up. Runs on `GEMINI_TAG_MODEL` (default `gemini-2.5-pro`) for stronger structured-output reasoning vs. the other AI helpers which stay on `GEMINI_MODEL`. The caller is expected to run `describeItem` first and pass the result as `notesContext` — the structured tagger uses the notes as ground truth and commits to enum values it would otherwise hedge to null on. |
 | `describeItem` | `/api/ai/notes` | Generate the item's notes field |
 | `buildOutfit` | `/api/ai/outfit` | Pick items for a free-text occasion (honors user's `preferences`) |
 | `buildPackingList` | `/api/ai/packing-list` | Curate a trip packing list, **honors `targets: Record<Category, number>`** |
