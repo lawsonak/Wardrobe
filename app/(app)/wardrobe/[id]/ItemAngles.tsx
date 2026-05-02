@@ -160,13 +160,20 @@ export default function ItemAngles({
             ref={fileRef}
             type="file"
             accept="image/*,.heic,.heif"
+            multiple
             className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
+            onChange={async (e) => {
+              const files = e.target.files ? Array.from(e.target.files) : [];
               if (e.target) e.target.value = "";
-              if (f) add(f);
+              // Sequential rather than Promise.all so the existing busy
+              // state + per-file error handling in `add()` keeps working
+              // and the upload route isn't hammered with parallel POSTs
+              // against the same item.
+              for (const f of files) {
+                await add(f);
+              }
             }}
-            aria-label="Add another angle photo"
+            aria-label="Add other angle photos"
           />
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -175,7 +182,7 @@ export default function ItemAngles({
               onClick={() => fileRef.current?.click()}
               className="btn-secondary text-xs"
             >
-              📸 Add another angle
+              📸 Add angle photos
             </button>
             {error && (
               <p className="text-xs text-blush-700">
