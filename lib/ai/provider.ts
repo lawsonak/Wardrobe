@@ -64,6 +64,14 @@ const RESPONSE_SCHEMA = {
     notes: { type: "STRING" },
     confidence: { type: "NUMBER" },
   },
+  // category + color must be present in the response. Without this,
+  // Gemini's structured output mode happily omits fields when the
+  // model isn't fully confident — even when the photo or the notes
+  // make the answer obvious. Marking them required pushes the model
+  // to commit to its best-guess enum value (which is exactly what
+  // the prompt's "never null when there's clear evidence" rule
+  // already asks for, but the schema-level constraint is stricter).
+  required: ["category", "color"],
 };
 
 const OUTFIT_SCHEMA = {
