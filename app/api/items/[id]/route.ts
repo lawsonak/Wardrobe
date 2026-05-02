@@ -75,6 +75,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     data.status = body.status;
   }
+  // Allow the edit page to clear the staged AI suggestions blob once
+  // the user has approved or rejected the review panel's rows. Only
+  // accept `null` here — actual writes are server-side from the bulk
+  // tag-bulk route, never from the client.
+  if (body.pendingAiSuggestions === null) {
+    data.pendingAiSuggestions = null;
+  }
+
   // Link or unlink from a matching set. Validates that the set
   // belongs to the same user.
   if (body.setId === null) {

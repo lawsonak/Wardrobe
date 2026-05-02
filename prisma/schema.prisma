@@ -48,6 +48,13 @@ model Item {
   // can extend without migrations; rendered by a category-aware editor.
   fitDetails         String?
   fitNotes           String?
+  // JSON blob of pending AI suggestions for fields that already have
+  // a value, staged from a bulk re-tag run. The item edit page reads
+  // this on load and surfaces a per-row review panel so the user can
+  // approve/reject each change. Cleared once the user applies or
+  // rejects. Null when there's nothing pending. See lib/pendingAi.ts
+  // for the schema.
+  pendingAiSuggestions String?
   // Comma-separated lists (SQLite has no array type)
   seasons            String   @default("")
   activities         String   @default("")

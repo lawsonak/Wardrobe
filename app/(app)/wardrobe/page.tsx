@@ -20,6 +20,9 @@ export default async function WardrobePage({
     color?: string;
     season?: string;
     activity?: string;
+    /** "1" → only show items with pending AI suggestions staged from
+     *  a bulk re-tag run that the user hasn't reviewed yet. */
+    pending?: string;
   }>;
 }) {
   const [sp, session] = await Promise.all([searchParams, auth()]);
@@ -35,6 +38,7 @@ export default async function WardrobePage({
   // by anyone uploading with the AI off. Implemented as a one-tap
   // quick filter that just rewrites the existing status query param.
   const unlabeledOnly = statusFilter === "needs_review";
+  const pendingOnly = sp.pending === "1";
   const color = sp.color?.trim() || undefined;
   const season = sp.season?.trim() || undefined;
   const activity = sp.activity?.trim() || undefined;
@@ -70,7 +74,14 @@ export default async function WardrobePage({
     ownerId: userId,
     ...(!drop.has("category") && category ? { category } : {}),
     ...(favOnly ? { isFavorite: true } : {}),
-    ...(statusFilter ? { status: statusFilter } : { status: "active" }),
+    // `pending=1` shows everything with a non-null pendingAiSuggestions
+    // blob — independent of `status`, since pending review is its own
+    // axis (an active item can have pending suggestions too).
+    ...(pendingOnly
+      ? { pendingAiSuggestions: { not: null } }
+      : statusFilter
+        ? { status: statusFilter }
+        : { status: "active" }),
     ...(!drop.has("color") && color ? { color } : {}),
     ...(!drop.has("season") && season ? { seasons: { contains: season } } : {}),
     ...(!drop.has("activity") && activityClause ? activityClause : {}),
@@ -99,8 +110,9 @@ export default async function WardrobePage({
     isFavorite: true,
   } as const;
 
-  const [unlabeledCount, strictItems] = await Promise.all([
+  const [unlabeledCount, pendingAiCount, strictItems] = await Promise.all([
     prisma.item.count({ where: { ownerId: userId, status: "needs_review" } }),
+    prisma.item.count({ where: { ownerId: userId, pendingAiSuggestions: { not: null } } }),
     prisma.item.findMany({
       where: buildWhere(new Set()),
       select,
@@ -153,6 +165,7 @@ export default async function WardrobePage({
   if (activity) activeFilters.push({ label: activity, href: dropParam(sp, "activity") });
   if (favOnly) activeFilters.push({ label: "favorites", href: dropParam(sp, "fav") });
   if (unlabeledOnly) activeFilters.push({ label: "unlabeled", href: dropParam(sp, "status") });
+  if (pendingOnly) activeFilters.push({ label: "pending AI", href: dropParam(sp, "pending") });
 
   return (
     <div className="space-y-5">
@@ -193,6 +206,24 @@ export default async function WardrobePage({
             </span>
           )}
         </Link>
+        {/* Items with AI suggestions staged from a bulk re-tag run
+            that the user hasn't reviewed yet. Hidden when the count
+            is zero so the row stays clean for users who never use
+            bulk re-tag. */}
+        {(pendingAiCount > 0 || pendingOnly) && (
+          <Link
+            href={pendingOnly ? dropParam(sp, "pending") : `/wardrobe?${withParam(sp, "pending", "1")}`}
+            className={"chip " + (pendingOnly ? "chip-on" : "chip-off")}
+            title="Items with AI suggestions waiting for your review"
+          >
+            ✨ Pending AI
+            {pendingAiCount > 0 && (
+              <span className={"ml-1 rounded-full px-1.5 text-[10px] " + (pendingOnly ? "bg-white/25 text-white" : "bg-stone-100 text-stone-500")}>
+                {pendingAiCount}
+              </span>
+            )}
+          </Link>
+        )}
       </div>
 
       {/* Quick taxonomy filter (form, kept for keyboard-only / no-AI users) */}

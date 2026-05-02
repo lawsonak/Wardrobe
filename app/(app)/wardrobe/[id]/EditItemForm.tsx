@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CATEGORIES,
@@ -17,6 +17,7 @@ import FitDetailsEditor from "@/components/FitDetailsEditor";
 import SubtypePicker from "@/components/SubtypePicker";
 import { normalizeSize } from "@/lib/size";
 import { parseFitDetails, serializeFitDetails } from "@/lib/fitDetails";
+import { parse as parsePendingAi } from "@/lib/pendingAi";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import { haptic } from "@/lib/haptics";
@@ -42,6 +43,10 @@ type Item = {
   status: string;
   fitDetails: string | null;
   fitNotes: string | null;
+  /** JSON blob of AI suggestions staged from a bulk re-tag run that
+   *  the user hasn't reviewed yet. The form auto-opens the review
+   *  panel when this is non-null. */
+  pendingAiSuggestions: string | null;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -104,6 +109,132 @@ export default function EditItemForm({ item }: { item: Item }) {
   const [autoTagChanges, setAutoTagChanges] = useState<AutoTagChange[] | null>(null);
   const [autoTagAccept, setAutoTagAccept] = useState<Record<string, boolean>>({});
   const autoTagProgress = useTimedProgress(autoTagState === "running", 18);
+
+  // If a bulk re-tag run staged AI suggestions for this item that
+  // would have overwritten an already-set field, the row was saved
+  // with `pendingAiSuggestions`. On mount, parse + filter against
+  // the current values (the user may have edited the field since)
+  // and pre-populate the review panel.
+  useEffect(() => {
+    const pending = parsePendingAi(item.pendingAiSuggestions);
+    if (!pending) return;
+    const changes: AutoTagChange[] = [];
+    if (pending.category && CATEGORIES.includes(pending.category) && pending.category !== category) {
+      changes.push({
+        kind: category ? "change" : "new",
+        field: "category",
+        label: "Category",
+        currentDisplay: category || "(not set)",
+        suggestedDisplay: pending.category,
+        suggestedValue: pending.category,
+      });
+    }
+    if (pending.subType && pending.subType.trim() !== subType.trim()) {
+      changes.push({
+        kind: subType ? "change" : "new",
+        field: "subType",
+        label: "Sub-type",
+        currentDisplay: subType || "(not set)",
+        suggestedDisplay: pending.subType,
+        suggestedValue: pending.subType,
+      });
+    }
+    if (pending.color && pending.color !== color) {
+      changes.push({
+        kind: color ? "change" : "new",
+        field: "color",
+        label: "Color",
+        currentDisplay: color || "(not set)",
+        suggestedDisplay: pending.color,
+        suggestedValue: pending.color,
+      });
+    }
+    if (pending.brand && pending.brand.trim() !== (brand ?? "").trim()) {
+      changes.push({
+        kind: brand ? "change" : "new",
+        field: "brand",
+        label: "Brand",
+        currentDisplay: brand || "(not set)",
+        suggestedDisplay: pending.brand,
+        suggestedValue: pending.brand,
+      });
+    }
+    if (pending.size && pending.size.trim() !== (size ?? "").trim()) {
+      changes.push({
+        kind: size ? "change" : "new",
+        field: "size",
+        label: "Size",
+        currentDisplay: size || "(not set)",
+        suggestedDisplay: pending.size,
+        suggestedValue: pending.size,
+      });
+    }
+    if (pending.seasons) {
+      const cur = [...seasons].sort().join(",");
+      const sug = [...pending.seasons].sort().join(",");
+      if (cur !== sug) {
+        changes.push({
+          kind: seasons.length === 0 ? "new" : "change",
+          field: "seasons",
+          label: "Seasons",
+          currentDisplay: seasons.length > 0 ? seasons.join(", ") : "(not set)",
+          suggestedDisplay: pending.seasons.join(", "),
+          suggestedValue: pending.seasons,
+        });
+      }
+    }
+    if (pending.activities) {
+      const cur = [...activities].sort().join(",");
+      const sug = [...pending.activities].sort().join(",");
+      if (cur !== sug) {
+        changes.push({
+          kind: activities.length === 0 ? "new" : "change",
+          field: "activities",
+          label: "Activities",
+          currentDisplay: activities.length > 0 ? activities.join(", ") : "(not set)",
+          suggestedDisplay: pending.activities.join(", "),
+          suggestedValue: pending.activities,
+        });
+      }
+    }
+    if (pending.material) {
+      const matLine = `Material: ${pending.material}`;
+      const existingMat = extractFitNotesLine(fitNotes, "material:");
+      if (existingMat !== pending.material) {
+        changes.push({
+          kind: existingMat ? "change" : "new",
+          field: "material",
+          label: "Material",
+          currentDisplay: existingMat || "(not in fit notes)",
+          suggestedDisplay: pending.material,
+          suggestedValue: matLine,
+        });
+      }
+    }
+    if (changes.length === 0) {
+      // Pending blob exists but every suggestion is already applied
+      // (user matched it manually since the bulk run). Clear the
+      // server-side blob so the closet's "Pending AI" filter pill
+      // count stays accurate.
+      void fetch(`/api/items/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pendingAiSuggestions: null }),
+      });
+      return;
+    }
+    setAutoTagChanges(changes);
+    const acceptDefaults: Record<string, boolean> = {};
+    for (const c of changes) acceptDefaults[c.field] = c.kind === "new";
+    setAutoTagAccept(acceptDefaults);
+    setAutoTagState("pending");
+    setAutoTagMessage(
+      `${changes.length} pending AI suggestion${changes.length === 1 ? "" : "s"} from a bulk re-tag.`,
+    );
+    // We only run this on mount — applying or rejecting clears the
+    // server-side blob and we don't want a re-render to repopulate.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [lookupState, setLookupState] = useState<"idle" | "running" | "pending" | "applied" | "disabled" | "error">("idle");
   const [lookupMessage, setLookupMessage] = useState<string | null>(null);
   const [lookupSources, setLookupSources] = useState<string[]>([]);
@@ -443,6 +574,10 @@ export default function EditItemForm({ item }: { item: Item }) {
         ? `Applied ${appliedCount} suggestion${appliedCount === 1 ? "" : "s"} — review and save.`
         : "Rejected all suggestions.",
     );
+    // Clear the server-side staged blob so the closet's Pending AI
+    // filter no longer flags this item. Best-effort — UI already
+    // reflects the user's choice if the network call fails.
+    void clearPendingOnServer();
   }
 
   function rejectAutoTagChanges() {
@@ -450,6 +585,20 @@ export default function EditItemForm({ item }: { item: Item }) {
     setAutoTagAccept({});
     setAutoTagState("done");
     setAutoTagMessage("Rejected — your existing values are unchanged.");
+    void clearPendingOnServer();
+  }
+
+  async function clearPendingOnServer() {
+    if (!item.pendingAiSuggestions) return;
+    try {
+      await fetch(`/api/items/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pendingAiSuggestions: null }),
+      });
+    } catch {
+      /* non-fatal — best effort */
+    }
   }
 
   // Two-step flow shared between the brand-search button and the

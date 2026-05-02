@@ -49,7 +49,7 @@ Other conventions:
 
 | Model | Purpose | Key fields |
 |---|---|---|
-| `Item` | A clothing piece | category, subType, color, brand (free-form + canonical `Brand` ref), size, sizeSystem, fitDetails (JSON), seasons (CSV), activities (CSV), notes, isFavorite, status (`active\|needs_review\|draft`), imagePath, imageBgRemovedPath, labelImagePath, optional `setId` |
+| `Item` | A clothing piece | category, subType, color, brand (free-form + canonical `Brand` ref), size, sizeSystem, fitDetails (JSON), seasons (CSV), activities (CSV), notes, isFavorite, status (`active\|needs_review\|draft`), imagePath, imageBgRemovedPath, labelImagePath, optional `setId`, `pendingAiSuggestions` (JSON blob of staged AI suggestions awaiting per-row review on the edit page) |
 | `ItemPhoto` | Extra angles per item | itemId, label, position |
 | `ItemSet` | Soft link of pieces sold/worn together | swimsuit top+bottom, pajamas — items stay independent |
 | `Outfit` | Bundle of items with slot map | name, activity, season, layoutJson (manual style canvas), `tryOnImagePath` / `tryOnHash` / `tryOnGeneratedAt` (cached AI try-on render), optional `collectionId` back-link |
