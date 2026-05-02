@@ -377,17 +377,254 @@ export const SUBTYPE_TO_SLOT: Record<string, Slot> = {
   "Bike shorts": "bottom",
   "Biker shorts": "bottom",
   "Yoga pants": "bottom",
+  "Sweatpants": "bottom",
+  "Track pants": "bottom",
+  "Running shorts": "bottom",
+  "Athletic skirt": "bottom",
   "Tennis skirt": "bottom",
   "Athletic dress": "dress",
+  "Tennis dress": "dress",
   "Track jacket": "outerwear",
+  "Windbreaker": "outerwear",
+  "Athletic jacket": "outerwear",
 
   // ── Loungewear ───────────────────────────────────────────────
   "Pajama bottoms": "bottom",
+  "Pajama pants": "bottom",
   "Sleep shorts": "bottom",
   "Robe": "outerwear",
   "Nightgown": "dress",
   "Pajama set": "dress", // a one-piece pajama set covers full body
+  "Loungewear set": "dress",
+
+  // ── Underwear (the explicit "stay out of normal outfit slots"
+  //    category, but the slot still has to be sensible if surfaced)
+  "Briefs": "bottom",
+  "Hipster": "bottom",
+  "Boyshort": "bottom",
+  "Thong": "bottom",
+  "G-string": "bottom",
+  "High-waisted": "bottom",
+  "Cheeky": "bottom",
+  "Bikini": "bottom",
+  "Shapewear": "bottom",
+
+  // ── Extra Bottoms variations the AI commonly emits ───────────
+  "Pants": "bottom",
+  "Slacks": "bottom",
+  "Chinos": "bottom",
+  "Khakis": "bottom",
+  "Cargo pants": "bottom",
+  "Wide-leg pants": "bottom",
+  "Straight-leg pants": "bottom",
+  "Cropped pants": "bottom",
+  "Culottes": "bottom",
+  "Palazzo pants": "bottom",
+  "Skort": "bottom",
+
+  // ── Extra Outerwear variations ───────────────────────────────
+  "Bomber jacket": "outerwear",
+  "Bomber": "outerwear",
+  "Peacoat": "outerwear",
+  "Pea coat": "outerwear",
+  "Overcoat": "outerwear",
+  "Raincoat": "outerwear",
+  "Anorak": "outerwear",
+  "Shacket": "outerwear",
+  "Shirt jacket": "outerwear",
+  "Suit jacket": "outerwear",
+  "Sport coat": "outerwear",
+  "Kimono": "outerwear",
+  "Wrap": "outerwear",
+
+  // ── Extra Shoes variations ───────────────────────────────────
+  "Stilettos": "shoes",
+  "Combat boots": "shoes",
+  "Cowboy boots": "shoes",
+  "Hiking boots": "shoes",
+  "Rain boots": "shoes",
+  "Espadrilles": "shoes",
+  "Slides": "shoes",
+  "Trainers": "shoes",
+  "Athletic shoes": "shoes",
+  "Running shoes": "shoes",
+  "Tennis shoes": "shoes",
+  "Clogs": "shoes",
+  "Oxfords": "shoes",
+  "Brogues": "shoes",
+  "Ballet flats": "shoes",
+
+  // ── Extra Bags variations ────────────────────────────────────
+  "Purse": "bag",
+  "Hobo bag": "bag",
+  "Satchel": "bag",
+  "Duffel": "bag",
+  "Duffel bag": "bag",
+  "Messenger bag": "bag",
+
+  // ── Extra Accessories variations ─────────────────────────────
+  "Cap": "accessory",
+  "Baseball cap": "accessory",
+  "Bucket hat": "accessory",
+  "Fedora": "accessory",
+  "Sun hat": "accessory",
+  "Headband": "accessory",
+  "Hair clip": "accessory",
+  "Bandana": "accessory",
+  "Glasses": "accessory",
+  "Eyeglasses": "accessory",
+  "Goggles": "accessory",
 };
+
+// Keyword fallback for slot resolution. When the AI emits a compound
+// subtype that isn't in SUBTYPE_TO_SLOT verbatim ("tunic dress",
+// "athletic skirt", "running shoes", "jersey romper"), this list
+// catches the dominant word and routes to the right slot.
+//
+// Order matters: the FIRST keyword that appears anywhere in the
+// (lowercased) subtype wins. So "dress" / "gown" / "jumpsuit" come
+// before "shirt" so that "shirt dress" classifies as a dress, not
+// a top. Word-boundary regex match avoids false positives like
+// "stress" → "ress" → "dress".
+//
+// "Top"-leaning keywords land at the very end since most Tops just
+// fall through to the category-default "top" anyway — we only need
+// to catch the cases where the category itself is wrong (e.g. AI
+// tagged Activewear+T-shirt which would otherwise default to "top"
+// correctly, but Activewear+leggings would default to "top" wrong
+// without the SUBTYPE_TO_SLOT entry).
+const KEYWORD_TO_SLOT: ReadonlyArray<[string, Slot]> = [
+  // Full-length pieces — highest priority so "shirt dress" resolves
+  // to dress, not top.
+  ["dress", "dress"],
+  ["gown", "dress"],
+  ["jumpsuit", "dress"],
+  ["romper", "dress"],
+  ["overalls", "dress"],
+
+  // Outerwear — checked before "shirt"/anything top-ish.
+  ["coat", "outerwear"],
+  ["blazer", "outerwear"],
+  ["jacket", "outerwear"],
+  ["bomber", "outerwear"],
+  ["parka", "outerwear"],
+  ["puffer", "outerwear"],
+  ["trench", "outerwear"],
+  ["windbreaker", "outerwear"],
+  ["raincoat", "outerwear"],
+  ["shacket", "outerwear"],
+  ["poncho", "outerwear"],
+  ["cape", "outerwear"],
+  ["kimono", "outerwear"],
+  ["robe", "outerwear"],
+
+  // Bottoms
+  ["jeans", "bottom"],
+  ["pants", "bottom"],
+  ["trousers", "bottom"],
+  ["skirt", "bottom"],
+  ["shorts", "bottom"],
+  ["leggings", "bottom"],
+  ["joggers", "bottom"],
+  ["chinos", "bottom"],
+  ["khakis", "bottom"],
+  ["slacks", "bottom"],
+  ["sweatpants", "bottom"],
+  ["culottes", "bottom"],
+  ["palazzo", "bottom"],
+  ["capris", "bottom"],
+  ["capri", "bottom"],
+  ["thong", "bottom"],
+  ["briefs", "bottom"],
+
+  // Shoes (singular and plural — the regex uses word boundaries)
+  ["sneaker", "shoes"],
+  ["sneakers", "shoes"],
+  ["trainer", "shoes"],
+  ["trainers", "shoes"],
+  ["boot", "shoes"],
+  ["boots", "shoes"],
+  ["sandal", "shoes"],
+  ["sandals", "shoes"],
+  ["heel", "shoes"],
+  ["heels", "shoes"],
+  ["loafer", "shoes"],
+  ["loafers", "shoes"],
+  ["mule", "shoes"],
+  ["mules", "shoes"],
+  ["flats", "shoes"],
+  ["wedge", "shoes"],
+  ["wedges", "shoes"],
+  ["slipper", "shoes"],
+  ["slippers", "shoes"],
+  ["clog", "shoes"],
+  ["clogs", "shoes"],
+  ["oxford", "shoes"],
+  ["oxfords", "shoes"],
+  ["pump", "shoes"],
+  ["pumps", "shoes"],
+  ["espadrille", "shoes"],
+  ["espadrilles", "shoes"],
+  ["slides", "shoes"],
+
+  // Bags
+  ["tote", "bag"],
+  ["purse", "bag"],
+  ["clutch", "bag"],
+  ["backpack", "bag"],
+  ["satchel", "bag"],
+  ["duffel", "bag"],
+  ["crossbody", "bag"],
+  ["handbag", "bag"],
+  ["weekender", "bag"],
+
+  // Accessories — earring before ring (substring concern); hat
+  // before cap so "baseball cap" still matches cap.
+  ["earring", "accessory"],
+  ["earrings", "accessory"],
+  ["necklace", "accessory"],
+  ["bracelet", "accessory"],
+  ["bangle", "accessory"],
+  ["watch", "accessory"],
+  ["beanie", "accessory"],
+  ["fedora", "accessory"],
+  ["headband", "accessory"],
+  ["scarf", "accessory"],
+  ["belt", "accessory"],
+  ["sunglasses", "accessory"],
+  ["glove", "accessory"],
+  ["wallet", "accessory"],
+  ["bandana", "accessory"],
+  ["hat", "accessory"],
+  ["cap", "accessory"],
+
+  // Tops — bottom of the list. Most tops resolve via category
+  // default; these only matter when the category itself is wrong.
+  ["t-shirt", "top"],
+  ["tank", "top"],
+  ["blouse", "top"],
+  ["sweater", "top"],
+  ["hoodie", "top"],
+  ["sweatshirt", "top"],
+  ["polo", "top"],
+  ["bodysuit", "top"],
+  ["camisole", "top"],
+  ["halter", "top"],
+  ["tunic", "top"],
+  ["bra", "top"],
+];
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function keywordSlotForSubtype(subTypeLower: string): Slot | null {
+  for (const [keyword, slot] of KEYWORD_TO_SLOT) {
+    const re = new RegExp(`\\b${escapeRegex(keyword)}\\b`, "i");
+    if (re.test(subTypeLower)) return slot;
+  }
+  return null;
+}
 
 // Lowercase index of SUBTYPE_TO_SLOT so the lookup tolerates whatever
 // casing the AI tagger or a user types ("leggings", "Leggings",
@@ -400,18 +637,27 @@ const SUBTYPE_TO_SLOT_LOWER: Record<string, Slot> = (() => {
   return out;
 })();
 
-// Resolve the right slot for an item using its subType when an
-// override exists; falls back to the category-level default. Lookup is
-// case-insensitive and ignores leading/trailing whitespace — without
-// that, AI tags like "leggings" (lowercase) or "Bike Shorts" (title
-// case) silently miss the override and the item lands in the wrong
-// slot (Activewear's default is "top").
+// Resolve the right slot for an item, in order of confidence:
+//   1. Exact match against SUBTYPE_TO_SLOT (case-insensitive, trim)
+//      — handles every enumerated subtype directly.
+//   2. Word-boundary keyword match against KEYWORD_TO_SLOT — catches
+//      compound subtypes the AI invents that aren't in the table
+//      ("tunic dress" → dress, "athletic skirt" → bottom, "running
+//      shoes" → shoes, "shirt jacket" → outerwear).
+//   3. Category-level default — the safe fallback when both the
+//      exact and keyword passes miss.
+//   4. "accessory" as the last-resort when even the category is bogus.
 export function slotForItem(
   category: string | null | undefined,
   subType: string | null | undefined,
 ): Slot {
   const key = subType?.trim().toLowerCase();
-  if (key && SUBTYPE_TO_SLOT_LOWER[key]) return SUBTYPE_TO_SLOT_LOWER[key];
+  if (key) {
+    const exact = SUBTYPE_TO_SLOT_LOWER[key];
+    if (exact) return exact;
+    const fuzzy = keywordSlotForSubtype(key);
+    if (fuzzy) return fuzzy;
+  }
   if (category && (CATEGORIES as readonly string[]).includes(category)) {
     return CATEGORY_TO_SLOT[category as Category];
   }
