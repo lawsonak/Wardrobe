@@ -72,6 +72,18 @@ export default async function WardrobePage({
           }
         : {}),
     },
+    // Only fields the gallery's <ItemCard> actually renders. Without
+    // `select` Prisma pulls every column (notes, fitDetails, fitNotes,
+    // sizeSystem…) for every item, which is slow on large closets.
+    select: {
+      id: true,
+      imagePath: true,
+      imageBgRemovedPath: true,
+      category: true,
+      subType: true,
+      color: true,
+      isFavorite: true,
+    },
     orderBy: { createdAt: "desc" },
   });
 

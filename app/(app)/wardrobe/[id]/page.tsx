@@ -24,11 +24,25 @@ export default async function ItemDetail({
   const item = await prisma.item.findFirst({
     where: { id, ownerId: userId },
     include: {
+      // Just enough to render the "In outfits" thumbnail strip below —
+      // the previous shape used `include: { item: true }` which pulled
+      // every field (notes, fitDetails, …) for every companion item in
+      // every outfit. With the gallery's average outfit holding ~4
+      // pieces and this take=6, that was ~24 fat rows per detail view.
       outfitItems: {
-        include: {
+        select: {
           outfit: {
-            include: {
-              items: { include: { item: true } },
+            select: {
+              id: true,
+              name: true,
+              items: {
+                select: {
+                  slot: true,
+                  item: {
+                    select: { id: true, imagePath: true, imageBgRemovedPath: true },
+                  },
+                },
+              },
             },
           },
         },
