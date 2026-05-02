@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import { csvToList } from "@/lib/constants";
 import { firstNameFromUser } from "@/lib/userName";
 import NeedsReviewItem from "./NeedsReviewItem";
-import BulkAiTagButton from "./BulkAiTagButton";
+import BulkActionsBar from "./BulkActionsBar";
 
 export const dynamic = "force-dynamic";
 
@@ -48,10 +48,11 @@ export default async function NeedsReviewPage() {
             {firstName ? ` Fill them in when you have a moment, ${firstName}.` : " Fill them in when you have a moment."}
           </p>
           <div className="card p-3">
-            <BulkAiTagButton count={items.length} />
+            <BulkActionsBar itemIds={items.map((it) => it.id)} />
             <p className="mt-2 text-xs text-stone-500">
-              Runs Auto-tag on up to 25 items in one go. Items with a saved label/tag photo
-              get the most value out of this.
+              AI-tag runs Auto-tag on up to 25 items (label/tag photos help).
+              Background removal runs on the server with a notification when done.
+              Approve all moves every needs-review row to active.
             </p>
           </div>
           {items.map((item) => (
