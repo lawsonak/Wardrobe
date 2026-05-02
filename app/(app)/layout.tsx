@@ -5,6 +5,7 @@ import { firstNameFromUser, possessiveTitle } from "@/lib/userName";
 import MobileNav from "@/components/MobileNav";
 import ToastHost from "@/components/Toast";
 import ConfirmDialogHost from "@/components/ConfirmDialog";
+import NotificationBell from "@/components/NotificationBell";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -27,6 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <Link href="/collections" className="btn-ghost">Collections</Link>
               <Link href="/wishlist" className="btn-ghost">Wishlist</Link>
               <Link href="/outfits/builder" className="btn-ghost">Build</Link>
+              <NotificationBell />
               <Link
                 href="/settings"
                 className="btn-ghost grid h-9 w-9 place-items-center text-stone-500"
@@ -46,8 +48,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                 </button>
               </form>
             </nav>
-            {/* Mobile: settings + sign out */}
+            {/* Mobile: bell + settings + sign out */}
             <div className="flex items-center gap-1 sm:hidden">
+              <NotificationBell />
               <Link
                 href="/settings"
                 className="btn-ghost grid h-8 w-8 place-items-center text-stone-500"
