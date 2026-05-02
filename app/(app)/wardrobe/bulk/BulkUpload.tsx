@@ -57,7 +57,6 @@ const STEPS: Array<{ n: Step; label: string }> = [
 //      stays visible while server work continues.
 export default function BulkUpload() {
   const router = useRouter();
-  const fileRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>(1);
   const [defaultCategory, setDefaultCategory] = useState<DefaultCategory>(AUTO_CATEGORY);
   const [defaultStatus, setDefaultStatus] = useState<"needs_review" | "active">("needs_review");
@@ -97,10 +96,6 @@ export default function BulkUpload() {
       setPhase("done");
     }
   }, [jobs, removeBg, step, phase]);
-
-  function pickFiles() {
-    fileRef.current?.click();
-  }
 
   async function onFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files ? Array.from(e.target.files) : [];
@@ -349,15 +344,6 @@ export default function BulkUpload() {
     <div className="space-y-5">
       <Stepper step={step} />
 
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/*,.heic,.heif"
-        multiple
-        onChange={onFiles}
-        className="hidden"
-      />
-
       {step === 1 && (
         <Step1Choose
           defaultCategory={defaultCategory}
@@ -371,7 +357,7 @@ export default function BulkUpload() {
           removeBg={removeBg}
           setRemoveBg={setRemoveBg}
           jobs={jobs}
-          onPickFiles={pickFiles}
+          onFiles={onFiles}
           onRemove={remove}
           onContinue={startPipeline}
           autoCategoryWithoutAi={autoCategoryWithoutAi}
@@ -462,7 +448,7 @@ function Step1Choose({
   removeBg,
   setRemoveBg,
   jobs,
-  onPickFiles,
+  onFiles,
   onRemove,
   onContinue,
   autoCategoryWithoutAi,
@@ -478,7 +464,7 @@ function Step1Choose({
   removeBg: boolean;
   setRemoveBg: (v: boolean) => void;
   jobs: Job[];
-  onPickFiles: () => void;
+  onFiles: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onRemove: (id: string) => void;
   onContinue: () => void;
   autoCategoryWithoutAi: boolean;
@@ -580,9 +566,20 @@ function Step1Choose({
                   : `${jobs.length} photo${jobs.length === 1 ? "" : "s"} ready.`}
               </p>
             </div>
-            <button type="button" onClick={onPickFiles} className="btn-primary">
+            {/* The native file picker is the most reliable trigger on
+                iOS Safari — wrapping the visible button as a <label> for
+                a hidden <input> avoids the programmatic .click() dance
+                that some browsers gate on user-gesture context. */}
+            <label className="btn-primary cursor-pointer">
               📸 {jobs.length === 0 ? "Pick photos" : "Add more"}
-            </button>
+              <input
+                type="file"
+                accept="image/*,.heic,.heif"
+                multiple
+                onChange={onFiles}
+                className="sr-only"
+              />
+            </label>
           </div>
 
           {jobs.length === 0 ? (
