@@ -157,12 +157,17 @@ export default function WishlistForm({ initial }: { initial?: InitialValues }) {
     setError(null);
     setSubmitting(true);
 
+    // Bare-domain input ("madewell.com/jeans") is friendlier to type
+    // than a full URL — normalize to https:// before saving so the
+    // stored value always parses as a real URL downstream.
+    const normalizedLink = normalizeUrl(link);
+
     try {
       if (isEdit) {
         const res = await fetch(`/api/wishlist/${initial!.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, category: category || null, brand: brand || null, link: link || null, price: price || null, priority, occasion: occasion || null, notes: notes || null, fillsGap, giftIdea }),
+          body: JSON.stringify({ name, category: category || null, brand: brand || null, link: normalizedLink || null, price: price || null, priority, occasion: occasion || null, notes: notes || null, fillsGap, giftIdea }),
         });
         if (!res.ok) throw new Error(await res.text());
       } else {
@@ -170,7 +175,7 @@ export default function WishlistForm({ initial }: { initial?: InitialValues }) {
         fd.append("name", name);
         if (category) fd.append("category", category);
         if (brand) fd.append("brand", brand);
-        if (link) fd.append("link", link);
+        if (normalizedLink) fd.append("link", normalizedLink);
         if (price) fd.append("price", price);
         fd.append("priority", priority);
         if (occasion) fd.append("occasion", occasion);
@@ -263,7 +268,20 @@ export default function WishlistForm({ initial }: { initial?: InitialValues }) {
 
         <div>
           <label className="label">Link</label>
-          <input className="input" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://…" type="url" />
+          <input
+            className="input"
+            value={link}
+            onChange={(e) => setLink(e.target.value)}
+            placeholder="https://… or madewell.com/jeans"
+            // Plain text rather than type=url so HTML5's strict
+            // validation doesn't reject bare domains. The form
+            // normalizer below adds https:// on submit if missing.
+            type="text"
+            inputMode="url"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+          />
         </div>
 
         <div>
@@ -344,4 +362,19 @@ export default function WishlistForm({ initial }: { initial?: InitialValues }) {
       </div>
     </form>
   );
+}
+
+// Accept bare-domain links ("madewell.com/jeans") in addition to full
+// URLs. Empty/null/whitespace passes through unchanged.
+function normalizeUrl(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  // Looks like a bare domain (or domain + path)? Add https://. We don't
+  // try to validate the host — the wishlist row's "link" is free-form,
+  // and the AI auto-fill / browser will surface a bad value visually.
+  if (/^[a-z0-9-]+(\.[a-z0-9-]+)+(\/|$)/i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
 }
