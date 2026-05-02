@@ -109,7 +109,9 @@ export const SUBTYPES_BY_CATEGORY: Record<Category, string[]> = {
     "Athletic bottoms",
     "Athletic dress",
     "Workout shorts",
+    "Bike shorts",
     "Yoga pants",
+    "Leggings",
     "Track jacket",
     "Tennis skirt",
   ],
@@ -372,6 +374,8 @@ export const SUBTYPE_TO_SLOT: Record<string, Slot> = {
   // ── Activewear ───────────────────────────────────────────────
   "Athletic bottoms": "bottom",
   "Workout shorts": "bottom",
+  "Bike shorts": "bottom",
+  "Biker shorts": "bottom",
   "Yoga pants": "bottom",
   "Tennis skirt": "bottom",
   "Athletic dress": "dress",
@@ -385,13 +389,29 @@ export const SUBTYPE_TO_SLOT: Record<string, Slot> = {
   "Pajama set": "dress", // a one-piece pajama set covers full body
 };
 
+// Lowercase index of SUBTYPE_TO_SLOT so the lookup tolerates whatever
+// casing the AI tagger or a user types ("leggings", "Leggings",
+// "LEGGINGS" all resolve the same). Built once at module load.
+const SUBTYPE_TO_SLOT_LOWER: Record<string, Slot> = (() => {
+  const out: Record<string, Slot> = {};
+  for (const [k, v] of Object.entries(SUBTYPE_TO_SLOT)) {
+    out[k.toLowerCase()] = v;
+  }
+  return out;
+})();
+
 // Resolve the right slot for an item using its subType when an
-// override exists; falls back to the category-level default.
+// override exists; falls back to the category-level default. Lookup is
+// case-insensitive and ignores leading/trailing whitespace — without
+// that, AI tags like "leggings" (lowercase) or "Bike Shorts" (title
+// case) silently miss the override and the item lands in the wrong
+// slot (Activewear's default is "top").
 export function slotForItem(
   category: string | null | undefined,
   subType: string | null | undefined,
 ): Slot {
-  if (subType && SUBTYPE_TO_SLOT[subType]) return SUBTYPE_TO_SLOT[subType];
+  const key = subType?.trim().toLowerCase();
+  if (key && SUBTYPE_TO_SLOT_LOWER[key]) return SUBTYPE_TO_SLOT_LOWER[key];
   if (category && (CATEGORIES as readonly string[]).includes(category)) {
     return CATEGORY_TO_SLOT[category as Category];
   }
