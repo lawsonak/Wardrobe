@@ -30,6 +30,11 @@ export default async function WardrobePage({
   const favOnly = sp.fav === "1";
   const q = sp.q?.trim();
   const statusFilter = sp.status;
+  // "Unlabeled" surfaces items still waiting for tagging — produced
+  // by the bulk upload flow before AI runs (status=needs_review) or
+  // by anyone uploading with the AI off. Implemented as a one-tap
+  // quick filter that just rewrites the existing status query param.
+  const unlabeledOnly = statusFilter === "needs_review";
   const color = sp.color?.trim() || undefined;
   const season = sp.season?.trim() || undefined;
   const activity = sp.activity?.trim() || undefined;
@@ -52,7 +57,12 @@ export default async function WardrobePage({
       })()
     : null;
 
-  const items = await prisma.item.findMany({
+  // Always show how many items are unlabeled so the pill carries a
+  // badge even when the filter isn't active. Cheap COUNT query, owner-
+  // scoped, fires in parallel with the gallery fetch below.
+  const [unlabeledCount, items] = await Promise.all([
+    prisma.item.count({ where: { ownerId: userId, status: "needs_review" } }),
+    prisma.item.findMany({
     where: {
       ownerId: userId,
       ...(category ? { category } : {}),
@@ -85,7 +95,8 @@ export default async function WardrobePage({
       isFavorite: true,
     },
     orderBy: { createdAt: "desc" },
-  });
+    }),
+  ]);
 
   const filtered = items;
 
@@ -96,6 +107,7 @@ export default async function WardrobePage({
   if (season) activeFilters.push({ label: season, href: dropParam(sp, "season") });
   if (activity) activeFilters.push({ label: activity, href: dropParam(sp, "activity") });
   if (favOnly) activeFilters.push({ label: "favorites", href: dropParam(sp, "fav") });
+  if (unlabeledOnly) activeFilters.push({ label: "unlabeled", href: dropParam(sp, "status") });
 
   return (
     <div className="space-y-5">
@@ -113,6 +125,30 @@ export default async function WardrobePage({
       </div>
 
       <SmartSearchBar initialQuery={q ?? ""} hasItems={items.length > 0} />
+
+      {/* One-tap quick filters. Sit right under the search bar so they
+          double as visible affordances for "what kinds of slices does
+          this view support". */}
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <Link
+          href={favOnly ? dropParam(sp, "fav") : `/wardrobe?${withParam(sp, "fav", "1")}`}
+          className={"chip " + (favOnly ? "chip-on" : "chip-off")}
+        >
+          ★ Favorites
+        </Link>
+        <Link
+          href={unlabeledOnly ? dropParam(sp, "status") : `/wardrobe?${withParam(sp, "status", "needs_review")}`}
+          className={"chip " + (unlabeledOnly ? "chip-on" : "chip-off")}
+          title="Items waiting for AI tags or manual cleanup"
+        >
+          Unlabeled
+          {unlabeledCount > 0 && (
+            <span className={"ml-1 rounded-full px-1.5 text-[10px] " + (unlabeledOnly ? "bg-white/25 text-white" : "bg-stone-100 text-stone-500")}>
+              {unlabeledCount}
+            </span>
+          )}
+        </Link>
+      </div>
 
       {/* Quick taxonomy filter (form, kept for keyboard-only / no-AI users) */}
       <details className="card p-3 text-sm">
@@ -183,4 +219,16 @@ function dropParam(sp: Record<string, string | undefined>, key: string): string 
   }
   const qs = u.toString();
   return qs ? `/wardrobe?${qs}` : "/wardrobe";
+}
+
+// Build the query string with one parameter set/replaced. Used by the
+// quick-filter pills so toggling them preserves any other active filters.
+function withParam(sp: Record<string, string | undefined>, key: string, value: string): string {
+  const u = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) {
+    if (k === key || !v) continue;
+    u.set(k, v);
+  }
+  u.set(key, value);
+  return u.toString();
 }
