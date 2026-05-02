@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { haptic } from "@/lib/haptics";
 import ProgressBar from "@/components/ProgressBar";
@@ -181,29 +182,16 @@ export default function TodaysOutfitCard({
         </div>
       )}
 
-      {/* Fallback tile grid when we have items but no try-on image (no
-          mannequin set up, or the compose step failed). */}
-      {!showHero && picked && picked.pickedItems.length > 0 && (
-        <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4">
-          {picked.pickedItems.map((it) => {
-            const src = it.imageBgRemovedPath
-              ? `/api/uploads/${it.imageBgRemovedPath}`
-              : `/api/uploads/${it.imagePath}`;
-            return (
-              <div
-                key={it.id}
-                className="tile-bg flex aspect-square items-center justify-center rounded-xl bg-white/60 p-1 ring-1 ring-stone-100"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={src}
-                  alt={it.subType ?? it.category}
-                  className="h-full w-full object-contain"
-                />
-              </div>
-            );
-          })}
-        </div>
+      {/* Picked-items row. Doubles as:
+          - a clickable legend under the try-on hero so the user can
+            tap a piece to open its detail page (fixes "I can see it
+            in the image, how do I open it?")
+          - the fallback view when there's no try-on image (no
+            mannequin set up, or the compose step failed)
+          Same component either way so the clickable affordance is
+          consistent. */}
+      {picked && picked.pickedItems.length > 0 && (
+        <PickedItemsRow items={picked.pickedItems} />
       )}
 
       {picked && picked.reasoning && (
@@ -256,5 +244,42 @@ export default function TodaysOutfitCard({
         )}
       </div>
     </section>
+  );
+}
+
+// Row of clickable thumbnails representing the items in the pick.
+// Each links to the item's detail page so the user can dig into a
+// piece they want to know more about (or unfavorite, edit, delete).
+// Sized to feel secondary to the hero try-on — a labeled legend
+// rather than a primary gallery.
+function PickedItemsRow({ items }: { items: PickedItem[] }) {
+  return (
+    <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4">
+      {items.map((it) => {
+        const src = it.imageBgRemovedPath
+          ? `/api/uploads/${it.imageBgRemovedPath}`
+          : `/api/uploads/${it.imagePath}`;
+        return (
+          <Link
+            key={it.id}
+            href={`/wardrobe/${it.id}`}
+            className="group relative overflow-hidden rounded-xl bg-white/60 ring-1 ring-stone-100 transition hover:ring-blush-300"
+            aria-label={`Open ${it.subType ?? it.category} details`}
+          >
+            <div className="tile-bg flex aspect-square items-center justify-center p-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={src}
+                alt=""
+                className="h-full w-full object-contain"
+              />
+            </div>
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/45 to-transparent px-2 py-1 text-[11px] font-medium text-white">
+              {it.subType ?? it.category}
+            </div>
+          </Link>
+        );
+      })}
+    </div>
   );
 }
