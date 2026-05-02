@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { lookupProductOnline } from "@/lib/ai/productLookup";
+import { lookupProductFromUrl, lookupProductOnline } from "@/lib/ai/productLookup";
 
 export const runtime = "nodejs";
 // Grounded search + content fetch can take 5-15s. Allow generous headroom.
@@ -10,6 +10,12 @@ export const maxDuration = 60;
 // search calls. Sufficient for this single-server personal app.
 const inflight = new Set<string>();
 
+// POST accepts either:
+//   - { url } → direct-fetch path (productMeta + text-mode AI for
+//     material/care). Used by the "Paste a product link" panel.
+//   - { brand, subType?, color?, category? } → grounded-search path
+//     (existing behavior). Used by the "Look up online" button next
+//     to the brand field.
 export async function POST(req: NextRequest) {
   if (!process.env.GEMINI_API_KEY) {
     return NextResponse.json(
@@ -26,14 +32,15 @@ export async function POST(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json().catch(() => ({} as Record<string, unknown>));
+  const url = typeof body.url === "string" ? body.url.trim() : "";
   const brand = typeof body.brand === "string" ? body.brand.trim() : "";
   const subType = typeof body.subType === "string" ? body.subType.trim() : null;
   const color = typeof body.color === "string" ? body.color.trim() : null;
   const category = typeof body.category === "string" ? body.category.trim() : null;
 
-  if (!brand) {
+  if (!url && !brand) {
     return NextResponse.json(
-      { error: "Brand is required to look up a product online." },
+      { error: "Provide a product URL or a brand to look up." },
       { status: 400 },
     );
   }
@@ -47,7 +54,9 @@ export async function POST(req: NextRequest) {
   inflight.add(userId);
 
   try {
-    const result = await lookupProductOnline({ brand, subType, color, category });
+    const result = url
+      ? await lookupProductFromUrl(url)
+      : await lookupProductOnline({ brand, subType, color, category });
     if (!result.ok) {
       return NextResponse.json(
         { enabled: true, error: result.error, debug: result.debug },

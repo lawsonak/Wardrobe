@@ -1,13 +1,23 @@
-// Use Gemini's grounded Google Search tool to look up real product
-// details (fabric, care, description, retail price) from the public web.
-// Triggered manually from the item edit page when the user has a brand
-// + subType but is missing structured details — the AI tagger pulls
-// what it can from the photo, this fills in things you can only get
-// from a product page.
+// Two paths to look up a real product on the public web from the
+// item edit page:
+//
+// 1. `lookupProductOnline({ brand, subType, color, category })` —
+//    Gemini grounded Google Search. Used when the user has a brand
+//    + subType but no URL.
+//
+// 2. `lookupProductFromUrl(url)` — server-side `fetchProductMeta`
+//    pulls Open Graph + JSON-LD Product schema directly from the
+//    page, then a narrow Gemini text-mode call reads a cleaned text
+//    excerpt to extract material + care (which OG/JSON-LD usually
+//    omits). Faster, cheaper, no grounded-search hallucinations.
 //
 // Note: grounded responses can't be paired with `responseSchema`, so
-// we ask for JSON in the prompt and parse the text. Failures are
-// non-fatal — the UI keeps the existing values and shows the error.
+// the brand-search path asks for JSON in the prompt and parses the
+// text. The URL path uses responseSchema since it's a non-grounded
+// text call. Failures in either are non-fatal — the UI keeps the
+// existing values and shows the error.
+
+import { fetchProductMeta } from "@/lib/productMeta";
 
 const TEXT_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
@@ -204,6 +214,169 @@ export async function lookupProductOnline(
       debug: { status: httpStatus, error: detail, rawText },
     };
   }
+}
+
+// URL-driven lookup. Faster + more accurate than the brand-search
+// path when the user has the actual product URL handy: we fetch the
+// page server-side via productMeta (parsing OG + JSON-LD), then ask
+// Gemini in narrow text mode to read the cleaned page text and pull
+// out the fields OG/JSON-LD usually doesn't carry — material
+// composition and care instructions. This avoids both the
+// hallucination footgun (model fetching the wrong page) and the
+// extra cost of grounded search.
+//
+// Bare-domain URLs ("madewell.com/jeans") are accepted and prefixed
+// with https:// before the fetch.
+const URL_RE = /^https?:\/\//i;
+const BARE_DOMAIN_RE = /^[a-z0-9-]+(\.[a-z0-9-]+)+(\/|$)/i;
+
+export async function lookupProductFromUrl(
+  rawUrl: string,
+): Promise<ProductLookupResult> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) {
+    return {
+      ok: false,
+      error: "GEMINI_API_KEY not set",
+      suggestions: {},
+      debug: { error: "GEMINI_API_KEY not set" },
+    };
+  }
+  const trimmed = rawUrl.trim();
+  if (!trimmed) {
+    return {
+      ok: false,
+      error: "Paste a product URL to look up.",
+      suggestions: {},
+      debug: { error: "no url" },
+    };
+  }
+  const url = URL_RE.test(trimmed)
+    ? trimmed
+    : BARE_DOMAIN_RE.test(trimmed)
+      ? `https://${trimmed}`
+      : null;
+  if (!url) {
+    return {
+      ok: false,
+      error: "Doesn't look like a URL — paste a product link or use the brand search instead.",
+      suggestions: {},
+      debug: { error: "not a url" },
+    };
+  }
+
+  // Direct fetch — pulls OG + JSON-LD, plus a cleaned text excerpt
+  // for the AI to read material/care from.
+  const fetched = await fetchProductMeta(url, { includePageText: true });
+  if (!fetched.ok) {
+    return {
+      ok: false,
+      error: fetched.error,
+      suggestions: {},
+      debug: { error: fetched.error, rawText: fetched.debug.reason },
+    };
+  }
+  const meta = fetched.meta;
+
+  // Narrow Gemini classification: read the page text we already have,
+  // pull material + careNotes (which OG/JSON-LD usually omit) and a
+  // tighter description if the OG one was thin. retailPrice from the
+  // metadata wins; ask the model only if we don't have one.
+  const detailsPrompt = [
+    "You're given an excerpt of an apparel/accessory product page. Read it and return a SINGLE JSON object — nothing else, no prose, no markdown:",
+    "  - material: fabric composition exactly as printed (e.g. \"100% cotton\", \"95% modal, 5% spandex\"). Null if not mentioned.",
+    "  - careNotes: care instructions in one short line (e.g. \"Machine wash cold, tumble dry low\"). Null if not mentioned.",
+    "  - description: a 1-2 sentence factual description of the cut/fit/notable features. Null if you can't pull a real one.",
+    "  - retailPrice: original retail price as a string with currency (e.g. \"$98 USD\"). Null if not stated.",
+    "Hard rules: use null (not empty string) for any field you don't have evidence for. Don't invent.",
+    "",
+    `Product name: ${meta.name ?? "(unknown)"}`,
+    `Brand: ${meta.brand ?? "(unknown)"}`,
+    `Source: ${meta.source ?? "(unknown)"}`,
+    "",
+    "Page excerpt:",
+    meta.pageText ?? meta.description ?? "",
+  ].join("\n");
+
+  const body = {
+    contents: [{ role: "user", parts: [{ text: detailsPrompt }] }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: "OBJECT",
+        properties: {
+          material: { type: "STRING", nullable: true },
+          careNotes: { type: "STRING", nullable: true },
+          description: { type: "STRING", nullable: true },
+          retailPrice: { type: "STRING", nullable: true },
+        },
+      },
+      temperature: 0.1,
+    },
+  };
+
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+    TEXT_MODEL,
+  )}:generateContent?key=${encodeURIComponent(key)}`;
+
+  let aiOut: { material?: string; careNotes?: string; description?: string; retailPrice?: string } = {};
+  try {
+    const res = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+      const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join("") ?? "";
+      if (text.trim()) {
+        try {
+          aiOut = JSON.parse(text);
+        } catch {
+          /* empty aiOut keeps the OG/JSON-LD-only path working */
+        }
+      }
+    }
+  } catch {
+    /* AI failure is non-fatal — return what we have from OG/JSON-LD */
+  }
+
+  // Merge: prefer the AI's material/careNotes (they aren't in OG),
+  // prefer OG/JSON-LD's price + description when we have them.
+  const merged: ProductLookupSuggestion = {
+    material: typeof aiOut.material === "string" && aiOut.material.trim()
+      ? aiOut.material.trim().slice(0, 240)
+      : undefined,
+    careNotes: typeof aiOut.careNotes === "string" && aiOut.careNotes.trim()
+      ? aiOut.careNotes.trim().slice(0, 240)
+      : undefined,
+    description: meta.description?.trim()
+      || (typeof aiOut.description === "string" && aiOut.description.trim()
+        ? aiOut.description.trim().slice(0, 600)
+        : undefined),
+    retailPrice: meta.price
+      || (typeof aiOut.retailPrice === "string" && aiOut.retailPrice.trim()
+        ? aiOut.retailPrice.trim().slice(0, 60)
+        : undefined),
+    productUrl: meta.productUrl ?? url,
+  };
+
+  // Drop empty fields so the form's "only fill empties" merge doesn't
+  // see noise.
+  const sanitized: ProductLookupSuggestion = {};
+  for (const [k, v] of Object.entries(merged) as Array<[keyof ProductLookupSuggestion, string | undefined]>) {
+    if (typeof v === "string" && v.trim()) sanitized[k] = v.trim();
+  }
+
+  return {
+    ok: true,
+    suggestions: sanitized,
+    debug: {
+      status: 200,
+      rawText: `direct-fetch from ${meta.source} (jsonld=${fetched.debug.usedJsonLd ? "y" : "n"} og=${fetched.debug.usedOg ? "y" : "n"} ai=${Object.keys(aiOut).length > 0 ? "y" : "n"})`,
+      sources: [meta.productUrl ?? url],
+    },
+  };
 }
 
 function sanitize(raw: unknown): ProductLookupSuggestion {
