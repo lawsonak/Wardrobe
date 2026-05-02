@@ -82,14 +82,18 @@ async function runBatchAndNotify(userId: string, itemIds: string[]): Promise<voi
     const total = itemIds.length;
     const ok = result.succeeded.length;
     const errors = result.failed.length;
+    // When every item failed, swap the title to "failed" and bubble the
+    // first error up so the user has a real diagnostic in the bell drop-
+    // down rather than a generic "0 of 5 succeeded".
+    const allFailed = ok === 0 && errors > 0;
+    const firstError = result.failed[0]?.error;
+    const title = allFailed ? "Background removal failed" : "Background removal complete";
+    const body = allFailed
+      ? `Couldn't cut out any of ${total} item${total === 1 ? "" : "s"}. First error: ${firstError ?? "unknown"}`
+      : `Cut out backgrounds for ${ok} of ${total} item${total === 1 ? "" : "s"}${errors > 0 ? `, ${errors} failed` : ""}.`;
     await prisma.notification
       .create({
-        data: {
-          ownerId: userId,
-          title: "Background removal complete",
-          body: `Cut out backgrounds for ${ok} of ${total} item${total === 1 ? "" : "s"}${errors > 0 ? `, ${errors} failed` : ""}.`,
-          href: "/wardrobe",
-        },
+        data: { ownerId: userId, title, body, href: "/wardrobe" },
       })
       .catch(() => {});
   } catch (err) {
