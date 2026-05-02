@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import CollectionCard from "./CollectionCard";
 
 export const dynamic = "force-dynamic";
 
@@ -42,82 +43,31 @@ export default async function CollectionsPage() {
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2">
           {collections.map((c) => {
-            const isTrip = c.kind === "trip";
-            const subtitle = isTrip
-              ? [c.destination, formatDateRange(c.startDate, c.endDate)].filter(Boolean).join(" · ")
-              : [c.occasion, c.season].filter(Boolean).join(" · ");
-            // Shrink-to-fit: keep the preview card the same overall
-            // shape (aspect 3:2) and use 2 rows. As the collection
-            // grows, the column count steps up (3 → 4 → 5) so more
-            // items fit at smaller sizes without going below
-            // recognizable. Past 10 items the strip overflows
-            // horizontally so the user can swipe through the rest.
-            const itemCount = c.items.length;
-            const cols = Math.max(3, Math.min(5, Math.ceil(itemCount / 2)));
-            const overflows = itemCount > 10;
-            const gridStyle: React.CSSProperties = overflows
-              ? {
-                  gridTemplateRows: "repeat(2, minmax(0, 1fr))",
-                  gridAutoFlow: "column",
-                  // 5 cols visible per "page"; rest scroll. Keeps tile
-                  // size consistent regardless of collection size.
-                  gridAutoColumns: "calc((100% - 1.5rem - 2rem) / 5)",
-                }
-              : {
-                  gridTemplateRows: "repeat(2, minmax(0, 1fr))",
-                  gridAutoFlow: "column",
-                  gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-                };
+            const range = formatDateRange(c.startDate, c.endDate);
+            const startLabel = c.startDate ? formatSingle(c.startDate) : null;
+            const endLabel = c.endDate ? formatSingle(c.endDate) : null;
             return (
-              <li key={c.id} className="card overflow-hidden transition hover:shadow-md">
-                {itemCount === 0 ? (
-                  <Link
-                    href={`/collections/${c.id}`}
-                    className="tile-bg flex aspect-[3/2] items-center justify-center text-sm text-stone-400"
-                  >
-                    empty — open to add pieces
-                  </Link>
-                ) : (
-                  <div
-                    className="tile-bg no-scrollbar grid aspect-[3/2] snap-x gap-2 overflow-x-auto p-3"
-                    style={gridStyle}
-                    aria-label={`${c.name} preview${overflows ? " — swipe to see more" : ""}`}
-                  >
-                    {c.items.map(({ item }) => {
-                      const src = item.imageBgRemovedPath
-                        ? `/api/uploads/${item.imageBgRemovedPath}`
-                        : `/api/uploads/${item.imagePath}`;
-                      return (
-                        <Link
-                          key={item.id}
-                          href={`/collections/${c.id}`}
-                          className="flex snap-start items-center justify-center rounded-xl bg-white/60 p-1"
-                          aria-label={`${item.subType ?? item.category} — open ${c.name}`}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={src}
-                            alt={item.subType ?? item.category}
-                            draggable={false}
-                            className="h-full w-full object-contain"
-                          />
-                        </Link>
-                      );
-                    })}
-                  </div>
-                )}
-                <Link href={`/collections/${c.id}`} className="block px-4 py-3">
-                  <p className="truncate font-display text-lg text-stone-800">
-                    <span className="mr-1.5" aria-hidden>{isTrip ? "✈️" : "🧺"}</span>
-                    {c.name}
-                  </p>
-                  <p className="truncate text-xs text-stone-500">
-                    {subtitle || "—"}
-                    <span className="text-stone-300"> · </span>
-                    {c._count.items} piece{c._count.items === 1 ? "" : "s"}
-                  </p>
-                </Link>
-              </li>
+              <CollectionCard
+                key={c.id}
+                collection={{
+                  id: c.id,
+                  name: c.name,
+                  kind: c.kind,
+                  destination: c.destination,
+                  occasion: c.occasion,
+                  season: c.season,
+                  startDateLabel: range || startLabel,
+                  endDateLabel: range ? null : endLabel,
+                  itemCount: c._count.items,
+                  items: c.items.map(({ item }) => ({
+                    id: item.id,
+                    imagePath: item.imagePath,
+                    imageBgRemovedPath: item.imageBgRemovedPath,
+                    category: item.category,
+                    subType: item.subType,
+                  })),
+                }}
+              />
             );
           })}
         </ul>
@@ -127,13 +77,14 @@ export default async function CollectionsPage() {
 }
 
 function formatDateRange(start: Date | null, end: Date | null): string {
-  if (!start && !end) return "";
+  if (!start || !end) return "";
   const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-  if (start && end) {
-    const sameMonth = start.getUTCMonth() === end.getUTCMonth() && start.getUTCFullYear() === end.getUTCFullYear();
-    return sameMonth
-      ? `${fmt(start).split(" ")[0]} ${start.getUTCDate()}–${end.getUTCDate()}`
-      : `${fmt(start)} → ${fmt(end)}`;
-  }
-  return fmt((start ?? end)!);
+  const sameMonth = start.getUTCMonth() === end.getUTCMonth() && start.getUTCFullYear() === end.getUTCFullYear();
+  return sameMonth
+    ? `${fmt(start).split(" ")[0]} ${start.getUTCDate()}–${end.getUTCDate()}`
+    : `${fmt(start)} → ${fmt(end)}`;
+}
+
+function formatSingle(d: Date): string {
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
