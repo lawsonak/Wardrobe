@@ -44,6 +44,17 @@ export type WishlistLookupResult =
   | { ok: false; error: string; suggestions: Record<string, never>; debug: WishlistLookupDebug };
 
 const URL_RE = /^https?:\/\//i;
+// Bare-domain matcher: at least one dot, alphanumeric/hyphen tokens,
+// optional path. Used to accept "madewell.com/jeans" as a URL too.
+const BARE_DOMAIN_RE = /^[a-z0-9-]+(\.[a-z0-9-]+)+(\/|$)/i;
+
+// Treat both `https://...` URLs and bare domains ("madewell.com/...")
+// as URL input. Returns the canonical https-prefixed form.
+function asUrlInput(query: string): string | null {
+  if (URL_RE.test(query)) return query;
+  if (BARE_DOMAIN_RE.test(query)) return `https://${query}`;
+  return null;
+}
 
 // Amazon URLs come with long tracking suffixes ("/ref=…", marketplace
 // query strings, etc.) and the site often blocks bots — both push the
@@ -93,12 +104,15 @@ export async function lookupWishlistProduct(
     };
   }
 
-  const isUrl = URL_RE.test(query);
+  // Detect URL vs free-text query. Accept bare domains too — auto-
+  // prepending https:// is a no-op when the user already typed it.
+  const urlForm = asUrlInput(query);
+  const isUrl = !!urlForm;
   // Amazon URLs in particular drop a lot of tracking junk and the site
   // routinely blocks scrapers — canonicalize first so the model sees a
   // stable address. No-op for non-Amazon input.
-  const cleanedQuery = isUrl ? canonicalizeAmazonUrl(query) : query;
-  const inputHost = isUrl ? safeHost(cleanedQuery) : null;
+  const cleanedQuery = urlForm ? canonicalizeAmazonUrl(urlForm) : query;
+  const inputHost = urlForm ? safeHost(cleanedQuery) : null;
 
   const taskLine = isUrl
     ? `Visit this exact URL: ${cleanedQuery}\nIt's a product page on a clothing or accessory retailer's site.`
