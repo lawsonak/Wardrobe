@@ -99,7 +99,14 @@ export default function ItemCard({
           // Hide the heart in compact mode unless it's already favorited —
           // small thumbnails get visually busy otherwise. Tap the item to
           // favorite from the detail page.
-          compact && !fav && "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+          //
+          // The hover-to-reveal effect is gated to `@media (hover: hover)`
+          // so it only applies on devices with a real pointer (desktop
+          // mouse). On touch devices the heart stays visible — without
+          // this guard, the first tap on a card fires :hover (revealing
+          // the heart) and only the second tap fires the link click,
+          // which felt like a "double-click to open" bug.
+          compact && !fav && "[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100",
           fav ? "text-blush-600" : "text-stone-400 hover:text-blush-500",
         )}
       >
