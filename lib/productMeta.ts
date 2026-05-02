@@ -50,6 +50,20 @@ export type ProductMeta = {
   productUrl?: string;
   /** Hostname of the page we fetched, lowercase. */
   source?: string;
+  /** Optional cleaned-text excerpt of the page body (no HTML, no
+   *  scripts/styles, normalized whitespace), capped at ~8KB. Useful
+   *  when a downstream AI classification step needs to read fields
+   *  that aren't in OG / JSON-LD (e.g. material composition or care
+   *  instructions buried in a "Details" accordion). Opt-in via the
+   *  `includePageText` option. */
+  pageText?: string;
+};
+
+export type FetchOptions = {
+  /** Include a cleaned-text excerpt of the body in `meta.pageText`.
+   *  Off by default — only useful when a downstream caller needs to
+   *  extract fields beyond OG/JSON-LD via an AI classification step. */
+  includePageText?: boolean;
 };
 
 export type ProductMetaResult =
@@ -71,7 +85,10 @@ const PRIVATE_HOSTS = new Set([
   "::1",
 ]);
 
-export async function fetchProductMeta(url: string): Promise<ProductMetaResult> {
+export async function fetchProductMeta(
+  url: string,
+  options: FetchOptions = {},
+): Promise<ProductMetaResult> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -158,6 +175,10 @@ export async function fetchProductMeta(url: string): Promise<ProductMetaResult> 
       error: `${host} didn't expose product metadata`,
       debug: { source: host, status: res.status, reason: "no og/json-ld" },
     };
+  }
+
+  if (options.includePageText) {
+    meta.pageText = stripToText(html).slice(0, 8000);
   }
 
   return {
@@ -307,6 +328,23 @@ function formatPrice(amount: string, currency: string): string {
   const c = (currency || "USD").toUpperCase();
   if (c === "USD") return `$${n}`;
   return `${n} ${c}`;
+}
+
+// Best-effort HTML→text. Strips <script>, <style>, <noscript> blocks
+// and tags entirely, decodes common entities, and collapses runs of
+// whitespace. Not a full parser — fine for "give the AI a readable
+// excerpt of the page" but don't trust it for layout-sensitive work.
+function stripToText(html: string): string {
+  return decodeHtml(
+    html
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+      .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ")
+      .replace(/<!--[\s\S]*?-->/g, " ")
+      .replace(/<\/?[a-z][^>]*>/gi, " "),
+  )
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function decodeHtml(s: string): string {

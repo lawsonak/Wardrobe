@@ -80,6 +80,9 @@ export default function EditItemForm({ item }: { item: Item }) {
     retailPrice?: string;
     productUrl?: string;
   } | null>(null);
+  // URL the user pastes for the direct-fetch path. Independent from
+  // brand search above — both share the lookupCandidate review state.
+  const [lookupUrl, setLookupUrl] = useState("");
   const lookupProgress = useTimedProgress(lookupState === "running", 12);
 
   // Load the item's main photo (preferring the smaller bg-removed
@@ -250,18 +253,13 @@ export default function EditItemForm({ item }: { item: Item }) {
     }
   }
 
-  // Two-step flow: clicking "Look up online" runs Gemini's grounded
-  // search and parks the result in `lookupCandidate` for review. The
-  // user clicks the productUrl to verify it's the right product, then
-  // either approves (applyLookup) or dismisses (rejectLookup). Nothing
-  // touches the form fields until approval.
-  async function lookupOnline() {
+  // Two-step flow shared between the brand-search button and the
+  // paste-a-link panel: the API runs the lookup and the result lands
+  // in `lookupCandidate` for review. The user clicks the productUrl
+  // to verify, then either approves (applyLookup) or dismisses
+  // (rejectLookup). Nothing touches the form fields until approval.
+  async function runLookup(body: Record<string, unknown>, missingMessage: string) {
     if (lookupState === "running") return;
-    if (!brand.trim()) {
-      setLookupState("error");
-      setLookupMessage("Add a brand first — that's what we search for online.");
-      return;
-    }
     setLookupState("running");
     setLookupMessage(null);
     setLookupSources([]);
@@ -270,12 +268,7 @@ export default function EditItemForm({ item }: { item: Item }) {
       const res = await fetch("/api/ai/lookup-product", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          brand: brand.trim(),
-          subType: subType || null,
-          color: color || null,
-          category,
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));
       if (data?.enabled === false) {
@@ -301,7 +294,7 @@ export default function EditItemForm({ item }: { item: Item }) {
       const hasAnything = !!(s.material || s.careNotes || s.description || s.retailPrice || s.productUrl);
       if (!hasAnything) {
         setLookupState("error");
-        setLookupMessage("Couldn't find this product online — try a more specific subType or color.");
+        setLookupMessage(missingMessage);
         return;
       }
 
@@ -313,6 +306,30 @@ export default function EditItemForm({ item }: { item: Item }) {
       setLookupState("error");
       setLookupMessage(friendlyFetchError(err, "Lookup failed."));
     }
+  }
+
+  async function lookupOnline() {
+    if (!brand.trim()) {
+      setLookupState("error");
+      setLookupMessage("Add a brand first — that's what we search for online.");
+      return;
+    }
+    return runLookup(
+      { brand: brand.trim(), subType: subType || null, color: color || null, category },
+      "Couldn't find this product online — try a more specific subType or color.",
+    );
+  }
+
+  async function lookupByUrl() {
+    if (!lookupUrl.trim()) {
+      setLookupState("error");
+      setLookupMessage("Paste a product URL first.");
+      return;
+    }
+    return runLookup(
+      { url: lookupUrl.trim() },
+      "Couldn't read that page — try the brand search instead.",
+    );
   }
 
   function applyLookup() {
@@ -526,6 +543,32 @@ export default function EditItemForm({ item }: { item: Item }) {
             title={brand.trim() ? "Ask AI to search the web for material, care, retail price" : "Add a brand first"}
           >
             {lookupState === "running" ? "Looking up…" : "✨ Look up online"}
+          </button>
+          {/* Direct-fetch path: pasting a URL hits productMeta + a
+              narrow text-mode AI call. Faster + more accurate than
+              brand search when the user has the actual link. Sits in
+              the same button row but expands to a full-width input
+              once you type so it doesn't get squished. */}
+          <input
+            type="text"
+            inputMode="url"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            value={lookupUrl}
+            onChange={(e) => setLookupUrl(e.target.value)}
+            placeholder="…or paste product link"
+            className="input flex-1 min-w-[10rem] text-xs"
+            disabled={busy || lookupState === "running" || autoTagState === "running"}
+          />
+          <button
+            type="button"
+            onClick={lookupByUrl}
+            className="btn-ghost text-xs text-blush-600"
+            disabled={busy || lookupState === "running" || autoTagState === "running" || !lookupUrl.trim()}
+            title="Pull material, care, retail price directly from the product page"
+          >
+            ✨ Use link
           </button>
           {autoTagState === "running" && (
             <div className="flex-1 min-w-[10rem]">
