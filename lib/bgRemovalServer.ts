@@ -22,12 +22,25 @@ import { UPLOAD_ROOT, saveBuffer, unlinkUpload } from "@/lib/uploads";
 
 const MAX_CONCURRENT = 3;
 
-// The package's ImageSource union includes Uint8Array, and Node's
-// Buffer extends Uint8Array, so we can pass the file Buffer straight
-// through — no need for the Blob wrap that the previous version did.
-// Skipping the wrap removes one layer that could fail silently in
-// older Node Blob implementations.
-type RemoveBackgroundFn = (input: Buffer) => Promise<Blob>;
+// The package's ImageSource union includes ArrayBuffer / Uint8Array,
+// but its internal `imageSourceToImageData` wraps non-Blob inputs in a
+// fresh `new Blob([buf])` — *without* a MIME type — and then
+// `imageDecode` reads `blob.type` to pick a codec. Empty string falls
+// through to "Unsupported format: ". So we have to construct the Blob
+// ourselves with the right type from the file extension before
+// handing it off.
+//
+// Map of file extensions to MIME types the package's switch handles:
+// PNG, JPEG, WebP. (Old HEIC files get a clear "unsupported HEIC"
+// error rather than silent failure.)
+const EXT_TO_MIME: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+};
+
+type RemoveBackgroundFn = (input: Blob) => Promise<Blob>;
 
 let removerPromise: Promise<RemoveBackgroundFn> | null = null;
 
@@ -35,11 +48,11 @@ async function getRemover(): Promise<RemoveBackgroundFn> {
   if (!removerPromise) {
     removerPromise = (async () => {
       const mod = await import("@imgly/background-removal-node");
-      const fn = mod.removeBackground as (input: Buffer, config?: unknown) => Promise<Blob>;
+      const fn = mod.removeBackground as (input: Blob, config?: unknown) => Promise<Blob>;
       if (typeof fn !== "function") {
         throw new Error("background-removal-node missing removeBackground()");
       }
-      return ((input: Buffer) =>
+      return ((input: Blob) =>
         fn(input, { model: "small", output: { format: "image/png" } })) as RemoveBackgroundFn;
     })().catch((err) => {
       // Drop the cache so a future call gets a fresh shot. Without
@@ -53,8 +66,9 @@ async function getRemover(): Promise<RemoveBackgroundFn> {
   return removerPromise;
 }
 
-// Read the file the bulk upload saved earlier, run bg removal, write
-// the result alongside it, and return the new relative path.
+// Read the file from disk, wrap in a typed Blob so the package can
+// detect the format, run bg removal, save the result, return the new
+// relative path.
 async function processOne(
   remove: RemoveBackgroundFn,
   userId: string,
@@ -62,12 +76,23 @@ async function processOne(
   sourceRelPath: string,
 ): Promise<string> {
   const sourceAbs = path.join(UPLOAD_ROOT, sourceRelPath);
+  const ext = path.extname(sourceRelPath).toLowerCase();
+  const mime = EXT_TO_MIME[ext];
+  if (!mime) {
+    // .heic, .gif, .tiff, .avif, etc. The model package's codecs only
+    // handle PNG/JPEG/WebP. Bail with a clear, actionable message
+    // instead of forwarding to the package and getting "Unsupported
+    // format: " back. Item still has its original photo; user can
+    // re-upload as JPEG.
+    throw new Error(`Unsupported file type "${ext || "(none)"}" — only JPEG/PNG/WebP can run server-side bg removal`);
+  }
   const buf = await fs.readFile(sourceAbs);
-  const out = await remove(buf);
+  // Construct the Blob with the explicit MIME type. Without this the
+  // package wraps the bytes in a typeless Blob and bails with
+  // "Unsupported format: " (its codec switch reads blob.type).
+  const blob = new Blob([buf], { type: mime });
+  const out = await remove(blob);
   const outBuf = Buffer.from(await out.arrayBuffer());
-  // Random suffix on every run so the existing /api/uploads/
-  // immutable cache headers don't pin stale art if the user
-  // regenerates.
   const tag = Math.random().toString(36).slice(2, 8);
   return saveBuffer(userId, itemId, outBuf, `bg-${tag}`, "png");
 }
