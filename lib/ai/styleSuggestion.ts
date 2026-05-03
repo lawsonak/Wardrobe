@@ -8,21 +8,11 @@
 // JSON in the prompt and parse defensively.
 
 import { CATEGORIES } from "@/lib/constants";
+import { describeSummary, type ClosetSummary } from "@/lib/ai/closetSummary";
+
+export type { ClosetSummary };
 
 const TEXT_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
-
-export type ClosetSummary = {
-  totalItems: number;
-  topBrands: Array<{ name: string; count: number }>;
-  topColors: Array<{ name: string; count: number }>;
-  categoryCounts: Record<string, number>;
-  favoriteCount: number;
-  /** Free-form style notes the user has written in Settings. */
-  stylePreferences: string | null;
-  /** A short list of subTypes the user already has, so the model
-   *  doesn't suggest something obviously redundant. */
-  ownedSubTypes: string[];
-};
 
 export type StyleSuggestion = {
   productName: string;
@@ -46,37 +36,6 @@ export type StyleSuggestionDebug = {
 export type StyleSuggestionResult =
   | { ok: true; suggestion: StyleSuggestion; debug: StyleSuggestionDebug }
   | { ok: false; error: string; debug: StyleSuggestionDebug };
-
-function describeSummary(s: ClosetSummary): string {
-  const lines: string[] = [];
-  lines.push(`Total items: ${s.totalItems}.`);
-  if (s.topBrands.length > 0) {
-    lines.push(
-      `Top brands: ${s.topBrands.map((b) => `${b.name} (${b.count})`).join(", ")}.`,
-    );
-  }
-  if (s.topColors.length > 0) {
-    lines.push(
-      `Top colors: ${s.topColors.map((c) => `${c.name} (${c.count})`).join(", ")}.`,
-    );
-  }
-  const cats = Object.entries(s.categoryCounts)
-    .filter(([, n]) => n > 0)
-    .sort(([, a], [, b]) => b - a)
-    .map(([cat, n]) => `${cat} ${n}`)
-    .join(", ");
-  if (cats) lines.push(`Categories: ${cats}.`);
-  lines.push(`Favorites: ${s.favoriteCount}.`);
-  if (s.ownedSubTypes.length > 0) {
-    lines.push(
-      `Already owns variations of: ${s.ownedSubTypes.slice(0, 30).join(", ")}.`,
-    );
-  }
-  if (s.stylePreferences && s.stylePreferences.trim()) {
-    lines.push(`Style notes from owner: ${s.stylePreferences.trim().slice(0, 500)}`);
-  }
-  return lines.join(" ");
-}
 
 export async function suggestProductForCloset(
   summary: ClosetSummary,

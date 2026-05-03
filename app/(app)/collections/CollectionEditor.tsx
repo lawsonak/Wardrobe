@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ACTIVITIES, SEASONS, csvToList } from "@/lib/constants";
 import { cn } from "@/lib/cn";
 import ItemPicker, { type Selectable } from "./ItemPicker";
+import CollectionShop from "./CollectionShop";
 
 export type CollectionData = {
   id: string;
@@ -326,6 +327,13 @@ export default function CollectionEditor({
           <ItemPicker items={items} selected={selected} onToggle={toggle} />
         </div>
       </section>
+
+      <CollectionShop
+        collectionId={collection.id}
+        kind={kind}
+        destination={destination || null}
+        hasDates={!!startDate}
+      />
 
       {error && <p className="text-sm text-blush-700">{error}</p>}
 
