@@ -380,9 +380,9 @@ export default function CollectionShop({
                         target="_blank"
                         rel="noopener noreferrer"
                         className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs text-stone-700 transition hover:border-blush-300 hover:bg-blush-50 hover:text-blush-800"
-                        title={`Search ${r.name} for "${idea.searchQuery}"`}
+                        title={`Open Google search for "${idea.searchQuery}" on ${r.host}`}
                       >
-                        Search {r.name} ↗
+                        {r.name} ↗
                       </a>
                     ))}
                   </div>

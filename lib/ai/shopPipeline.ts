@@ -22,7 +22,11 @@ import {
   type ProductSpec,
   type ShopRequest,
 } from "@/lib/ai/collectionShop";
-import { pickRetailersForSpec, type Retailer } from "@/lib/retailerSearch";
+import {
+  buildRetailerSearchUrl,
+  pickRetailersForSpec,
+  type Retailer,
+} from "@/lib/retailerSearch";
 
 const RETAILERS_PER_SPEC = 3;
 
@@ -114,7 +118,7 @@ function buildIdea(spec: ProductSpec, retailers: Retailer[]): ShopIdea {
       id: r.id,
       name: r.name,
       host: r.host,
-      searchUrl: r.searchUrl(spec.searchQuery),
+      searchUrl: buildRetailerSearchUrl(r.host, spec.searchQuery),
     })),
   };
 }

@@ -3,15 +3,28 @@
 // to find a specific product URL, we hand the user a search-page link
 // for each retailer that fits the spec's price tier and category.
 //
-// Why hardcode the list (and the URL templates):
-//   - Search URL formats are stable per retailer but inconsistent across
-//     them (?q=, ?Ntt=, ?keyword=, ?searchTerm=, etc.). Hardcoding lets
-//     each retailer use its native query param.
-//   - The selection of retailers itself is editorial — this is a personal
-//     wardrobe app, not a marketplace, so we curate.
-//   - If a retailer's search URL ever moves, fix it here in one place.
+// Why we use Google site-search instead of each retailer's native search:
+// retailers redesign their search URLs constantly (Madewell, J.Crew,
+// SSENSE, Net-a-Porter, Bravissimo all silently broke their `?q=` /
+// `?Ntt=` / `?keywords=` patterns at various points). Maintaining a
+// per-retailer URL template is whack-a-mole. Google's site-search
+// (`google.com/search?q=site:madewell.com+linen+blazer`) always works,
+// surfaces real current products from each retailer, and survives any
+// number of retailer-side redesigns. Trade-off: the user sees a Google
+// results page first and clicks through to the actual product, instead
+// of going directly to retailer-internal search.
+//
+// The selection of retailers is editorial — this is a personal wardrobe
+// app, not a marketplace.
 
-const enc = encodeURIComponent;
+// Build a Google site-search URL constrained to a single retailer. We
+// always include the host in the visible query (`site:host query`)
+// because Google's URL is the only stable contract here. Used directly
+// by lib/ai/shopPipeline.ts when assembling retailer chips.
+export function buildRetailerSearchUrl(host: string, query: string): string {
+  const q = `site:${host} ${query}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+}
 
 type Tier =
   | "fast-fashion"
@@ -25,270 +38,61 @@ type Tier =
 export type Retailer = {
   id: string;
   name: string;
+  /** Bare hostname like "madewell.com" — used both for display and as
+   *  the `site:` constraint on the Google search URL. */
   host: string;
-  /** Build a search URL for the given query string. */
-  searchUrl: (query: string) => string;
   /** Tiers this retailer fits. A retailer can match multiple. */
   tiers: Tier[];
 };
 
 export const RETAILERS: Retailer[] = [
   // ───── Mid-tier (broad coverage) ─────
-  {
-    id: "madewell",
-    name: "Madewell",
-    host: "madewell.com",
-    tiers: ["mid"],
-    searchUrl: (q) => `https://www.madewell.com/search?q=${enc(q)}`,
-  },
-  {
-    id: "jcrew",
-    name: "J.Crew",
-    host: "jcrew.com",
-    tiers: ["mid"],
-    searchUrl: (q) => `https://www.jcrew.com/search?Ntt=${enc(q)}`,
-  },
-  {
-    id: "everlane",
-    name: "Everlane",
-    host: "everlane.com",
-    tiers: ["mid"],
-    searchUrl: (q) => `https://www.everlane.com/search?q=${enc(q)}`,
-  },
-  {
-    id: "reformation",
-    name: "Reformation",
-    host: "thereformation.com",
-    tiers: ["mid"],
-    searchUrl: (q) => `https://www.thereformation.com/search?q=${enc(q)}`,
-  },
-  {
-    id: "anthropologie",
-    name: "Anthropologie",
-    host: "anthropologie.com",
-    tiers: ["mid"],
-    searchUrl: (q) => `https://www.anthropologie.com/search?q=${enc(q)}`,
-  },
-  {
-    id: "freepeople",
-    name: "Free People",
-    host: "freepeople.com",
-    tiers: ["mid"],
-    searchUrl: (q) => `https://www.freepeople.com/search?q=${enc(q)}`,
-  },
-  {
-    id: "aritzia",
-    name: "Aritzia",
-    host: "aritzia.com",
-    tiers: ["mid"],
-    searchUrl: (q) => `https://www.aritzia.com/us/en/search?q=${enc(q)}`,
-  },
-  {
-    id: "abercrombie",
-    name: "Abercrombie",
-    host: "abercrombie.com",
-    tiers: ["mid"],
-    searchUrl: (q) =>
-      `https://www.abercrombie.com/shop/us/search?searchTerm=${enc(q)}`,
-  },
-  {
-    id: "nordstrom",
-    name: "Nordstrom",
-    host: "nordstrom.com",
-    tiers: ["mid", "designer", "shoes-bags"],
-    searchUrl: (q) => `https://www.nordstrom.com/sr?keyword=${enc(q)}`,
-  },
-  {
-    id: "boden",
-    name: "Boden",
-    host: "boden.com",
-    tiers: ["mid"],
-    searchUrl: (q) => `https://www.boden.com/en-us/search?q=${enc(q)}`,
-  },
-  {
-    id: "sezane",
-    name: "Sézane",
-    host: "sezane.com",
-    tiers: ["mid"],
-    searchUrl: (q) => `https://www.sezane.com/us/search?q=${enc(q)}`,
-  },
+  { id: "madewell",       name: "Madewell",         host: "madewell.com",        tiers: ["mid"] },
+  { id: "jcrew",          name: "J.Crew",           host: "jcrew.com",           tiers: ["mid"] },
+  { id: "everlane",       name: "Everlane",         host: "everlane.com",        tiers: ["mid"] },
+  { id: "reformation",    name: "Reformation",      host: "thereformation.com",  tiers: ["mid"] },
+  { id: "anthropologie",  name: "Anthropologie",    host: "anthropologie.com",   tiers: ["mid"] },
+  { id: "freepeople",     name: "Free People",      host: "freepeople.com",      tiers: ["mid"] },
+  { id: "aritzia",        name: "Aritzia",          host: "aritzia.com",         tiers: ["mid"] },
+  { id: "abercrombie",    name: "Abercrombie",      host: "abercrombie.com",     tiers: ["mid"] },
+  { id: "nordstrom",      name: "Nordstrom",        host: "nordstrom.com",       tiers: ["mid", "designer", "shoes-bags"] },
+  { id: "boden",          name: "Boden",            host: "boden.com",           tiers: ["mid"] },
+  { id: "sezane",         name: "Sézane",           host: "sezane.com",          tiers: ["mid"] },
 
   // ───── Designer / luxury ─────
-  {
-    id: "netaporter",
-    name: "Net-a-Porter",
-    host: "net-a-porter.com",
-    tiers: ["designer"],
-    searchUrl: (q) =>
-      `https://www.net-a-porter.com/en-us/shop/search?keywords=${enc(q)}`,
-  },
-  {
-    id: "ssense",
-    name: "SSENSE",
-    host: "ssense.com",
-    tiers: ["designer"],
-    searchUrl: (q) => `https://www.ssense.com/en-us/search?q=${enc(q)}`,
-  },
-  {
-    id: "mytheresa",
-    name: "Mytheresa",
-    host: "mytheresa.com",
-    tiers: ["designer"],
-    searchUrl: (q) => `https://www.mytheresa.com/us/en/search?q=${enc(q)}`,
-  },
-  {
-    id: "saks",
-    name: "Saks Fifth Avenue",
-    host: "saksfifthavenue.com",
-    tiers: ["designer"],
-    searchUrl: (q) => `https://www.saksfifthavenue.com/search?Ntt=${enc(q)}`,
-  },
-  {
-    id: "neimanmarcus",
-    name: "Neiman Marcus",
-    host: "neimanmarcus.com",
-    tiers: ["designer"],
-    searchUrl: (q) => `https://www.neimanmarcus.com/s.jsp?q=${enc(q)}`,
-  },
-  {
-    id: "shopbop",
-    name: "Shopbop",
-    host: "shopbop.com",
-    tiers: ["designer", "mid"],
-    searchUrl: (q) => `https://www.shopbop.com/actions/search?q=${enc(q)}`,
-  },
+  { id: "netaporter",     name: "Net-a-Porter",     host: "net-a-porter.com",    tiers: ["designer"] },
+  { id: "ssense",         name: "SSENSE",           host: "ssense.com",          tiers: ["designer"] },
+  { id: "mytheresa",      name: "Mytheresa",        host: "mytheresa.com",       tiers: ["designer"] },
+  { id: "saks",           name: "Saks Fifth Avenue", host: "saksfifthavenue.com", tiers: ["designer"] },
+  { id: "neimanmarcus",   name: "Neiman Marcus",    host: "neimanmarcus.com",    tiers: ["designer"] },
+  { id: "shopbop",        name: "Shopbop",          host: "shopbop.com",         tiers: ["designer", "mid"] },
 
   // ───── Activewear ─────
-  {
-    id: "lululemon",
-    name: "Lululemon",
-    host: "lululemon.com",
-    tiers: ["activewear"],
-    searchUrl: (q) => `https://shop.lululemon.com/search?Ntt=${enc(q)}`,
-  },
-  {
-    id: "alo",
-    name: "Alo Yoga",
-    host: "aloyoga.com",
-    tiers: ["activewear"],
-    searchUrl: (q) => `https://www.aloyoga.com/search?q=${enc(q)}`,
-  },
-  {
-    id: "vuori",
-    name: "Vuori",
-    host: "vuoriclothing.com",
-    tiers: ["activewear"],
-    searchUrl: (q) => `https://vuoriclothing.com/search?q=${enc(q)}`,
-  },
-  {
-    id: "outdoorvoices",
-    name: "Outdoor Voices",
-    host: "outdoorvoices.com",
-    tiers: ["activewear"],
-    searchUrl: (q) => `https://www.outdoorvoices.com/search?q=${enc(q)}`,
-  },
-  {
-    id: "beyondyoga",
-    name: "Beyond Yoga",
-    host: "beyondyoga.com",
-    tiers: ["activewear"],
-    searchUrl: (q) => `https://beyondyoga.com/search?q=${enc(q)}`,
-  },
+  { id: "lululemon",      name: "Lululemon",        host: "lululemon.com",       tiers: ["activewear"] },
+  { id: "alo",            name: "Alo Yoga",         host: "aloyoga.com",         tiers: ["activewear"] },
+  { id: "vuori",          name: "Vuori",            host: "vuoriclothing.com",   tiers: ["activewear"] },
+  { id: "outdoorvoices",  name: "Outdoor Voices",   host: "outdoorvoices.com",   tiers: ["activewear"] },
+  { id: "beyondyoga",     name: "Beyond Yoga",      host: "beyondyoga.com",      tiers: ["activewear"] },
 
-  // ───── Fast-fashion (bot-blocking doesn't matter for redirects — the
-  //                    user opens these in a real browser session) ─────
-  {
-    id: "hm",
-    name: "H&M",
-    host: "hm.com",
-    tiers: ["fast-fashion"],
-    searchUrl: (q) =>
-      `https://www2.hm.com/en_us/search-results.html?q=${enc(q)}`,
-  },
-  {
-    id: "zara",
-    name: "Zara",
-    host: "zara.com",
-    tiers: ["fast-fashion"],
-    searchUrl: (q) =>
-      `https://www.zara.com/us/en/search?searchTerm=${enc(q)}`,
-  },
-  {
-    id: "uniqlo",
-    name: "Uniqlo",
-    host: "uniqlo.com",
-    tiers: ["fast-fashion"],
-    searchUrl: (q) => `https://www.uniqlo.com/us/en/search?q=${enc(q)}`,
-  },
-  {
-    id: "asos",
-    name: "ASOS",
-    host: "asos.com",
-    tiers: ["fast-fashion"],
-    searchUrl: (q) => `https://www.asos.com/us/search/?q=${enc(q)}`,
-  },
+  // ───── Fast-fashion ─────
+  { id: "hm",             name: "H&M",              host: "hm.com",              tiers: ["fast-fashion"] },
+  { id: "zara",           name: "Zara",             host: "zara.com",            tiers: ["fast-fashion"] },
+  { id: "uniqlo",         name: "Uniqlo",           host: "uniqlo.com",          tiers: ["fast-fashion"] },
+  { id: "asos",           name: "ASOS",             host: "asos.com",            tiers: ["fast-fashion"] },
 
   // ───── Swimwear specialists ─────
-  {
-    id: "summersalt",
-    name: "Summersalt",
-    host: "summersalt.com",
-    tiers: ["swim", "mid"],
-    searchUrl: (q) => `https://www.summersalt.com/search?q=${enc(q)}`,
-  },
-  {
-    id: "solidstriped",
-    name: "Solid & Striped",
-    host: "solidandstriped.com",
-    tiers: ["swim", "mid"],
-    searchUrl: (q) => `https://www.solidandstriped.com/search?q=${enc(q)}`,
-  },
+  { id: "summersalt",     name: "Summersalt",       host: "summersalt.com",      tiers: ["swim", "mid"] },
+  { id: "solidstriped",   name: "Solid & Striped",  host: "solidandstriped.com", tiers: ["swim", "mid"] },
 
   // ───── Intimates (bras, underwear, sleepwear) ─────
-  {
-    id: "barenecessities",
-    name: "Bare Necessities",
-    host: "barenecessities.com",
-    tiers: ["intimates", "swim"],
-    searchUrl: (q) => `https://www.barenecessities.com/search?q=${enc(q)}`,
-  },
-  {
-    id: "bravissimo",
-    name: "Bravissimo",
-    host: "bravissimo.com",
-    tiers: ["intimates", "swim"],
-    searchUrl: (q) => `https://www.bravissimo.com/search/?q=${enc(q)}`,
-  },
-  {
-    id: "freya",
-    name: "Freya",
-    host: "freyalingerie.com",
-    tiers: ["intimates", "swim"],
-    searchUrl: (q) => `https://www.freyalingerie.com/search?q=${enc(q)}`,
-  },
-  {
-    id: "hankypanky",
-    name: "Hanky Panky",
-    host: "hankypanky.com",
-    tiers: ["intimates"],
-    searchUrl: (q) => `https://hankypanky.com/search?q=${enc(q)}`,
-  },
+  { id: "barenecessities", name: "Bare Necessities", host: "barenecessities.com", tiers: ["intimates", "swim"] },
+  { id: "bravissimo",     name: "Bravissimo",       host: "bravissimo.com",      tiers: ["intimates", "swim"] },
+  { id: "freya",          name: "Freya",            host: "freyalingerie.com",   tiers: ["intimates", "swim"] },
+  { id: "hankypanky",     name: "Hanky Panky",      host: "hankypanky.com",      tiers: ["intimates"] },
 
   // ───── Shoes & bags ─────
-  {
-    id: "zappos",
-    name: "Zappos",
-    host: "zappos.com",
-    tiers: ["shoes-bags", "mid", "designer"],
-    searchUrl: (q) => `https://www.zappos.com/search?term=${enc(q)}`,
-  },
-  {
-    id: "nisolo",
-    name: "Nisolo",
-    host: "nisolo.com",
-    tiers: ["shoes-bags", "mid"],
-    searchUrl: (q) => `https://nisolo.com/search?q=${enc(q)}`,
-  },
+  { id: "zappos",         name: "Zappos",           host: "zappos.com",          tiers: ["shoes-bags", "mid", "designer"] },
+  { id: "nisolo",         name: "Nisolo",           host: "nisolo.com",          tiers: ["shoes-bags", "mid"] },
 ];
 
 const HOST_TO_ID = new Map(RETAILERS.map((r) => [r.host, r.id]));
