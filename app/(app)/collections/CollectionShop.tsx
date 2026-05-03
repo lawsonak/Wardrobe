@@ -2,27 +2,29 @@
 
 import { useState } from "react";
 
-type ShopProduct = {
-  productName: string;
-  brand: string | null;
-  vendor: string | null;
-  productUrl: string;
+type RetailerLink = {
+  id: string;
+  name: string;
+  host: string;
+  searchUrl: string;
+};
+
+type ShopIdea = {
+  title: string;
   category: string | null;
   color: string | null;
-  estimatedPrice: string | null;
+  brandHint: string | null;
+  priceTier: string | null;
   reasoning: string;
-  imageUrl: string | null;
-  isUnverified: boolean;
+  searchQuery: string;
+  retailers: RetailerLink[];
 };
 
 type ShopResponse = {
   enabled?: boolean;
   message?: string;
   error?: string;
-  products?: ShopProduct[];
-  /** Pipeline-level notes worth showing above the result grid (e.g.
-   *  "3 results couldn't be fully verified — click through to confirm"). */
-  notes?: string[];
+  ideas?: ShopIdea[];
   weather?: {
     city: string;
     windowStart: string;
@@ -37,9 +39,10 @@ type ShopResponse = {
 
 // Slider-driven AI shopping for a trip or themed collection. Reads
 // the SAVED collection state on the server, builds a closet snapshot,
-// pulls a forecast (when available), and asks Gemini's grounded search
-// for a list of real products. Each result has its own "Add to wishlist"
-// button that wires straight to /api/wishlist with the prefilled fields.
+// pulls a forecast (when available), and asks Gemini for a curated
+// shopping list. Each idea is shown with retailer search-page links
+// the user can open in a new tab — and a "Save idea" button that drops
+// the idea into the wishlist for later refinement.
 export default function CollectionShop({
   collectionId,
   kind,
@@ -53,19 +56,19 @@ export default function CollectionShop({
 }) {
   const [intensity, setIntensity] = useState(50);
   const [busy, setBusy] = useState(false);
-  const [products, setProducts] = useState<ShopProduct[] | null>(null);
-  const [notes, setNotes] = useState<string[]>([]);
+  const [ideas, setIdeas] = useState<ShopIdea[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [weather, setWeather] = useState<ShopResponse["weather"] | null>(null);
-  const [added, setAdded] = useState<Record<string, "saving" | "added" | "error">>({});
+  const [savedKey, setSavedKey] = useState<Record<string, "saving" | "saved" | "error">>(
+    {},
+  );
 
   async function search() {
     setBusy(true);
     setError(null);
-    setProducts(null);
-    setNotes([]);
+    setIdeas(null);
     setWeather(null);
-    setAdded({});
+    setSavedKey({});
     try {
       const res = await fetch("/api/ai/collection-shop", {
         method: "POST",
@@ -81,8 +84,7 @@ export default function CollectionShop({
         setError(data.error ?? `HTTP ${res.status}`);
         return;
       }
-      setProducts(data.products ?? []);
-      setNotes(data.notes ?? []);
+      setIdeas(data.ideas ?? []);
       setWeather(data.weather ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't reach the AI service.");
@@ -91,26 +93,28 @@ export default function CollectionShop({
     }
   }
 
-  async function addToWishlist(p: ShopProduct) {
-    setAdded((prev) => ({ ...prev, [p.productUrl]: "saving" }));
+  async function saveIdea(idea: ShopIdea) {
+    const key = idea.searchQuery;
+    setSavedKey((prev) => ({ ...prev, [key]: "saving" }));
     try {
       const res = await fetch("/api/wishlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: p.productName,
-          brand: p.brand ?? undefined,
-          category: p.category ?? undefined,
-          link: p.productUrl,
-          price: p.estimatedPrice ?? undefined,
-          notes: p.reasoning || undefined,
+          name: idea.title,
+          brand: idea.brandHint ?? undefined,
+          category: idea.category ?? undefined,
+          // Use the first retailer's search URL as a starting link.
+          // The user can refine to a specific product after browsing.
+          link: idea.retailers[0]?.searchUrl,
+          notes: idea.reasoning || undefined,
           priority: "medium",
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setAdded((prev) => ({ ...prev, [p.productUrl]: "added" }));
+      setSavedKey((prev) => ({ ...prev, [key]: "saved" }));
     } catch {
-      setAdded((prev) => ({ ...prev, [p.productUrl]: "error" }));
+      setSavedKey((prev) => ({ ...prev, [key]: "error" }));
     }
   }
 
@@ -136,8 +140,9 @@ export default function CollectionShop({
       <div>
         <h2 className="font-display text-xl text-stone-800">✨ Shop for this {kind === "trip" ? "trip" : "collection"}</h2>
         <p className="text-sm text-stone-500">
-          AI searches the web for new {tripPrompt}. Adjust the slider to control how
-          closely results match your closet.
+          AI suggests new {tripPrompt} and gives you retailer search links to
+          start exploring. Adjust the slider to control how closely results match
+          your closet.
         </p>
       </div>
 
@@ -170,11 +175,10 @@ export default function CollectionShop({
           className="btn-primary"
           disabled={busy}
         >
-          {busy ? "Searching the web…" : products ? "✨ Search again" : "✨ Find new pieces"}
+          {busy ? "Asking the AI…" : ideas ? "✨ Refresh ideas" : "✨ Find new pieces"}
         </button>
         <p className="text-xs text-stone-500">
-          Saves nothing automatically — pick favorites with{" "}
-          <span className="font-medium">+ Wishlist</span>.
+          Tap a retailer to search there — or save the idea to your wishlist.
         </p>
       </div>
 
@@ -192,107 +196,74 @@ export default function CollectionShop({
         </p>
       )}
 
-      {notes.length > 0 && (
-        <ul className="space-y-1">
-          {notes.map((n) => (
-            <li
-              key={n}
-              className="rounded-2xl bg-stone-50 px-3 py-2 text-xs text-stone-600"
-            >
-              {n}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {busy && !products && (
+      {busy && !ideas && (
         <p className="text-sm text-stone-500">
-          Reading your closet, checking the forecast, and asking Gemini to scan the web. Usually 10–20 seconds.
+          Reading your closet, checking the forecast, and asking Gemini for shopping ideas. Usually 5–10 seconds.
         </p>
       )}
 
-      {products && products.length === 0 && !busy && (
-        <p className="text-sm text-stone-500">No usable products came back — try a different intensity.</p>
+      {ideas && ideas.length === 0 && !busy && (
+        <p className="text-sm text-stone-500">
+          No ideas came back — try a different intensity or fill in more trip details.
+        </p>
       )}
 
-      {products && products.length > 0 && (
+      {ideas && ideas.length > 0 && (
         <ul className="grid gap-3 sm:grid-cols-2">
-          {products.map((p) => {
-            const status = added[p.productUrl];
+          {ideas.map((idea) => {
+            const status = savedKey[idea.searchQuery];
             return (
-              <li key={p.productUrl} className="card flex flex-col gap-2 p-3">
-                {p.imageUrl ? (
-                  <a
-                    href={p.productUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="tile-bg flex aspect-[4/3] items-center justify-center overflow-hidden rounded-2xl"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={p.imageUrl}
-                      alt={p.productName}
-                      className="h-full w-full object-contain"
-                      loading="lazy"
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).style.display = "none";
-                      }}
-                    />
-                  </a>
-                ) : null}
-
+              <li key={idea.searchQuery} className="card flex flex-col gap-2 p-3">
                 <div className="min-w-0">
-                  <div className="flex items-baseline gap-2">
-                    <p className="min-w-0 flex-1 truncate font-display text-base text-stone-800">
-                      {p.productName}
-                    </p>
-                    {p.isUnverified && (
-                      <span
-                        className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-800"
-                        title="The retailer blocked our scraper or didn't expose product data — click through to confirm price and stock."
-                      >
-                        unverified
-                      </span>
-                    )}
-                  </div>
-                  <p className="truncate text-xs text-stone-500">
-                    {[p.brand, p.vendor && p.vendor !== p.brand ? p.vendor : null, p.estimatedPrice]
+                  <p className="font-display text-base text-stone-800">{idea.title}</p>
+                  <p className="truncate text-[11px] uppercase tracking-wide text-stone-400">
+                    {[idea.category, idea.color, idea.priceTier]
                       .filter(Boolean)
-                      .join(" · ") || "—"}
+                      .join(" · ") || ""}
+                    {idea.brandHint ? (
+                      <>
+                        {[idea.category, idea.color, idea.priceTier].filter(Boolean).length > 0 ? " · " : ""}
+                        {idea.brandHint}
+                      </>
+                    ) : null}
                   </p>
-                  {(p.category || p.color) && (
-                    <p className="truncate text-[11px] uppercase tracking-wide text-stone-400">
-                      {[p.category, p.color].filter(Boolean).join(" · ")}
-                    </p>
-                  )}
                 </div>
 
-                {p.reasoning && (
-                  <p className="text-sm text-stone-700">{p.reasoning}</p>
+                {idea.reasoning && (
+                  <p className="text-sm text-stone-700">{idea.reasoning}</p>
                 )}
 
-                <div className="mt-auto flex items-center justify-between gap-2 pt-1">
-                  <a
-                    href={p.productUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-blush-600 hover:underline"
-                  >
-                    Open product →
-                  </a>
+                {idea.retailers.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {idea.retailers.map((r) => (
+                      <a
+                        key={r.id}
+                        href={r.searchUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs text-stone-700 transition hover:border-blush-300 hover:bg-blush-50 hover:text-blush-800"
+                        title={`Search ${r.name} for "${idea.searchQuery}"`}
+                      >
+                        Search {r.name} ↗
+                      </a>
+                    ))}
+                  </div>
+                )}
+
+                <div className="mt-auto flex items-center justify-end pt-1">
                   <button
                     type="button"
-                    onClick={() => addToWishlist(p)}
-                    disabled={status === "saving" || status === "added"}
+                    onClick={() => saveIdea(idea)}
+                    disabled={status === "saving" || status === "saved"}
                     className="btn-secondary text-xs disabled:opacity-60"
                   >
-                    {status === "added"
-                      ? "✓ Added"
+                    {status === "saved"
+                      ? "✓ Saved"
                       : status === "saving"
                         ? "Saving…"
                         : status === "error"
                           ? "Retry"
-                          : "+ Wishlist"}
+                          : "+ Save idea"}
                   </button>
                 </div>
               </li>
