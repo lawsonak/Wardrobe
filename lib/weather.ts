@@ -132,3 +132,134 @@ export function describeForOutfit(f: Forecast): string {
   const rain = f.precipChance >= 40 ? `, ${f.precipChance}% chance of rain` : "";
   return `In ${f.city}: ${tempF}°F now (${low}°-${high}°F today), ${f.conditions}${rain}.`;
 }
+
+export type TripForecast = {
+  city: string;
+  country: string | null;
+  /** Start of the forecast window we actually fetched (clamped to today / +16d). */
+  windowStart: string; // YYYY-MM-DD
+  windowEnd: string;   // YYYY-MM-DD
+  highF: number;
+  lowF: number;
+  /** Most common condition across the window. */
+  conditions: string;
+  /** Worst single-day precipitation chance (0..100). */
+  maxPrecipChance: number;
+};
+
+function parseISODate(s: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  // UTC anchor — we just want the calendar day, not a moment.
+  const d = new Date(`${s}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function todayUTC(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+// Forecast for a future trip window. Returns null if the trip is more
+// than 16 days out (Open-Meteo's free tier maxes out there) — callers
+// should fall back to season/destination context for far-future trips.
+// For trips that overlap today, we clamp the window to [today, end].
+export async function getTripForecast(
+  city: string,
+  startISO: string | null,
+  endISO: string | null,
+): Promise<TripForecast | null> {
+  if (!city.trim()) return null;
+  const start = startISO ? parseISODate(startISO) : null;
+  const end = endISO ? parseISODate(endISO) : start;
+  if (!start) return null;
+
+  const today = todayUTC();
+  const lastForecast = new Date(today);
+  lastForecast.setUTCDate(lastForecast.getUTCDate() + 15); // forecast_days=16 → today + 15
+
+  // Trip already over before today → no useful forecast.
+  if ((end ?? start) < today) return null;
+  // Trip starts beyond the forecast window → caller falls back to season language.
+  if (start > lastForecast) return null;
+
+  const windowStart = start < today ? today : start;
+  const windowEndRaw = end && end > windowStart ? end : windowStart;
+  const windowEnd = windowEndRaw > lastForecast ? lastForecast : windowEndRaw;
+
+  const geo = await geocode(city.trim());
+  if (!geo) return null;
+
+  try {
+    const url = new URL("https://api.open-meteo.com/v1/forecast");
+    url.searchParams.set("latitude", String(geo.latitude));
+    url.searchParams.set("longitude", String(geo.longitude));
+    url.searchParams.set(
+      "daily",
+      "temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code",
+    );
+    url.searchParams.set("start_date", isoDate(windowStart));
+    url.searchParams.set("end_date", isoDate(windowEnd));
+    url.searchParams.set("timezone", geo.timezone ?? "auto");
+    const res = await fetch(url, { next: { revalidate: 60 * 60 } });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      daily?: {
+        time?: string[];
+        temperature_2m_max?: number[];
+        temperature_2m_min?: number[];
+        precipitation_probability_max?: number[];
+        weather_code?: number[];
+      };
+    };
+    const d = data.daily;
+    if (!d?.temperature_2m_max?.length) return null;
+
+    const highC = Math.max(...d.temperature_2m_max);
+    const lowC = Math.min(...(d.temperature_2m_min ?? d.temperature_2m_max));
+    const maxPrecip = d.precipitation_probability_max?.length
+      ? Math.max(...d.precipitation_probability_max.map((n) => n ?? 0))
+      : 0;
+
+    // Most common WMO code → friendly label. Ties go to the rougher
+    // condition since "expect rain on 2 of 5 days" is more useful than
+    // averaging it out to "partly cloudy".
+    const counts = new Map<number, number>();
+    for (const code of d.weather_code ?? []) {
+      counts.set(code, (counts.get(code) ?? 0) + 1);
+    }
+    let dominantCode = d.weather_code?.[0] ?? 0;
+    let bestCount = 0;
+    for (const [code, n] of counts) {
+      const rough = code >= 51; // anything precipitation-y
+      const isBetter =
+        n > bestCount || (n === bestCount && rough && code > dominantCode);
+      if (isBetter) {
+        dominantCode = code;
+        bestCount = n;
+      }
+    }
+
+    return {
+      city: geo.name,
+      country: geo.country,
+      windowStart: isoDate(windowStart),
+      windowEnd: isoDate(windowEnd),
+      highF: cToF(Math.round(highC)),
+      lowF: cToF(Math.round(lowC)),
+      conditions: describeCode(dominantCode),
+      maxPrecipChance: Math.round(maxPrecip),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function describeForTrip(f: TripForecast): string {
+  const range = f.windowStart === f.windowEnd ? f.windowStart : `${f.windowStart} to ${f.windowEnd}`;
+  const rain = f.maxPrecipChance >= 40 ? `, up to ${f.maxPrecipChance}% chance of rain` : "";
+  return `Forecast for ${f.city} (${range}): ${f.lowF}°F-${f.highF}°F, ${f.conditions}${rain}.`;
+}

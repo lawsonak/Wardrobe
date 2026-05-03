@@ -1,18 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { prisma } from "@/lib/db";
-import { CATEGORIES, type Category } from "@/lib/constants";
-import { getPrefs } from "@/lib/userPrefs";
 import { todayISO } from "@/lib/dates";
 import {
   readSavedSuggestion,
   writeSavedSuggestion,
   type SavedSuggestion,
 } from "@/lib/todaysSuggestion";
-import {
-  suggestProductForCloset,
-  type ClosetSummary,
-} from "@/lib/ai/styleSuggestion";
+import { suggestProductForCloset } from "@/lib/ai/styleSuggestion";
+import { buildClosetSummary } from "@/lib/ai/closetSummary";
 
 export const runtime = "nodejs";
 // Grounded search + content fetch can take 5-15s. Allow generous headroom.
@@ -21,61 +16,6 @@ export const maxDuration = 60;
 // In-process per-user lock so a refresh-button-mash doesn't burn two
 // grounded search calls back to back.
 const inflight = new Set<string>();
-
-async function buildClosetSummary(userId: string): Promise<ClosetSummary> {
-  const items = await prisma.item.findMany({
-    where: { ownerId: userId, status: "active" },
-    select: {
-      brand: true,
-      color: true,
-      category: true,
-      subType: true,
-      isFavorite: true,
-    },
-  });
-
-  const brandTally = new Map<string, number>();
-  const colorTally = new Map<string, number>();
-  const categoryCounts: Record<string, number> = {};
-  for (const c of CATEGORIES) categoryCounts[c] = 0;
-  const subTypeSet = new Set<string>();
-  let favoriteCount = 0;
-
-  for (const it of items) {
-    if (it.brand && it.brand.trim()) {
-      const k = it.brand.trim();
-      brandTally.set(k, (brandTally.get(k) ?? 0) + 1);
-    }
-    if (it.color && it.color.trim()) {
-      const k = it.color.trim();
-      colorTally.set(k, (colorTally.get(k) ?? 0) + 1);
-    }
-    if (it.category && (CATEGORIES as readonly string[]).includes(it.category)) {
-      categoryCounts[it.category as Category]! += 1;
-    }
-    if (it.subType && it.subType.trim()) {
-      subTypeSet.add(it.subType.trim());
-    }
-    if (it.isFavorite) favoriteCount++;
-  }
-
-  const sortByCount = <T,>(m: Map<T, number>) =>
-    Array.from(m.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, count]) => ({ name: String(name), count }));
-
-  const prefs = await getPrefs();
-
-  return {
-    totalItems: items.length,
-    topBrands: sortByCount(brandTally).slice(0, 5),
-    topColors: sortByCount(colorTally).slice(0, 5),
-    categoryCounts,
-    favoriteCount,
-    stylePreferences: prefs.stylePreferences,
-    ownedSubTypes: Array.from(subTypeSet),
-  };
-}
 
 // GET — return today's saved suggestion (if any). No AI call.
 export async function GET() {
