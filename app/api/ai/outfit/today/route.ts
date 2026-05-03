@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "node:crypto";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { getProvider } from "@/lib/ai/provider";
@@ -60,13 +61,17 @@ async function composeAndPersist(
     return { tryOnImagePath: null, tryOnError: result.error };
   }
   const ext = result.mimeType === "image/jpeg" ? "jpg" : "png";
-  // Date-stamped filename so two days in a row don't fight over the
-  // same path; old day rolls off via cleanup-orphans + the date check.
+  // Date-stamped + content-hashed filename so two days in a row don't
+  // fight over the same path AND a same-day "Try another" gets a fresh
+  // URL — without the hash the file gets overwritten on disk but the
+  // saved DB path stays identical, and Cache-Control: immutable on
+  // /api/uploads makes the browser keep serving the OLD cached image.
+  const hash = crypto.createHash("sha256").update(result.pngBuffer).digest("hex").slice(0, 8);
   const newPath = await saveBuffer(
     userId,
     "todays-outfit",
     result.pngBuffer,
-    `tryon-${todayISO()}`,
+    `tryon-${todayISO()}-${hash}`,
     ext,
   );
   if (previousPath && previousPath !== newPath) {
