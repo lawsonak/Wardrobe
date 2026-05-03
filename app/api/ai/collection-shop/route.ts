@@ -4,13 +4,13 @@ import { prisma } from "@/lib/db";
 import { csvToList } from "@/lib/constants";
 import { computePackingTargets } from "@/lib/packingTargets";
 import { buildClosetSummary } from "@/lib/ai/closetSummary";
-import { findItemsForCollection } from "@/lib/ai/collectionShop";
+import { runShopPipeline } from "@/lib/ai/shopPipeline";
 import { getTripForecast } from "@/lib/weather";
 
 export const runtime = "nodejs";
-// Grounded search across many products is slower than a single-product
-// lookup; allow generous headroom.
-export const maxDuration = 60;
+// Three-stage pipeline (Gemini specs → CSE search → product-page validation)
+// can take 15-30s when several retailers are slow. Allow generous headroom.
+export const maxDuration = 90;
 
 // In-process per-user lock so a refresh-button-mash doesn't burn two
 // grounded search calls back to back.
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
 
     const closet = await buildClosetSummary(userId);
 
-    const result = await findItemsForCollection({
+    const result = await runShopPipeline({
       kind: collection.kind === "trip" ? "trip" : "general",
       name: collection.name,
       destination: collection.destination,
