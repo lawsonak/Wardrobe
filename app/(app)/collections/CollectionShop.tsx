@@ -12,6 +12,7 @@ type ShopProduct = {
   estimatedPrice: string | null;
   reasoning: string;
   imageUrl: string | null;
+  isUnverified: boolean;
 };
 
 type ShopResponse = {
@@ -19,6 +20,9 @@ type ShopResponse = {
   message?: string;
   error?: string;
   products?: ShopProduct[];
+  /** Pipeline-level notes worth showing above the result grid (e.g.
+   *  "3 results couldn't be fully verified — click through to confirm"). */
+  notes?: string[];
   weather?: {
     city: string;
     windowStart: string;
@@ -50,6 +54,7 @@ export default function CollectionShop({
   const [intensity, setIntensity] = useState(50);
   const [busy, setBusy] = useState(false);
   const [products, setProducts] = useState<ShopProduct[] | null>(null);
+  const [notes, setNotes] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [weather, setWeather] = useState<ShopResponse["weather"] | null>(null);
   const [added, setAdded] = useState<Record<string, "saving" | "added" | "error">>({});
@@ -58,6 +63,7 @@ export default function CollectionShop({
     setBusy(true);
     setError(null);
     setProducts(null);
+    setNotes([]);
     setWeather(null);
     setAdded({});
     try {
@@ -76,6 +82,7 @@ export default function CollectionShop({
         return;
       }
       setProducts(data.products ?? []);
+      setNotes(data.notes ?? []);
       setWeather(data.weather ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't reach the AI service.");
@@ -180,9 +187,22 @@ export default function CollectionShop({
       )}
 
       {error && (
-        <p className="rounded-2xl bg-blush-50 px-3 py-2 text-sm text-blush-800">
+        <p className="whitespace-pre-line rounded-2xl bg-blush-50 px-3 py-2 text-sm text-blush-800">
           {error}
         </p>
+      )}
+
+      {notes.length > 0 && (
+        <ul className="space-y-1">
+          {notes.map((n) => (
+            <li
+              key={n}
+              className="rounded-2xl bg-stone-50 px-3 py-2 text-xs text-stone-600"
+            >
+              {n}
+            </li>
+          ))}
+        </ul>
       )}
 
       {busy && !products && (
@@ -222,7 +242,19 @@ export default function CollectionShop({
                 ) : null}
 
                 <div className="min-w-0">
-                  <p className="truncate font-display text-base text-stone-800">{p.productName}</p>
+                  <div className="flex items-baseline gap-2">
+                    <p className="min-w-0 flex-1 truncate font-display text-base text-stone-800">
+                      {p.productName}
+                    </p>
+                    {p.isUnverified && (
+                      <span
+                        className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-800"
+                        title="The retailer blocked our scraper or didn't expose product data — click through to confirm price and stock."
+                      >
+                        unverified
+                      </span>
+                    )}
+                  </div>
                   <p className="truncate text-xs text-stone-500">
                     {[p.brand, p.vendor && p.vendor !== p.brand ? p.vendor : null, p.estimatedPrice]
                       .filter(Boolean)
