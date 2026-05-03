@@ -111,6 +111,11 @@ export default function CollectionShop({
     setWeather(null);
     setSavedKey({});
     setFilterCategory(null);
+    // Explicit 110s client-side timeout so iOS Safari can't kill the
+    // fetch silently with its generic "Load failed" — matches the
+    // server's 120s maxDuration with margin for response upload.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 110_000);
     try {
       // Send the (user-adjusted) targets so the AI generates a spec
       // for each piece the user wants — and so the server doesn't
@@ -124,6 +129,7 @@ export default function CollectionShop({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ collectionId, intensity, targets: targetsPayload }),
+        signal: ctrl.signal,
       });
       const data = (await res.json()) as ShopResponse;
       if (data.enabled === false) {
@@ -137,8 +143,24 @@ export default function CollectionShop({
       setIdeas(data.ideas ?? []);
       setWeather(data.weather ?? null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't reach the AI service.");
+      // iOS Safari surfaces "Load failed" for any network-layer error
+      // (timeout, dropped connection, abort). Translate to something
+      // the user can act on, and log the original for debugging.
+      console.error("collection-shop fetch failed", err);
+      const msg = err instanceof Error ? err.message : "";
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setError(
+          "The AI took too long to respond. Try again — or lower the per-category counts on the previous step to make the search shorter.",
+        );
+      } else if (msg === "Load failed" || msg.toLowerCase().includes("network")) {
+        setError(
+          "Network error reaching the server. Check your connection and tap Retry.",
+        );
+      } else {
+        setError(msg || "Couldn't reach the AI service. Tap Retry.");
+      }
     } finally {
+      clearTimeout(timer);
       setBusy(false);
     }
   }
@@ -311,9 +333,17 @@ export default function CollectionShop({
       )}
 
       {error && (
-        <p className="whitespace-pre-line rounded-2xl bg-blush-50 px-3 py-2 text-sm text-blush-800">
-          {error}
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-blush-50 px-3 py-2 text-sm text-blush-800">
+          <p className="min-w-0 flex-1 whitespace-pre-line">{error}</p>
+          <button
+            type="button"
+            onClick={search}
+            disabled={busy}
+            className="shrink-0 rounded-full bg-white px-3 py-1 text-xs text-blush-700 ring-1 ring-blush-200 hover:bg-blush-100 disabled:opacity-50"
+          >
+            Retry
+          </button>
+        </div>
       )}
 
       {busy && !ideas && (
