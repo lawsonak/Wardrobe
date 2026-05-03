@@ -57,6 +57,7 @@ export default function CollectionShop({
   startDate,
   endDate,
   activities,
+  targets: externalTargets,
 }: {
   collectionId: string;
   kind: "trip" | "general";
@@ -67,14 +68,19 @@ export default function CollectionShop({
   startDate: string | null;
   endDate: string | null;
   activities: string[];
+  /** When the wizard's Quantities step has produced user-adjusted
+   *  counts, pass them through; otherwise we recompute from dates +
+   *  activities (used by the editor where there's no Quantities UI). */
+  targets?: PackingTargets;
 }) {
-  // Mirror the deterministic packing-target formula the API uses
-  // server-side so the summary at the top of the section matches what
-  // the AI is reasoning over. Recompute when dates/activities change.
+  // Use the caller-provided targets when available, else fall back to
+  // the deterministic formula. Either way the summary chips and the
+  // API request use the SAME object so the AI sees what the user sees.
   const targets = useMemo<PackingTargets>(() => {
+    if (externalTargets) return externalTargets;
     const nights = computeNights(startDate, endDate);
     return computePackingTargets(nights, activities);
-  }, [startDate, endDate, activities]);
+  }, [externalTargets, startDate, endDate, activities]);
   const targetTotal = totalCount(targets);
   const targetRows = CATEGORIES.flatMap((c) => {
     const n = targets[c];
@@ -94,6 +100,9 @@ export default function CollectionShop({
   const [savedKey, setSavedKey] = useState<Record<string, "saving" | "saved" | "error">>(
     {},
   );
+  // Active category filter for the result grid. null = show all.
+  // Toggling a chip on/off; clicking a different chip switches.
+  const [filterCategory, setFilterCategory] = useState<string | null>(null);
 
   async function search() {
     setBusy(true);
@@ -101,11 +110,20 @@ export default function CollectionShop({
     setIdeas(null);
     setWeather(null);
     setSavedKey({});
+    setFilterCategory(null);
     try {
+      // Send the (user-adjusted) targets so the AI generates a spec
+      // for each piece the user wants — and so the server doesn't
+      // recompute and override the wizard's edits.
+      const targetsPayload: Record<string, number> = {};
+      for (const c of CATEGORIES) {
+        const n = targets[c];
+        if (typeof n === "number" && n > 0) targetsPayload[c] = n;
+      }
       const res = await fetch("/api/ai/collection-shop", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collectionId, intensity }),
+        body: JSON.stringify({ collectionId, intensity, targets: targetsPayload }),
       });
       const data = (await res.json()) as ShopResponse;
       if (data.enabled === false) {
@@ -191,17 +209,59 @@ export default function CollectionShop({
             </p>
           </div>
           <ul className="flex flex-wrap gap-1.5">
-            {targetRows.map((r) => (
-              <li
-                key={r.name}
-                className="rounded-full bg-white px-2.5 py-1 text-xs text-stone-700 ring-1 ring-stone-200"
-              >
-                {r.name} <span className="font-semibold text-stone-900">{r.count}</span>
+            {targetRows.map((r) => {
+              const active = filterCategory === r.name;
+              const clickable = !!ideas && ideas.length > 0;
+              return (
+                <li key={r.name}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!clickable) return;
+                      setFilterCategory((cur) => (cur === r.name ? null : r.name));
+                    }}
+                    disabled={!clickable}
+                    aria-pressed={active}
+                    className={
+                      "rounded-full px-2.5 py-1 text-xs transition " +
+                      (active
+                        ? "bg-blush-500 text-white ring-1 ring-blush-500"
+                        : clickable
+                          ? "bg-white text-stone-700 ring-1 ring-stone-200 hover:ring-blush-300 hover:text-blush-800"
+                          : "bg-white text-stone-700 ring-1 ring-stone-200 cursor-default")
+                    }
+                    title={
+                      clickable
+                        ? active
+                          ? `Showing only ${r.name} — click again to clear`
+                          : `Filter results to ${r.name}`
+                        : undefined
+                    }
+                  >
+                    {r.name}{" "}
+                    <span className={active ? "font-semibold" : "font-semibold text-stone-900"}>
+                      {r.count}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+            {filterCategory && (
+              <li>
+                <button
+                  type="button"
+                  onClick={() => setFilterCategory(null)}
+                  className="rounded-full bg-stone-100 px-2.5 py-1 text-xs text-stone-600 ring-1 ring-stone-200 hover:bg-stone-200"
+                >
+                  Show all ×
+                </button>
               </li>
-            ))}
+            )}
           </ul>
           <p className="mt-2 text-[11px] text-stone-400">
-            Based on dates + activities. The AI fills the gaps your closet doesn&apos;t already cover.
+            {ideas && ideas.length > 0
+              ? "Tap a category to filter the suggestions below."
+              : "Based on dates + activities. The AI fills the gaps your closet doesn't already cover."}
           </p>
         </div>
       )}
@@ -268,10 +328,28 @@ export default function CollectionShop({
         </p>
       )}
 
-      {ideas && ideas.length > 0 && (
-        <ul className="grid gap-3 sm:grid-cols-2">
-          {ideas.map((idea) => {
-            const status = savedKey[idea.searchQuery];
+      {ideas && ideas.length > 0 && (() => {
+        const visible = filterCategory
+          ? ideas.filter((i) => i.category === filterCategory)
+          : ideas;
+        if (visible.length === 0 && filterCategory) {
+          return (
+            <p className="text-sm text-stone-500">
+              No suggestions for <span className="font-medium">{filterCategory}</span> in this batch.{" "}
+              <button
+                type="button"
+                onClick={() => setFilterCategory(null)}
+                className="text-blush-600 hover:underline"
+              >
+                Show all
+              </button>
+            </p>
+          );
+        }
+        return (
+          <ul className="grid gap-3 sm:grid-cols-2">
+            {visible.map((idea) => {
+              const status = savedKey[idea.searchQuery];
             return (
               <li key={idea.searchQuery} className="card flex flex-col gap-2 p-3">
                 <div className="min-w-0">
@@ -327,10 +405,11 @@ export default function CollectionShop({
                   </button>
                 </div>
               </li>
-            );
-          })}
-        </ul>
-      )}
+              );
+            })}
+          </ul>
+        );
+      })()}
     </section>
   );
 }

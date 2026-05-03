@@ -19,10 +19,12 @@ import type { PackingTargets } from "@/lib/packingTargets";
 
 const TEXT_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
-// Cap how many specs Gemini hands back. The pipeline runs one CSE call
-// per spec; 12 is enough to cover a long packing list while staying
-// inside Google CSE's 100/day free tier comfortably.
-const MAX_SPECS = 12;
+// Hard ceiling on how many specs the model may emit. Set high enough to
+// cover most real packing-target totals (a long beach trip with full
+// underwear/socks counts can easily hit 30+) while still capping a
+// runaway prompt. The model is told the *exact* per-category counts,
+// so this only kicks in for edge cases.
+const MAX_SPECS = 50;
 
 export type ShopRequest = {
   kind: "trip" | "general";
@@ -126,6 +128,11 @@ function buildPrompt(req: ShopRequest): string {
     (acc, n) => acc + (typeof n === "number" ? n : 0),
     0,
   );
+  // Generate one spec per piece in the user's targets — they explicitly
+  // set those counts (the wizard's Quantities step), so they want a
+  // suggestion for every slot. Capped at MAX_SPECS for sanity. When
+  // there are no targets at all, fall back to a small default so the
+  // user still gets something useful.
   const askCount = Math.max(3, Math.min(MAX_SPECS, totalTarget || 5));
 
   const weatherLine = req.weather
@@ -145,13 +152,13 @@ function buildPrompt(req: ShopRequest): string {
     "User's closet snapshot:",
     describeSummary(req.closet),
     "",
-    `Packing targets per category (total pieces planned, including pieces the user already owns): ${describeTargets(req.targets)}.`,
-    "Don't return one spec per slot — instead, fill the GAPS or upgrade weak spots in the existing closet.",
+    `Packing targets per category — emit ONE spec per piece counted here, summing to ~${askCount} specs total: ${describeTargets(req.targets)}.`,
+    "These counts are what the user has decided they need to bring on the trip. Generate one shopping idea per piece. The user's existing closet may already cover some of these slots, so prefer suggesting variety (different cuts, colors, fits) rather than identical pieces — but stay within the per-category counts.",
     "",
     describeIntensity(intensity),
     `Closet awareness intensity: ${intensity} / 100.`,
     "",
-    `Return ${askCount} distinct product specs (no fewer than 3). Spread them across the categories the trip needs — don't return five tops if the trip needs shoes and outerwear too.`,
+    `Return between 3 and ${MAX_SPECS} distinct specs. Match the per-category counts above as closely as possible — if the user asked for 5 Tops, return 5 distinct top specs (different styles or colors, not 5 of the same piece). For uniform categories like Underwear or Socks where buying multiples of a single style is normal, you may emit fewer specs than the count (e.g. 2 underwear specs to cover an "Underwear: 8" target).`,
     "Each spec describes ONE product as if you were searching Google for it. Be specific enough that a search engine would surface a single canonical product (e.g. include color + fit + material), but loose enough that current inventory exists (don't lock to a discontinued style number).",
     "",
     "Return ONE JSON object (no prose, no markdown fences) of this exact shape:",
