@@ -122,6 +122,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       enabled: true,
       products: result.products,
+      notes: result.notes,
       weather: forecast,
       targets,
       intensity,
