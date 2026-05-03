@@ -1,13 +1,16 @@
-// "Shop for this trip" — given a collection (trip or themed set),
-// the user's closet snapshot, packing targets, and optional weather
-// forecast, ask Gemini's grounded search for a list of real products
-// to buy. Same Gemini-grounded-search pattern as styleSuggestion.ts,
-// but tuned to:
-//  - return MANY products (3-15) covering the trip's needs head-to-toe,
-//  - tag each result with the category it fills so the UI can render
-//    "1 of 2 shoes", "2 of 5 tops", etc against the packing targets,
-//  - scale the prompt based on a 0-100 "closet awareness" slider so the
-//    user can flip between "stay in my lane" and "show me something new".
+// "Shop for this trip" — STAGE 1 of the two-stage pipeline.
+//
+// Stage 1 (this file): ask Gemini to spec the IDEAL products for a
+// collection — searchable descriptions, no URLs. Stage 2 takes those
+// specs and runs them through Google Programmable Search to find real,
+// current product pages from a curated retailer allowlist. Stage 3
+// validates each URL via lib/productMeta.ts and pulls the real og:image
+// + JSON-LD price.
+//
+// Why specs instead of URLs: Gemini's grounded search returns URLs from
+// its training cutoff, so fashion items (6-12 month shelf life) come
+// back dead or pointing to discontinued products. Specifying THE PRODUCT
+// instead lets us find current inventory from real Google results.
 
 import { CATEGORIES, COLOR_NAMES } from "@/lib/constants";
 import { describeSummary, type ClosetSummary } from "@/lib/ai/closetSummary";
@@ -16,59 +19,56 @@ import type { PackingTargets } from "@/lib/packingTargets";
 
 const TEXT_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
-// Cap the number of products we surface in one call. Gemini's grounded
-// search starts hallucinating URLs once you ask for too many results;
-// 15 is a safe ceiling that still covers the longest packing list.
-const MAX_RESULTS = 15;
+// Cap how many specs Gemini hands back. The pipeline runs one CSE call
+// per spec; 12 is enough to cover a long packing list while staying
+// inside Google CSE's 100/day free tier comfortably.
+const MAX_SPECS = 12;
 
 export type ShopRequest = {
-  /** "trip" or "general" — colors the prompt language. */
   kind: "trip" | "general";
   name: string;
   destination: string | null;
-  /** ISO date string (YYYY-MM-DD) or null. */
   startDate: string | null;
   endDate: string | null;
-  /** Number of nights (null when missing dates). */
   nights: number | null;
   occasion: string | null;
   season: string | null;
   activities: string[];
   notes: string | null;
   closet: ClosetSummary;
-  /** Set when the trip falls inside the 16-day forecast window. */
   weather: TripForecast | null;
-  /** Per-category targets from computePackingTargets. */
   targets: PackingTargets;
-  /** 0 = stay close to current style; 100 = fully exploratory. */
   intensity: number;
 };
 
-export type ShopProduct = {
-  productName: string;
-  brand: string | null;
-  vendor: string | null;
-  productUrl: string;
+export type ProductSpec = {
+  /** Plain-English search query for Google. Roughly: "[color] [subType]
+   *  [brand or 'on sale'] [season/style hint]". 60-90 chars max. */
+  searchQuery: string;
+  /** Higher-level category, used by the UI for grouping. */
   category: string | null;
   color: string | null;
-  estimatedPrice: string | null;
+  /** Optional brand or vendor hint — when provided, helps narrow CSE. */
+  brandHint: string | null;
+  /** "fast-fashion" / "mid" / "designer" — used as a tiebreaker when
+   *  multiple CSE hits look plausible. */
+  priceTier: string | null;
+  /** 1-2 sentences explaining why this fits the trip + closet. Shown
+   *  on the product card so the user sees the AI's reasoning. */
   reasoning: string;
-  /** Best-effort image URL (often missing from grounded responses). */
-  imageUrl: string | null;
 };
 
-export type ShopDebug = {
+export type SpecDebug = {
   status?: number;
   error?: string;
   rawText?: string;
   promptTokens?: number;
   responseTokens?: number;
-  sources?: string[];
 };
 
-export type ShopResult =
-  | { ok: true; products: ShopProduct[]; debug: ShopDebug }
-  | { ok: false; error: string; debug: ShopDebug };
+export type SpecResult =
+  | { ok: true; specs: ProductSpec[]; debug: SpecDebug }
+  | { ok: false; error: string; debug: SpecDebug };
 
 function clampIntensity(n: number): number {
   if (!Number.isFinite(n)) return 50;
@@ -77,30 +77,18 @@ function clampIntensity(n: number): number {
 
 function describeIntensity(intensity: number): string {
   if (intensity <= 20) {
-    return [
-      "STYLE FIT: Strongly match the closet's existing aesthetic.",
-      "Stick to the brands, colors, and silhouettes the user already wears.",
-      "Each product should feel like it could have come from the same closet.",
-    ].join(" ");
+    return "STYLE FIT: Stay deeply within the closet's existing aesthetic — same brands, colors, and silhouettes the user already wears.";
   }
   if (intensity <= 45) {
-    return [
-      "STYLE FIT: Mostly match the closet's existing aesthetic, with a couple of complementary pieces that are slightly outside the user's usual rotation.",
-    ].join(" ");
+    return "STYLE FIT: Mostly familiar — match the existing aesthetic, with one or two complementary pieces slightly outside the user's usual rotation.";
   }
   if (intensity <= 65) {
-    return [
-      "STYLE FIT: Balanced — mix familiar staples with a few new aesthetics or brands the user might enjoy exploring.",
-    ].join(" ");
+    return "STYLE FIT: Balanced — mix familiar staples with a few new aesthetics or brands the user might enjoy exploring.";
   }
   if (intensity <= 85) {
-    return [
-      "STYLE FIT: Lean exploratory — the user wants inspiration. Push toward fresh brands, colors, and silhouettes outside their current rotation, while still respecting their price tier and any explicit style notes.",
-    ].join(" ");
+    return "STYLE FIT: Lean exploratory — push toward fresh brands, colors, and silhouettes outside the current rotation while respecting price tier and explicit style notes.";
   }
-  return [
-    "STYLE FIT: Highly exploratory — the user is actively shopping for newness. Pick brands and aesthetics they don't already own, treat the closet snapshot as a reference for size/price tier and what to AVOID repeating, not what to imitate.",
-  ].join(" ");
+  return "STYLE FIT: Highly exploratory — actively avoid repeating brands the user already owns. Use the closet snapshot to pick a price tier and what to AVOID, not what to imitate.";
 }
 
 function describeTargets(t: PackingTargets): string {
@@ -138,24 +126,18 @@ function buildPrompt(req: ShopRequest): string {
     (acc, n) => acc + (typeof n === "number" ? n : 0),
     0,
   );
-  // Keep the model's actual count in [3, MAX_RESULTS]. The packing
-  // target is the user's planning budget — for a 3-day trip the target
-  // might be 12 items, but we don't need 12 NEW pieces to fill it; the
-  // closet covers most of it. Asking for one product per planned slot
-  // overshoots wildly, so we cap at MAX_RESULTS and treat the targets
-  // as the upper bound.
-  const askCount = Math.max(3, Math.min(MAX_RESULTS, totalTarget || 5));
+  const askCount = Math.max(3, Math.min(MAX_SPECS, totalTarget || 5));
 
   const weatherLine = req.weather
     ? describeForTrip(req.weather)
     : req.kind === "trip"
-      ? "(No live forecast available — the trip is too far out or the destination wasn't given. Reason from typical seasonal climate at the destination if you can; otherwise stay versatile.)"
+      ? "(No live forecast available — the trip is too far out or the destination wasn't given. Reason from typical seasonal climate at the destination.)"
       : "";
 
   return [
     req.kind === "trip"
-      ? "You're a personal stylist building a NEW SHOPPING LIST for a user's upcoming trip."
-      : "You're a personal stylist building a NEW SHOPPING LIST for a user's themed wardrobe collection.",
+      ? "You are a personal stylist. Build a SHOPPING SPEC for a user's upcoming trip — a list of products to look for. You will NOT return URLs. A separate search engine will resolve each spec to a real, currently-stocked product page."
+      : "You are a personal stylist. Build a SHOPPING SPEC for a user's themed wardrobe collection — a list of products to look for. You will NOT return URLs. A separate search engine will resolve each spec to a real, currently-stocked product page.",
     `Collection name: ${req.name}.`,
     describeTripWindow(req),
     weatherLine,
@@ -163,45 +145,42 @@ function buildPrompt(req: ShopRequest): string {
     "User's closet snapshot:",
     describeSummary(req.closet),
     "",
-    `Packing targets (per category, total pieces planned): ${describeTargets(req.targets)}.`,
-    "These are the user's TOTAL packing goals — including pieces they already own. Don't suggest a separate item for every slot; instead, suggest products that would close the GAPS or upgrade weak spots in the existing closet, while staying inside the relevant categories.",
+    `Packing targets per category (total pieces planned, including pieces the user already owns): ${describeTargets(req.targets)}.`,
+    "Don't return one spec per slot — instead, fill the GAPS or upgrade weak spots in the existing closet.",
     "",
     describeIntensity(intensity),
     `Closet awareness intensity: ${intensity} / 100.`,
     "",
-    `Return ${askCount} distinct products (no fewer than 3) using GROUNDED search to find real items on real retailers. Spread them across the categories called for by the trip — don't return five tops if the trip needs shoes and outerwear too.`,
-    "Match the closet's apparent price tier (designer ↔ designer, mid-tier ↔ mid-tier, etc).",
-    "If a forecast is provided, the items must be appropriate for that weather (e.g. don't suggest sandals in 40°F rain).",
+    `Return ${askCount} distinct product specs (no fewer than 3). Spread them across the categories the trip needs — don't return five tops if the trip needs shoes and outerwear too.`,
+    "Each spec describes ONE product as if you were searching Google for it. Be specific enough that a search engine would surface a single canonical product (e.g. include color + fit + material), but loose enough that current inventory exists (don't lock to a discontinued style number).",
     "",
     "Return ONE JSON object (no prose, no markdown fences) of this exact shape:",
     "{",
-    '  "products": [',
+    '  "specs": [',
     "    {",
-    '      "productName": string,    // exact product name as on the page',
-    '      "brand": string | null,   // brand name (e.g. "Madewell")',
-    '      "vendor": string | null,  // retailer if different from brand (e.g. "Net-a-Porter")',
-    '      "productUrl": string,     // canonical product page URL — MUST be real and verified via search',
-    `      "category": string | null,// one of ${allowedCategories} — null if uncertain`,
-    `      "color": string | null,   // one of ${allowedColors} — null if multi-color or unknown`,
-    '      "estimatedPrice": string | null, // "$128 USD" — null if you can\'t see one',
-    '      "reasoning": string,      // 1-2 sentences: why this fits the trip and the user\'s style',
-    '      "imageUrl": string | null // direct image URL if you can pin one down',
+    '      "searchQuery": string,    // 60-90 chars; "[color] [type] [brand?] [style hint?]"',
+    `      "category": string|null,  // one of ${allowedCategories} — null if uncertain`,
+    `      "color": string|null,     // one of ${allowedColors} — null if multi-color`,
+    '      "brandHint": string|null, // brand name if you want to anchor the search; null if open',
+    '      "priceTier": string|null, // "fast-fashion" | "mid" | "designer" — null if uncertain',
+    '      "reasoning": string       // 1-2 sentences: why this fits the trip and the user',
     "    },",
     "    ...",
     "  ]",
     "}",
     "",
     "Hard rules:",
-    "- Every productUrl MUST be a real retailer page you can verify via grounded search. Never invent URLs. If you can't confirm a product, drop it from the list rather than fabricating.",
+    `- Cap at ${MAX_SPECS} specs.`,
+    "- Each searchQuery should be a query you'd actually type into a fashion retailer's search bar — no quotes, no boolean ops.",
+    "- DO NOT include URLs. The downstream pipeline finds the real URL.",
     "- Use null (not empty string) for any field you can't confidently fill.",
-    `- Cap at ${MAX_RESULTS} products total. Don't pad the list.`,
-    "- Output ONLY the JSON object. No commentary before or after.",
+    "- Output ONLY the JSON object.",
   ]
     .filter(Boolean)
     .join("\n");
 }
 
-export async function findItemsForCollection(req: ShopRequest): Promise<ShopResult> {
+export async function specifyProductsForCollection(req: ShopRequest): Promise<SpecResult> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) {
     return {
@@ -213,14 +192,19 @@ export async function findItemsForCollection(req: ShopRequest): Promise<ShopResu
 
   const prompt = buildPrompt(req);
   const intensity = clampIntensity(req.intensity);
-  // High-intensity searches benefit from more sampling diversity so we
-  // don't anchor too hard on the closet snapshot.
+  // High-intensity specs benefit from more sampling diversity so we
+  // don't anchor too hard on the closet summary.
   const temperature = 0.3 + (intensity / 100) * 0.5;
 
+  // No grounded search — we want pure reasoning here. Saves tokens and
+  // avoids the "Gemini returns the same stale URL" failure mode that
+  // started this whole rework.
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
-    tools: [{ googleSearch: {} }],
-    generationConfig: { temperature },
+    generationConfig: {
+      temperature,
+      responseMimeType: "application/json",
+    },
   };
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
@@ -254,9 +238,6 @@ export async function findItemsForCollection(req: ShopRequest): Promise<ShopResu
     const data = JSON.parse(responseText) as {
       candidates?: Array<{
         content?: { parts?: Array<{ text?: string }> };
-        groundingMetadata?: {
-          groundingChunks?: Array<{ web?: { uri?: string; title?: string } }>;
-        };
         finishReason?: string;
       }>;
       promptFeedback?: { blockReason?: string };
@@ -276,50 +257,32 @@ export async function findItemsForCollection(req: ShopRequest): Promise<ShopResu
         ?.map((p) => p.text)
         .filter(Boolean)
         .join("") ?? "";
-    const sources = (data.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [])
-      .map((c) => c.web?.uri)
-      .filter((x): x is string => !!x);
 
     if (!text.trim()) {
       return {
         ok: false,
         error: `Model returned no text (finishReason=${data.candidates?.[0]?.finishReason ?? "?"})`,
-        debug: { status: 200, error: "empty text", rawText, sources },
+        debug: { status: 200, error: "empty text", rawText },
       };
     }
 
-    const parsed = parseShopResponse(text);
-    if (!parsed) {
+    const specs = parseAndSanitizeSpecs(text);
+    if (specs.length === 0) {
       return {
         ok: false,
-        error: "Couldn't parse a JSON product list from the model's response.",
-        debug: { status: 200, error: "non-JSON response", rawText: text.slice(0, 500), sources },
-      };
-    }
-
-    const products = sanitizeProducts(parsed);
-    if (products.length === 0) {
-      return {
-        ok: false,
-        error: "Model returned no usable products.",
-        debug: {
-          status: 200,
-          error: "no usable products",
-          rawText: text.slice(0, 500),
-          sources,
-        },
+        error: "Model returned no usable product specs.",
+        debug: { status: 200, error: "no usable specs", rawText: text.slice(0, 500) },
       };
     }
 
     return {
       ok: true,
-      products,
+      specs,
       debug: {
         status: 200,
         rawText: text.slice(0, 500),
         promptTokens: data.usageMetadata?.promptTokenCount,
         responseTokens: data.usageMetadata?.candidatesTokenCount,
-        sources,
       },
     };
   } catch (err) {
@@ -328,56 +291,35 @@ export async function findItemsForCollection(req: ShopRequest): Promise<ShopResu
   }
 }
 
-function parseShopResponse(text: string): unknown[] | null {
+function parseAndSanitizeSpecs(text: string): ProductSpec[] {
   const cleaned = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
   let parsed: unknown;
   try {
     parsed = JSON.parse(cleaned);
   } catch {
     const match = cleaned.match(/\{[\s\S]*\}/);
-    if (!match) return null;
+    if (!match) return [];
     try {
       parsed = JSON.parse(match[0]);
     } catch {
-      return null;
+      return [];
     }
   }
-  if (!parsed || typeof parsed !== "object") return null;
-  const products = (parsed as { products?: unknown }).products;
-  if (!Array.isArray(products)) return null;
-  return products;
-}
+  if (!parsed || typeof parsed !== "object") return [];
+  const specs = (parsed as { specs?: unknown }).specs;
+  if (!Array.isArray(specs)) return [];
 
-function sanitizeProducts(raw: unknown[]): ShopProduct[] {
-  const out: ShopProduct[] = [];
-  const seenUrls = new Set<string>();
-  for (const r of raw) {
+  const out: ProductSpec[] = [];
+  for (const r of specs) {
     if (!r || typeof r !== "object") continue;
     const o = r as Record<string, unknown>;
-
-    const productName =
-      typeof o.productName === "string" && o.productName.trim()
-        ? o.productName.trim().slice(0, 200)
+    const searchQuery =
+      typeof o.searchQuery === "string" && o.searchQuery.trim()
+        ? o.searchQuery.trim().slice(0, 200)
         : null;
-    const productUrl =
-      typeof o.productUrl === "string" && /^https?:\/\//i.test(o.productUrl)
-        ? o.productUrl.slice(0, 800)
-        : null;
-    if (!productName || !productUrl) continue;
-    if (seenUrls.has(productUrl)) continue;
-    seenUrls.add(productUrl);
-
+    if (!searchQuery) continue;
     out.push({
-      productName,
-      productUrl,
-      brand:
-        typeof o.brand === "string" && o.brand.trim()
-          ? o.brand.trim().slice(0, 120)
-          : null,
-      vendor:
-        typeof o.vendor === "string" && o.vendor.trim()
-          ? o.vendor.trim().slice(0, 120)
-          : null,
+      searchQuery,
       category:
         typeof o.category === "string" && o.category.trim()
           ? o.category.trim().slice(0, 80)
@@ -386,20 +328,20 @@ function sanitizeProducts(raw: unknown[]): ShopProduct[] {
         typeof o.color === "string" && o.color.trim()
           ? o.color.trim().slice(0, 80)
           : null,
-      estimatedPrice:
-        typeof o.estimatedPrice === "string" && o.estimatedPrice.trim()
-          ? o.estimatedPrice.trim().slice(0, 60)
+      brandHint:
+        typeof o.brandHint === "string" && o.brandHint.trim()
+          ? o.brandHint.trim().slice(0, 120)
+          : null,
+      priceTier:
+        typeof o.priceTier === "string" && o.priceTier.trim()
+          ? o.priceTier.trim().slice(0, 40)
           : null,
       reasoning:
         typeof o.reasoning === "string" && o.reasoning.trim()
           ? o.reasoning.trim().slice(0, 600)
           : "",
-      imageUrl:
-        typeof o.imageUrl === "string" && /^https?:\/\//i.test(o.imageUrl)
-          ? o.imageUrl.slice(0, 800)
-          : null,
     });
-    if (out.length >= MAX_RESULTS) break;
+    if (out.length >= MAX_SPECS) break;
   }
   return out;
 }
