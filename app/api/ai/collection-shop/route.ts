@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
-import { csvToList } from "@/lib/constants";
-import { computePackingTargets } from "@/lib/packingTargets";
+import { CATEGORIES, csvToList, type Category } from "@/lib/constants";
+import {
+  computePackingTargets,
+  type PackingTargets,
+} from "@/lib/packingTargets";
 import { buildClosetSummary } from "@/lib/ai/closetSummary";
 import { runShopPipeline } from "@/lib/ai/shopPipeline";
 import { getTripForecast } from "@/lib/weather";
@@ -48,6 +51,7 @@ export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
     collectionId?: unknown;
     intensity?: unknown;
+    targets?: unknown;
   };
   const collectionId = typeof body.collectionId === "string" ? body.collectionId : "";
   const intensityRaw =
@@ -60,6 +64,11 @@ export async function POST(req: NextRequest) {
   if (!collectionId) {
     return NextResponse.json({ error: "collectionId required" }, { status: 400 });
   }
+
+  // Caller-provided per-category counts (from the wizard's Quantities
+  // step). When absent, we recompute from dates + activities below.
+  // Sanitize to keep the model from seeing weird values.
+  const overrideTargets = sanitizeTargets(body.targets);
 
   const collection = await prisma.collection.findFirst({
     where: { id: collectionId, ownerId: userId },
@@ -78,7 +87,7 @@ export async function POST(req: NextRequest) {
   try {
     const activities = csvToList(collection.activities);
     const nights = nightsBetween(collection.startDate, collection.endDate);
-    const targets = computePackingTargets(nights, activities);
+    const targets = overrideTargets ?? computePackingTargets(nights, activities);
 
     // Weather is best-effort. We only have a city to geocode for trips
     // (themed sets don't have a destination); if Open-Meteo is down or
@@ -130,4 +139,25 @@ export async function POST(req: NextRequest) {
   } finally {
     inflight.delete(userId);
   }
+}
+
+// Pull user-supplied per-category counts out of the request body.
+// Returns null when the payload is missing / unusable so callers can
+// fall back to the deterministic computePackingTargets formula.
+function sanitizeTargets(raw: unknown): PackingTargets | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  const out: PackingTargets = {};
+  let hadAny = false;
+  for (const c of CATEGORIES) {
+    const v = obj[c];
+    const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+    if (Number.isFinite(n) && n > 0) {
+      // Cap the per-category count so a malformed client can't ask
+      // Gemini for 9999 specs and burn a token budget.
+      out[c as Category] = Math.max(0, Math.min(50, Math.round(n)));
+      hadAny = true;
+    }
+  }
+  return hadAny ? out : null;
 }

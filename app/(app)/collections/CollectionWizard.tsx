@@ -18,9 +18,9 @@ type Kind = "trip" | "general";
 type Mode = "closet" | "shop";
 type Step = 1 | 2 | 3 | 4;
 
-// Step labels depend on the chosen mode. Closet mode walks through
-// quantities and a packing list pulled from owned items; shop mode skips
-// straight to the AI shopping panel after activities.
+// Step labels depend on the chosen mode. Both modes share the first
+// three steps; only the final step diverges — closet mode pulls a
+// packing list from owned items, shop mode opens the AI shopping panel.
 const CLOSET_STEPS = [
   { n: 1, label: "Trip" },
   { n: 2, label: "Activities" },
@@ -31,7 +31,8 @@ const CLOSET_STEPS = [
 const SHOP_STEPS = [
   { n: 1, label: "Trip" },
   { n: 2, label: "Activities" },
-  { n: 3, label: "Shop" },
+  { n: 3, label: "Quantities" },
+  { n: 4, label: "Shop" },
 ] as const;
 
 export default function CollectionWizard({ items }: { items: Selectable[] }) {
@@ -266,7 +267,7 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
       const id = data.collection?.id ?? shopDraftId;
       if (!id) throw new Error("No collection id returned");
       setShopDraftId(id);
-      setStep(3);
+      setStep(4);
     } catch (err) {
       console.error(err);
       setError("Couldn't save your trip details. Try again?");
@@ -520,77 +521,14 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
             <button type="button" className="btn-ghost" onClick={() => setStep(1)}>
               ← Back
             </button>
-            {mode === "shop" ? (
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={enterShopStep}
-                disabled={enteringShop}
-              >
-                {enteringShop ? "Saving…" : "Next: Shop online"}
-              </button>
-            ) : (
-              <button type="button" className="btn-primary" onClick={() => setStep(3)}>
-                Next: Quantities
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {step === 3 && mode === "shop" && shopDraftId && (
-        <div className="space-y-4">
-          <div className="card p-3 text-xs text-stone-600">
-            <span className="font-medium text-stone-800">{name || "Untitled"}</span>
-            {kind === "trip" && (destination || nights != null) && (
-              <>
-                {" · "}
-                {destination || "?"}
-                {nights != null ? ` · ${nights} night${nights === 1 ? "" : "s"}` : ""}
-              </>
-            )}
-            {activities.length > 0 && (
-              <>
-                {" · "}
-                {activities.slice(0, 3).map(capitalize).join(", ")}
-                {activities.length > 3 ? "…" : ""}
-              </>
-            )}
-          </div>
-
-          <CollectionShop
-            collectionId={shopDraftId}
-            kind={kind}
-            destination={destination || null}
-            hasDates={!!startDate}
-            startDate={startDate || null}
-            endDate={endDate || null}
-            activities={activities}
-          />
-
-          <div className="card flex flex-wrap items-center justify-between gap-2 p-3">
-            <button type="button" className="btn-ghost" onClick={() => setStep(2)}>
-              ← Back
+            <button type="button" className="btn-primary" onClick={() => setStep(3)}>
+              Next: Quantities
             </button>
-            <div className="flex items-center gap-2">
-              <Link href="/collections" className="btn-ghost text-stone-500">
-                Cancel
-              </Link>
-              <Link
-                href={`/collections/${shopDraftId}`}
-                className="btn-primary"
-                onClick={() => router.refresh()}
-              >
-                Done
-              </Link>
-            </div>
           </div>
-
-          {error && <p className="text-sm text-blush-700">{error}</p>}
         </div>
       )}
 
-      {step === 3 && mode === "closet" && (
+      {step === 3 && (
         <div className="card space-y-4 p-4">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
@@ -653,14 +591,78 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
             <button type="button" className="btn-ghost" onClick={() => setStep(2)}>
               ← Back
             </button>
-            <button type="button" className="btn-primary" onClick={() => setStep(4)}>
-              Next: Packing list
-            </button>
+            {mode === "shop" ? (
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={enterShopStep}
+                disabled={enteringShop}
+              >
+                {enteringShop ? "Saving…" : "Next: Shop online"}
+              </button>
+            ) : (
+              <button type="button" className="btn-primary" onClick={() => setStep(4)}>
+                Next: Packing list
+              </button>
+            )}
           </div>
         </div>
       )}
 
-      {step === 4 && (
+      {step === 4 && mode === "shop" && shopDraftId && (
+        <div className="space-y-4">
+          <div className="card p-3 text-xs text-stone-600">
+            <span className="font-medium text-stone-800">{name || "Untitled"}</span>
+            {kind === "trip" && (destination || nights != null) && (
+              <>
+                {" · "}
+                {destination || "?"}
+                {nights != null ? ` · ${nights} night${nights === 1 ? "" : "s"}` : ""}
+              </>
+            )}
+            {activities.length > 0 && (
+              <>
+                {" · "}
+                {activities.slice(0, 3).map(capitalize).join(", ")}
+                {activities.length > 3 ? "…" : ""}
+              </>
+            )}
+          </div>
+
+          <CollectionShop
+            collectionId={shopDraftId}
+            kind={kind}
+            destination={destination || null}
+            hasDates={!!startDate}
+            startDate={startDate || null}
+            endDate={endDate || null}
+            activities={activities}
+            targets={targets}
+          />
+
+          <div className="card flex flex-wrap items-center justify-between gap-2 p-3">
+            <button type="button" className="btn-ghost" onClick={() => setStep(3)}>
+              ← Back
+            </button>
+            <div className="flex items-center gap-2">
+              <Link href="/collections" className="btn-ghost text-stone-500">
+                Cancel
+              </Link>
+              <Link
+                href={`/collections/${shopDraftId}`}
+                className="btn-primary"
+                onClick={() => router.refresh()}
+              >
+                Done
+              </Link>
+            </div>
+          </div>
+
+          {error && <p className="text-sm text-blush-700">{error}</p>}
+        </div>
+      )}
+
+      {step === 4 && mode === "closet" && (
         <div className="space-y-4">
           {/* Compact summary so the user knows what they're packing for. */}
           <div className="card p-3 text-xs text-stone-600">
@@ -804,7 +806,7 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
       {/* Sticky bottom action bar so Save stays one tap away once the
           user has scrolled past the top action row into the packing
           list. Mirrors the controls at the top of step 4. */}
-      {step === 4 && (
+      {step === 4 && mode === "closet" && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200 bg-white/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-white/80">
           <div className="mx-auto flex max-w-2xl items-center justify-between gap-2">
             <button type="button" className="btn-ghost" onClick={() => setStep(3)}>
