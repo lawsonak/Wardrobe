@@ -333,6 +333,9 @@ export default function CollectionEditor({
         kind={kind}
         destination={destination || null}
         hasDates={!!startDate}
+        startDate={startDate || null}
+        endDate={endDate || null}
+        activities={activities}
       />
 
       {error && <p className="text-sm text-blush-700">{error}</p>}
