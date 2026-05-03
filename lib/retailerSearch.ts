@@ -13,7 +13,14 @@
 
 const enc = encodeURIComponent;
 
-type Tier = "fast-fashion" | "mid" | "designer" | "activewear" | "swim" | "shoes-bags";
+type Tier =
+  | "fast-fashion"
+  | "mid"
+  | "designer"
+  | "activewear"
+  | "swim"
+  | "shoes-bags"
+  | "intimates";
 
 export type Retailer = {
   id: string;
@@ -237,6 +244,36 @@ export const RETAILERS: Retailer[] = [
     searchUrl: (q) => `https://www.solidandstriped.com/search?q=${enc(q)}`,
   },
 
+  // ───── Intimates (bras, underwear, sleepwear) ─────
+  {
+    id: "barenecessities",
+    name: "Bare Necessities",
+    host: "barenecessities.com",
+    tiers: ["intimates", "swim"],
+    searchUrl: (q) => `https://www.barenecessities.com/search?q=${enc(q)}`,
+  },
+  {
+    id: "bravissimo",
+    name: "Bravissimo",
+    host: "bravissimo.com",
+    tiers: ["intimates", "swim"],
+    searchUrl: (q) => `https://www.bravissimo.com/search/?q=${enc(q)}`,
+  },
+  {
+    id: "freya",
+    name: "Freya",
+    host: "freyalingerie.com",
+    tiers: ["intimates", "swim"],
+    searchUrl: (q) => `https://www.freyalingerie.com/search?q=${enc(q)}`,
+  },
+  {
+    id: "hankypanky",
+    name: "Hanky Panky",
+    host: "hankypanky.com",
+    tiers: ["intimates"],
+    searchUrl: (q) => `https://hankypanky.com/search?q=${enc(q)}`,
+  },
+
   // ───── Shoes & bags ─────
   {
     id: "zappos",
@@ -342,12 +379,15 @@ function inferTier(spec: SpecForPick): Tier {
     return "designer";
   }
 
-  // Fall back to category for athletic / swim / shoes specs that the
-  // model didn't explicitly tier.
+  // Fall back to category for athletic / swim / shoes / intimates specs
+  // that the model didn't explicitly tier.
   const cat = (spec.category ?? "").toLowerCase();
   if (cat.includes("activewear")) return "activewear";
   if (cat.includes("swim")) return "swim";
   if (cat.includes("shoes") || cat.includes("bags")) return "shoes-bags";
+  if (cat.includes("bra") || cat.includes("underwear") || cat.includes("hosiery")) {
+    return "intimates";
+  }
 
   return "mid";
 }
