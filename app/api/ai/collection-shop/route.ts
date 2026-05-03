@@ -11,9 +11,13 @@ import { runShopPipeline } from "@/lib/ai/shopPipeline";
 import { getTripForecast } from "@/lib/weather";
 
 export const runtime = "nodejs";
-// Pure Gemini call (no external HTTP fan-out anymore) — finishes in
-// 5-10s, but keep some headroom for slow days.
-export const maxDuration = 60;
+// One Gemini call that may emit up to 50 specs (one per piece in the
+// user's packing target). Typical: 10-25s. Worst case under load: 45s.
+// Bumped from 60 → 120 because mobile Safari was timing out client-side
+// before the server response landed; matching the server budget gives
+// the fetch a chance to return a real error instead of a generic
+// "Load failed".
+export const maxDuration = 120;
 
 // In-process per-user lock so a refresh-button-mash doesn't burn two
 // grounded search calls back to back.
