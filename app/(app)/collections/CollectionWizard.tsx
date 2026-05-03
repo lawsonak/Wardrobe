@@ -563,6 +563,9 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
             kind={kind}
             destination={destination || null}
             hasDates={!!startDate}
+            startDate={startDate || null}
+            endDate={endDate || null}
+            activities={activities}
           />
 
           <div className="card flex flex-wrap items-center justify-between gap-2 p-3">

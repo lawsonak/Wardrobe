@@ -1,6 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { CATEGORIES } from "@/lib/constants";
+import {
+  computePackingTargets,
+  totalCount,
+  type PackingTargets,
+} from "@/lib/packingTargets";
 
 type RetailerLink = {
   id: string;
@@ -48,12 +54,38 @@ export default function CollectionShop({
   kind,
   destination,
   hasDates,
+  startDate,
+  endDate,
+  activities,
 }: {
   collectionId: string;
   kind: "trip" | "general";
   destination: string | null;
   hasDates: boolean;
+  /** ISO date string (YYYY-MM-DD) — used to compute the targets summary
+   *  before the search runs so the user sees what they're shopping for. */
+  startDate: string | null;
+  endDate: string | null;
+  activities: string[];
 }) {
+  // Mirror the deterministic packing-target formula the API uses
+  // server-side so the summary at the top of the section matches what
+  // the AI is reasoning over. Recompute when dates/activities change.
+  const targets = useMemo<PackingTargets>(() => {
+    const nights = computeNights(startDate, endDate);
+    return computePackingTargets(nights, activities);
+  }, [startDate, endDate, activities]);
+  const targetTotal = totalCount(targets);
+  const targetRows = CATEGORIES.flatMap((c) => {
+    const n = targets[c];
+    return typeof n === "number" && n > 0 ? [{ name: c, count: n }] : [];
+  });
+  const nightsLabel = (() => {
+    const n = computeNights(startDate, endDate);
+    if (n == null) return null;
+    return `${n} night${n === 1 ? "" : "s"}`;
+  })();
+
   const [intensity, setIntensity] = useState(50);
   const [busy, setBusy] = useState(false);
   const [ideas, setIdeas] = useState<ShopIdea[] | null>(null);
@@ -145,6 +177,34 @@ export default function CollectionShop({
           your closet.
         </p>
       </div>
+
+      {targetTotal > 0 && (
+        <div className="rounded-2xl bg-cream-50 p-3">
+          <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">
+              Estimated for this {kind === "trip" ? "trip" : "collection"}
+            </p>
+            <p className="text-xs text-stone-500">
+              {[nightsLabel, `${targetTotal} piece${targetTotal === 1 ? "" : "s"} total`]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          </div>
+          <ul className="flex flex-wrap gap-1.5">
+            {targetRows.map((r) => (
+              <li
+                key={r.name}
+                className="rounded-full bg-white px-2.5 py-1 text-xs text-stone-700 ring-1 ring-stone-200"
+              >
+                {r.name} <span className="font-semibold text-stone-900">{r.count}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[11px] text-stone-400">
+            Based on dates + activities. The AI fills the gaps your closet doesn&apos;t already cover.
+          </p>
+        </div>
+      )}
 
       <div>
         <div className="mb-1 flex items-baseline justify-between">
@@ -273,4 +333,12 @@ export default function CollectionShop({
       )}
     </section>
   );
+}
+
+function computeNights(start: string | null, end: string | null): number | null {
+  if (!start) return null;
+  const s = Date.parse(start);
+  const e = end ? Date.parse(end) : s;
+  if (!Number.isFinite(s) || !Number.isFinite(e) || e < s) return null;
+  return Math.max(0, Math.round((e - s) / 86_400_000));
 }
