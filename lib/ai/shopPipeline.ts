@@ -24,6 +24,7 @@ import {
 } from "@/lib/ai/collectionShop";
 import {
   buildRetailerSearchUrl,
+  buildShoppingSearchUrl,
   pickRetailersForSpec,
   type Retailer,
 } from "@/lib/retailerSearch";
@@ -53,6 +54,10 @@ export type ShopIdea = {
   searchQuery: string;
   /** Retailer search-page links the user can open. */
   retailers: RetailerLink[];
+  /** Google Shopping fallback link (no site restriction) — per-retailer
+   *  site-searches occasionally return zero results, so we always give
+   *  the user one chip that's guaranteed to surface real products. */
+  shoppingUrl: string;
 };
 
 export type PipelineDebug = {
@@ -120,5 +125,6 @@ function buildIdea(spec: ProductSpec, retailers: Retailer[]): ShopIdea {
       host: r.host,
       searchUrl: buildRetailerSearchUrl(r.host, spec.searchQuery),
     })),
+    shoppingUrl: buildShoppingSearchUrl(spec.searchQuery),
   };
 }

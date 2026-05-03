@@ -26,6 +26,16 @@ export function buildRetailerSearchUrl(host: string, query: string): string {
   return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
 }
 
+// Build a Google Shopping search URL with no site restriction. Used as
+// the per-idea fallback chip when the per-retailer site-searches whiff
+// (Google has zero results for a specific `site:` combo more often
+// than you'd think). Shopping has its own product index, surfaces
+// real buyable items with images + prices, and almost never returns
+// zero results.
+export function buildShoppingSearchUrl(query: string): string {
+  return `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(query)}`;
+}
+
 type Tier =
   | "fast-fashion"
   | "mid"
