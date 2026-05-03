@@ -24,6 +24,9 @@ type ShopIdea = {
   reasoning: string;
   searchQuery: string;
   retailers: RetailerLink[];
+  /** Google Shopping fallback link — guaranteed to surface real
+   *  products when per-retailer site-searches whiff. */
+  shoppingUrl: string;
 };
 
 type ShopResponse = {
@@ -401,7 +404,7 @@ export default function CollectionShop({
                   <p className="text-sm text-stone-700">{idea.reasoning}</p>
                 )}
 
-                {idea.retailers.length > 0 && (
+                {(idea.retailers.length > 0 || idea.shoppingUrl) && (
                   <div className="flex flex-wrap gap-1.5">
                     {idea.retailers.map((r) => (
                       <a
@@ -415,6 +418,17 @@ export default function CollectionShop({
                         {r.name} ↗
                       </a>
                     ))}
+                    {idea.shoppingUrl && (
+                      <a
+                        href={idea.shoppingUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-full border border-blush-200 bg-blush-50 px-3 py-1 text-xs text-blush-700 transition hover:border-blush-300 hover:bg-blush-100"
+                        title={`Browse Google Shopping for "${idea.searchQuery}" — works as a fallback if no specific retailer has it.`}
+                      >
+                        🛒 Google Shopping ↗
+                      </a>
+                    )}
                   </div>
                 )}
 
