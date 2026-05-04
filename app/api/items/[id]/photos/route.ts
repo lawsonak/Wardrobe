@@ -1,24 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { promises as fs } from "node:fs";
-import path from "node:path";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import { saveUpload as save } from "@/lib/uploads";
 
 export const runtime = "nodejs";
 
-const UPLOAD_ROOT = path.join(process.cwd(), "data", "uploads");
-
-async function saveUpload(userId: string, itemId: string, file: File, suffix: string) {
-  const userDir = path.join(UPLOAD_ROOT, userId);
-  await fs.mkdir(userDir, { recursive: true });
-  const ext = (file.type.split("/")[1] || "png").replace(/[^a-z0-9]/gi, "");
-  const tag = Math.random().toString(36).slice(2, 8);
-  const filename = `${itemId}-angle-${tag}-${suffix}.${ext}`;
-  const fullPath = path.join(userDir, filename);
-  const buf = Buffer.from(await file.arrayBuffer());
-  await fs.writeFile(fullPath, buf);
-  return path.posix.join(userId, filename);
-}
+// Angle photos get a random tag in the filename so we don't collide
+// with the main photo's `<itemId>-orig.jpg` pattern.
+const saveUpload = (userId: string, itemId: string, file: File, suffix: string) =>
+  save(userId, itemId, file, `angle-${suffix}`, { bust: true });
 
 // POST /api/items/[id]/photos
 //

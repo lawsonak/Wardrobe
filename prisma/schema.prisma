@@ -71,6 +71,8 @@ model Item {
   outfitItems     OutfitItem[]
   collectionItems CollectionItem[]
   photos          ItemPhoto[]
+
+  @@index([ownerId])
 }
 
 // A "matching set" of items that came together — like a swimsuit
@@ -138,6 +140,8 @@ model Outfit {
   updatedAt    DateTime @updatedAt
 
   items OutfitItem[]
+
+  @@index([ownerId])
 }
 
 // Canonical brand. The `nameKey` is a normalized version of `name`
@@ -198,6 +202,8 @@ model Collection {
 
   items   CollectionItem[]
   outfits Outfit[]
+
+  @@index([ownerId])
 }
 
 model CollectionItem {
