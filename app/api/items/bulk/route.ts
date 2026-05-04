@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { CATEGORIES } from "@/lib/constants";
 import { saveUpload } from "@/lib/uploads";
+import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 
@@ -58,6 +59,15 @@ export async function POST(req: NextRequest) {
       data: { imagePath },
     });
     created.push({ id: updated.id, imagePath: updated.imagePath });
+  }
+
+  if (created.length > 0) {
+    await logActivity({
+      userId,
+      kind: "item.bulk-create",
+      summary: `Imported ${created.length} item${created.length === 1 ? "" : "s"}`,
+      meta: { count: created.length, defaultCategory: rawCategory },
+    });
   }
 
   return NextResponse.json({ created, count: created.length }, { status: 201 });

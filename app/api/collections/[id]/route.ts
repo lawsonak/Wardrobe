@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { listToCsv } from "@/lib/constants";
+import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 
@@ -55,6 +56,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const collection = await prisma.collection.update({ where: { id }, data, include: { items: true } });
+
+  await logActivity({
+    userId,
+    kind: "collection.update",
+    summary: `Edited collection "${collection.name}"`,
+    targetType: "Collection",
+    targetId: id,
+  });
+
   return NextResponse.json({ collection });
 }
 
@@ -63,9 +73,20 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const userId = (session?.user as { id?: string } | undefined)?.id;
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
-  if (!(await ownerCheck(id, userId))) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const existing = await prisma.collection.findFirst({
+    where: { id, ownerId: userId },
+    select: { id: true, name: true },
+  });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await prisma.collection.delete({ where: { id } });
+  await logActivity({
+    userId,
+    kind: "collection.delete",
+    summary: `Deleted collection "${existing.name}"`,
+    targetType: "Collection",
+    targetId: id,
+  });
   return NextResponse.json({ ok: true });
 }
 

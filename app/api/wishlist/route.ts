@@ -4,6 +4,7 @@ import path from "node:path";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { WISHLIST_PRIORITIES } from "@/lib/constants";
+import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 
@@ -90,8 +91,23 @@ export async function POST(req: NextRequest) {
   if (imageFile) {
     const imagePath = await saveUpload(userId, created.id, imageFile, "img");
     await prisma.wishlistItem.update({ where: { id: created.id }, data: { imagePath } });
+    await logActivity({
+      userId,
+      kind: "wishlist.create",
+      summary: `Added "${name}" to wishlist`,
+      targetType: "WishlistItem",
+      targetId: created.id,
+    });
     return NextResponse.json({ item: { ...created, imagePath } });
   }
+
+  await logActivity({
+    userId,
+    kind: "wishlist.create",
+    summary: `Added "${name}" to wishlist`,
+    targetType: "WishlistItem",
+    targetId: created.id,
+  });
 
   return NextResponse.json({ item: created });
 }

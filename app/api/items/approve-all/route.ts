@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 
@@ -32,6 +33,15 @@ export async function POST(req: NextRequest) {
     },
     data: { status: "active" },
   });
+
+  if (result.count > 0) {
+    await logActivity({
+      userId,
+      kind: "item.bulk-approve",
+      summary: `Approved ${result.count} item${result.count === 1 ? "" : "s"} from Needs Review`,
+      meta: { count: result.count },
+    });
+  }
 
   return NextResponse.json({ approved: result.count });
 }
