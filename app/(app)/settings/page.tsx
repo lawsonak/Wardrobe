@@ -163,7 +163,12 @@ export default async function SettingsPage() {
             Nothing yet — actions you take in the app will show up here.
           </p>
         ) : (
-          <ul className="mt-3 divide-y divide-stone-100 text-sm">
+          // Cap the list height so a long history doesn't push the
+          // Maintenance section off the page on a phone. Roughly 7-8
+          // rows visible at once; the rest scrolls inside the card.
+          // Keeping the divider on the <ul> means the top of the
+          // scrollable area stays visually anchored to the header.
+          <ul className="mt-3 max-h-80 divide-y divide-stone-100 overflow-y-auto pr-1 text-sm">
             {activity.map((row) => (
               <li
                 key={row.id}
