@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { SLOTS, type Slot } from "@/lib/constants";
+import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 
@@ -91,6 +92,15 @@ export async function POST(req: NextRequest) {
       items: { create: cleanItems },
     },
     include: { items: { include: { item: true } } },
+  });
+
+  await logActivity({
+    userId,
+    kind: "outfit.create",
+    summary: `Saved outfit "${outfit.name}"`,
+    targetType: "Outfit",
+    targetId: outfit.id,
+    meta: { pieces: cleanItems.length },
   });
 
   return NextResponse.json({ outfit });

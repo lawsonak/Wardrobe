@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getProvider } from "@/lib/ai/provider";
+import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 
@@ -33,6 +34,11 @@ export async function POST(req: NextRequest) {
   if (!query) return NextResponse.json({ error: "query required" }, { status: 400 });
 
   const result = await provider.parseSearch({ query });
+  await logActivity({
+    userId,
+    kind: "ai.search",
+    summary: `AI search: "${query.slice(0, 80)}"`,
+  });
   return NextResponse.json({
     enabled: true,
     filters: result.filters,

@@ -4,6 +4,7 @@ import path from "node:path";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { WISHLIST_PRIORITIES } from "@/lib/constants";
+import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 
@@ -39,6 +40,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const updated = await prisma.wishlistItem.update({ where: { id }, data });
+
+  // Distinguish "marked purchased" from a generic edit — that's the
+  // milestone the user actually cares about seeing in the feed.
+  const justMarkedPurchased = data.purchased === true && !existing.purchased;
+  await logActivity({
+    userId,
+    kind: justMarkedPurchased ? "wishlist.purchased" : "wishlist.update",
+    summary: justMarkedPurchased
+      ? `Bought "${updated.name}" from wishlist`
+      : `Edited wishlist item "${updated.name}"`,
+    targetType: "WishlistItem",
+    targetId: id,
+  });
+
   return NextResponse.json({ item: updated });
 }
 
@@ -62,6 +77,14 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       /* ignore */
     }
   }
+
+  await logActivity({
+    userId,
+    kind: "wishlist.delete",
+    summary: `Removed "${existing.name}" from wishlist`,
+    targetType: "WishlistItem",
+    targetId: id,
+  });
 
   return NextResponse.json({ ok: true });
 }

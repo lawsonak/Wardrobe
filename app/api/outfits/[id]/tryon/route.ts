@@ -13,6 +13,7 @@ import {
   photoPathFor,
   type ComposeItem,
 } from "@/lib/ai/composeTryOn";
+import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 // Image generation can take 5-15s; 60s gives margin without dragging on.
@@ -146,6 +147,15 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     if (oldPath && oldPath !== newPath) {
       await unlinkUpload(oldPath);
     }
+
+    await logActivity({
+      userId,
+      kind: "ai.tryon",
+      summary: `Generated AI try-on for "${outfit.name}"`,
+      targetType: "Outfit",
+      targetId: id,
+      meta: { skipped: result.skippedItemIds.length },
+    });
 
     return NextResponse.json({
       tryOnImagePath: updated.tryOnImagePath,

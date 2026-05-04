@@ -8,6 +8,7 @@ import { getForecast, cToF } from "@/lib/weather";
 import { getUserMannequin } from "@/lib/mannequin";
 import MannequinUpload from "@/components/MannequinUpload";
 import ShowOnboardingLink from "@/components/ShowOnboardingLink";
+import { relativeTime } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
@@ -32,14 +33,24 @@ export default async function SettingsPage() {
   const firstName = firstNameFromUser(session?.user);
   const prefs = await getPrefs();
 
-  const [items, outfits, wishlist, brands, forecast, mannequin] = await Promise.all([
+  const [items, outfits, wishlist, brands, forecast, mannequin, activity] = await Promise.all([
     prisma.item.count({ where: { ownerId: userId } }),
     prisma.outfit.count({ where: { ownerId: userId } }),
     prisma.wishlistItem.count({ where: { ownerId: userId } }),
     prisma.brand.count({ where: { ownerId: userId } }),
     prefs.homeCity ? getForecast(prefs.homeCity) : Promise.resolve(null),
     getUserMannequin(userId),
+    // Strictly per-user — every row is filtered by the caller's userId.
+    // Showing the most recent 50 keeps the section scannable; older
+    // events are auto-pruned to ~90 days by lib/activity.ts.
+    prisma.activityLog.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: { id: true, kind: true, summary: true, createdAt: true },
+    }),
   ]);
+  const lastActiveAt = activity[0]?.createdAt ?? null;
 
   return (
     <div className="space-y-6">
@@ -132,6 +143,46 @@ export default async function SettingsPage() {
         <a href="/api/export" className="btn-primary mt-3 inline-flex" download>
           Download backup (JSON)
         </a>
+      </section>
+
+      <section className="card p-4">
+        <h2 className="font-display text-lg text-stone-800">Activity</h2>
+        <p className="mt-1 text-sm text-stone-600">
+          Your recent actions in the app. Sign-ins, AI calls, and writes only —
+          and only your own; the other profile&apos;s activity stays private.
+        </p>
+        <p className="mt-2 text-xs text-stone-500">
+          Last active{" "}
+          <span className="font-medium text-stone-700">
+            {lastActiveAt ? relativeTime(lastActiveAt) : "never"}
+          </span>
+          . Older events past 90 days drop off automatically.
+        </p>
+        {activity.length === 0 ? (
+          <p className="mt-3 text-sm text-stone-500">
+            Nothing yet — actions you take in the app will show up here.
+          </p>
+        ) : (
+          <ul className="mt-3 divide-y divide-stone-100 text-sm">
+            {activity.map((row) => (
+              <li
+                key={row.id}
+                className="flex items-baseline justify-between gap-3 py-2"
+              >
+                <span className="min-w-0 flex-1 text-stone-700">
+                  {row.summary}
+                </span>
+                <time
+                  className="shrink-0 text-xs tabular-nums text-stone-400"
+                  dateTime={row.createdAt.toISOString()}
+                  title={row.createdAt.toLocaleString()}
+                >
+                  {relativeTime(row.createdAt)}
+                </time>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="card p-4">

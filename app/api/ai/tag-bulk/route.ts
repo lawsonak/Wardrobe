@@ -7,6 +7,7 @@ import { getProvider } from "@/lib/ai/provider";
 import { brandKey } from "@/lib/brand";
 import { CATEGORIES, csvToList, listToCsv, SEASONS, ACTIVITIES, type Category } from "@/lib/constants";
 import { mergePending, parse as parsePending, serialize as serializePending, type PendingAiSuggestions } from "@/lib/pendingAi";
+import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 // Generous max so a 50-item batch can finish before Next aborts the
@@ -82,6 +83,13 @@ export async function POST(req: NextRequest) {
   if (items.length === 0) {
     return NextResponse.json({ enabled: true, processed: 0, tagged: 0, promoted: 0, errors: 0 });
   }
+
+  await logActivity({
+    userId,
+    kind: "ai.tag-bulk",
+    summary: `Started AI auto-tag on ${items.length} item${items.length === 1 ? "" : "s"}`,
+    meta: { count: items.length, background },
+  });
 
   // Background mode: kick off the work without awaiting it, return
   // immediately. On a long-running Node server (the user's Proxmox

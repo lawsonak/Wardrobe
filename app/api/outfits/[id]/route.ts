@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { SLOTS, type Slot } from "@/lib/constants";
 import { unlinkUpload } from "@/lib/uploads";
+import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 
@@ -77,6 +78,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     });
   });
 
+  await logActivity({
+    userId,
+    kind: "outfit.update",
+    summary: `Edited outfit "${outfit.name}"`,
+    targetType: "Outfit",
+    targetId: id,
+  });
+
   return NextResponse.json({ outfit });
 }
 
@@ -87,10 +96,17 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params;
   const existing = await prisma.outfit.findFirst({
     where: { id, ownerId: userId },
-    select: { id: true, tryOnImagePath: true },
+    select: { id: true, name: true, tryOnImagePath: true },
   });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
   await prisma.outfit.delete({ where: { id } });
   await unlinkUpload(existing.tryOnImagePath);
+  await logActivity({
+    userId,
+    kind: "outfit.delete",
+    summary: `Deleted outfit "${existing.name}"`,
+    targetType: "Outfit",
+    targetId: id,
+  });
   return NextResponse.json({ ok: true });
 }

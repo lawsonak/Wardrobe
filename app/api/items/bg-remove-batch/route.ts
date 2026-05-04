@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { runBgRemovalBatch } from "@/lib/bgRemovalServer";
+import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 // A 50-photo batch at ~6-10s/photo with 3-way concurrency runs ~2-3
@@ -49,6 +50,13 @@ export async function POST(req: NextRequest) {
       { status: 409 },
     );
   }
+
+  await logActivity({
+    userId,
+    kind: "ai.bg-remove-batch",
+    summary: `Started background removal on ${itemIds.length} item${itemIds.length === 1 ? "" : "s"}`,
+    meta: { count: itemIds.length, background },
+  });
 
   if (background) {
     // Kick off processing without awaiting. The Node process keeps

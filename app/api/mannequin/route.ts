@@ -9,6 +9,7 @@ import {
 } from "@/lib/mannequin";
 import { generateMannequinFromPhoto } from "@/lib/ai/mannequin";
 import { prisma } from "@/lib/db";
+import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 // Photo → illustration is a single Gemini Flash Image call, ~5-15s.
@@ -92,6 +93,13 @@ export async function POST(req: NextRequest) {
       data: { tryOnHash: null },
     });
     const info = await getUserMannequin(userId);
+    await logActivity({
+      userId,
+      kind: "mannequin.update",
+      summary: contentType.includes("multipart/form-data")
+        ? "Updated your mannequin photo"
+        : "Regenerated your mannequin",
+    });
     return NextResponse.json(info);
   } finally {
     inflight.delete(userId);
@@ -108,6 +116,11 @@ export async function DELETE() {
   await prisma.outfit.updateMany({
     where: { ownerId: userId, tryOnHash: { not: null } },
     data: { tryOnHash: null },
+  });
+  await logActivity({
+    userId,
+    kind: "mannequin.reset",
+    summary: "Reset mannequin to the default",
   });
   return NextResponse.json({ url: null, hasSource: false, id: null });
 }

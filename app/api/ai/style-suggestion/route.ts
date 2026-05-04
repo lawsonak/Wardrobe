@@ -8,6 +8,7 @@ import {
 } from "@/lib/todaysSuggestion";
 import { suggestProductForCloset } from "@/lib/ai/styleSuggestion";
 import { buildClosetSummary } from "@/lib/ai/closetSummary";
+import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 // Grounded search + content fetch can take 5-15s. Allow generous headroom.
@@ -83,6 +84,14 @@ export async function POST(req: NextRequest) {
       sources: (result.debug.sources ?? []).slice(0, 8),
     };
     await writeSavedSuggestion(userId, saved);
+
+    await logActivity({
+      userId,
+      kind: "ai.suggestion",
+      summary: again
+        ? "Asked for another style suggestion"
+        : "Refreshed today's style suggestion",
+    });
 
     return NextResponse.json({
       enabled: true,

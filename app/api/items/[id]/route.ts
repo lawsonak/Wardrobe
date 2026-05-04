@@ -5,6 +5,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { CATEGORIES, ITEM_STATUSES, listToCsv } from "@/lib/constants";
 import { brandKey } from "@/lib/brand";
+import { describeItem, logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 
@@ -105,6 +106,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const updated = await prisma.item.update({ where: { id }, data });
+
+  // Log substantive edits only — clearing the pendingAiSuggestions
+  // blob (after the user approves/rejects the AI review panel) is a
+  // no-op from the user's perspective and would otherwise spam the
+  // feed with one row per approval.
+  const isJustClearingPendingAi =
+    Object.keys(data).length === 1 && "pendingAiSuggestions" in data;
+  if (!isJustClearingPendingAi) {
+    await logActivity({
+      userId,
+      kind: "item.update",
+      summary: `Edited ${describeItem(updated)}`,
+      targetType: "Item",
+      targetId: id,
+    });
+  }
+
   return NextResponse.json({ item: updated });
 }
 
@@ -133,6 +151,14 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       /* ignore */
     }
   }
+
+  await logActivity({
+    userId,
+    kind: "item.delete",
+    summary: `Deleted ${describeItem(item)}`,
+    targetType: "Item",
+    targetId: id,
+  });
 
   return NextResponse.json({ ok: true });
 }

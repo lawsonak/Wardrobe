@@ -5,6 +5,7 @@ import { getProvider } from "@/lib/ai/provider";
 import { csvToList } from "@/lib/constants";
 import { getPrefs } from "@/lib/userPrefs";
 import { describeForOutfit, getForecast } from "@/lib/weather";
+import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 
@@ -75,6 +76,15 @@ export async function POST(req: NextRequest) {
     })),
     preferences: prefs.stylePreferences ?? undefined,
   });
+
+  if (result.itemIds.length > 0) {
+    await logActivity({
+      userId,
+      kind: "ai.outfit",
+      summary: `Asked AI to build an outfit: "${occasion.slice(0, 80)}"`,
+      meta: { picked: result.itemIds.length, season, activity, useWeather },
+    });
+  }
 
   return NextResponse.json({
     enabled: true,

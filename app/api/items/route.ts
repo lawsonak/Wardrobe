@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { CATEGORIES, listToCsv } from "@/lib/constants";
 import { brandKey } from "@/lib/brand";
 import { saveUpload } from "@/lib/uploads";
+import { describeItem, logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 
@@ -132,6 +133,14 @@ export async function POST(req: NextRequest) {
   const updated = await prisma.item.update({
     where: { id: created.id },
     data: { imagePath, imageBgRemovedPath, labelImagePath },
+  });
+
+  await logActivity({
+    userId,
+    kind: "item.create",
+    summary: `Added ${describeItem(updated)}`,
+    targetType: "Item",
+    targetId: updated.id,
   });
 
   return NextResponse.json({ item: updated });

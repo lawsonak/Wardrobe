@@ -9,6 +9,7 @@ import {
 import { buildClosetSummary } from "@/lib/ai/closetSummary";
 import { runShopPipeline } from "@/lib/ai/shopPipeline";
 import { getTripForecast } from "@/lib/weather";
+import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 // One Gemini call that may emit up to 50 specs (one per piece in the
@@ -131,6 +132,15 @@ export async function POST(req: NextRequest) {
         { status: 502 },
       );
     }
+
+    await logActivity({
+      userId,
+      kind: "ai.shop",
+      summary: `AI shopped for "${collection.name}"`,
+      targetType: "Collection",
+      targetId: collection.id,
+      meta: { ideas: result.ideas.length },
+    });
 
     return NextResponse.json({
       enabled: true,

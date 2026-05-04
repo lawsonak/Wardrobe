@@ -10,6 +10,7 @@ import { readSavedPick, writeSavedPick } from "@/lib/todayOutfit";
 import { todayISO } from "@/lib/dates";
 import { saveBuffer, unlinkUpload } from "@/lib/uploads";
 import { composeOutfitForItems, type ComposeItem } from "@/lib/ai/composeTryOn";
+import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 // Pick is fast; the try-on compose adds 5-15s. 90 buys headroom.
@@ -195,6 +196,17 @@ export async function POST(req: NextRequest) {
       reasoning: result.reasoning ?? null,
       weather: weatherLine || null,
       tryOnImagePath: compose.tryOnImagePath,
+    });
+  }
+
+  if (result.itemIds.length > 0) {
+    await logActivity({
+      userId,
+      kind: "ai.today",
+      summary: result.name
+        ? `Picked today's outfit: "${result.name}"`
+        : "Picked today's outfit",
+      meta: { picked: result.itemIds.length },
     });
   }
 

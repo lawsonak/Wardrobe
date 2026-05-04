@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { listToCsv } from "@/lib/constants";
+import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 
@@ -105,6 +106,18 @@ export async function POST(req: NextRequest) {
       },
     },
     include: { items: true },
+  });
+
+  await logActivity({
+    userId,
+    kind: "collection.create",
+    summary:
+      collection.kind === "trip" && collection.destination
+        ? `Started trip "${collection.name}" — ${collection.destination}`
+        : `Created collection "${collection.name}"`,
+    targetType: "Collection",
+    targetId: collection.id,
+    meta: { kind: collection.kind, items: validIds.length },
   });
 
   return NextResponse.json({ collection }, { status: 201 });
