@@ -22,6 +22,7 @@ model User {
   collections   Collection[]
   notifications Notification[]
   itemSets      ItemSet[]
+  activityLogs  ActivityLog[]
 }
 
 model Item {
@@ -263,4 +264,32 @@ model WishlistItem {
   purchased Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Per-user audit feed surfaced on the Settings page. Logs CRUD writes,
+// AI invocations, and sign-ins so each profile can see a chronological
+// "what's been happening" view of their own usage. Strictly per-user —
+// no cross-profile reads. Auto-pruned to ~90 days by `lib/activity.ts`
+// every time a new row is written.
+model ActivityLog {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Stable kind code, e.g. "item.create", "outfit.update", "ai.tryon",
+  // "auth.signin". The settings UI groups by prefix.
+  kind       String
+  // Short human-readable description rendered in the activity list.
+  // Capped at 200 chars on write so a runaway summary can't bloat
+  // the table.
+  summary    String
+  // Optional pointer back to the row this activity refers to. Lets
+  // the UI link list rows to detail pages where it makes sense.
+  targetType String?
+  targetId   String?
+  // Optional structured metadata (JSON-encoded). Free-form schema so
+  // we can extend without migrations.
+  meta       String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
