@@ -25,7 +25,34 @@ export async function GET(req: NextRequest) {
       ...(fav ? { isFavorite: true } : {}),
     },
     orderBy: { updatedAt: "desc" },
-    include: { items: { include: { item: true } } },
+    // Card-shaped projection — no per-row notes / fit blobs / pending
+    // AI suggestions, which are large and unused by every current
+    // caller of /api/outfits.
+    select: {
+      id: true,
+      name: true,
+      activity: true,
+      season: true,
+      isFavorite: true,
+      tryOnImagePath: true,
+      tryOnGeneratedAt: true,
+      updatedAt: true,
+      items: {
+        select: {
+          slot: true,
+          item: {
+            select: {
+              id: true,
+              imagePath: true,
+              imageBgRemovedPath: true,
+              category: true,
+              subType: true,
+              color: true,
+            },
+          },
+        },
+      },
+    },
   });
   return NextResponse.json({ outfits });
 }

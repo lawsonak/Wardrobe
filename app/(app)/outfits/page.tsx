@@ -27,7 +27,32 @@ export default async function OutfitsPage({
       ...(sp.fav === "1" ? { isFavorite: true } : {}),
     },
     orderBy: { updatedAt: "desc" },
-    include: { items: { include: { item: true } } },
+    // The card only renders thumbnails + slot routing, so pull just
+    // those fields. Skipping notes / fitDetails / pendingAiSuggestions
+    // shaves the per-row payload from ~2 KB to ~200 B and keeps the
+    // outfits page snappy as the wardrobe grows.
+    select: {
+      id: true,
+      name: true,
+      activity: true,
+      season: true,
+      isFavorite: true,
+      tryOnImagePath: true,
+      items: {
+        select: {
+          slot: true,
+          item: {
+            select: {
+              id: true,
+              imagePath: true,
+              imageBgRemovedPath: true,
+              category: true,
+              subType: true,
+            },
+          },
+        },
+      },
+    },
   });
 
   const title = "Outfits";

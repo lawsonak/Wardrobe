@@ -12,11 +12,32 @@ export default async function CollectionsPage() {
   const collections = await prisma.collection.findMany({
     where: { ownerId: userId },
     orderBy: { updatedAt: "desc" },
-    include: {
+    // Card preview only needs slot + thumbnail bits. Trim everything
+    // else so a closet of 50+ trip-collections doesn't drag a few MB
+    // of unused JSON over the wire on every page load.
+    select: {
+      id: true,
+      name: true,
+      kind: true,
+      destination: true,
+      occasion: true,
+      season: true,
+      startDate: true,
+      endDate: true,
       items: {
-        include: { item: true },
         // Pull enough for a swipeable preview without going overboard.
         take: 30,
+        select: {
+          item: {
+            select: {
+              id: true,
+              imagePath: true,
+              imageBgRemovedPath: true,
+              category: true,
+              subType: true,
+            },
+          },
+        },
       },
       _count: { select: { items: true } },
     },

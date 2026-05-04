@@ -4,6 +4,13 @@
 // API.
 
 import { unstable_cache } from "next/cache";
+import { fetchWithTimeout } from "@/lib/fetchRetry";
+
+// Open-Meteo is normally fast (sub-second). 5s gives us a comfortable
+// ceiling without dragging out outfit-build / today-pick routes that
+// also need to call Gemini afterward. A timeout falls back to the
+// no-weather path and the AI builds based on season alone.
+const WEATHER_TIMEOUT_MS = 5_000;
 
 export type Forecast = {
   city: string;
@@ -50,7 +57,11 @@ const geocode = unstable_cache(
       url.searchParams.set("count", "1");
       url.searchParams.set("language", "en");
       url.searchParams.set("format", "json");
-      const res = await fetch(url, { next: { revalidate: 60 * 60 * 24 * 7 } });
+      const res = await fetchWithTimeout(
+        url,
+        { next: { revalidate: 60 * 60 * 24 * 7 } },
+        WEATHER_TIMEOUT_MS,
+      );
       if (!res.ok) return null;
       const data = (await res.json()) as {
         results?: Array<{ name: string; country?: string; latitude: number; longitude: number; timezone?: string }>;
@@ -85,7 +96,11 @@ export async function getForecast(city: string): Promise<Forecast | null> {
     url.searchParams.set("daily", "temperature_2m_max,temperature_2m_min,precipitation_probability_max");
     url.searchParams.set("forecast_days", "1");
     url.searchParams.set("timezone", geo.timezone ?? "auto");
-    const res = await fetch(url, { next: { revalidate: 60 * 60 } });
+    const res = await fetchWithTimeout(
+      url,
+      { next: { revalidate: 60 * 60 } },
+      WEATHER_TIMEOUT_MS,
+    );
     if (!res.ok) return null;
     const data = (await res.json()) as {
       current?: {
@@ -204,7 +219,11 @@ export async function getTripForecast(
     url.searchParams.set("start_date", isoDate(windowStart));
     url.searchParams.set("end_date", isoDate(windowEnd));
     url.searchParams.set("timezone", geo.timezone ?? "auto");
-    const res = await fetch(url, { next: { revalidate: 60 * 60 } });
+    const res = await fetchWithTimeout(
+      url,
+      { next: { revalidate: 60 * 60 } },
+      WEATHER_TIMEOUT_MS,
+    );
     if (!res.ok) return null;
     const data = (await res.json()) as {
       daily?: {
