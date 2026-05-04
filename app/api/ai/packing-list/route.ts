@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { getProvider } from "@/lib/ai/provider";
+import { logActivity } from "@/lib/activity";
 import { csvToList } from "@/lib/constants";
 
 export const runtime = "nodejs";
@@ -80,6 +81,17 @@ export async function POST(req: NextRequest) {
       activities: csvToList(i.activities),
     })),
   });
+
+  if (result.itemIds.length > 0) {
+    await logActivity({
+      userId,
+      kind: "ai.packing",
+      summary: trip?.destination
+        ? `AI built a packing list for ${trip.destination}`
+        : "AI built a packing list",
+      meta: { picked: result.itemIds.length, destination: trip?.destination ?? null },
+    });
+  }
 
   return NextResponse.json({
     enabled: true,

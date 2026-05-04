@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { getProvider } from "@/lib/ai/provider";
+import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 
@@ -53,6 +54,12 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await provider.tagImage({ image, labelImage, existingBrands, notesContext });
+    await logActivity({
+      userId,
+      kind: "ai.tag",
+      summary: "Auto-tagged a photo",
+      meta: { hasLabel: !!labelImage, fields: Object.keys(result.suggestions ?? {}).length },
+    });
     return NextResponse.json({
       enabled: true,
       provider: provider.name,
