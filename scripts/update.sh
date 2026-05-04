@@ -21,6 +21,19 @@ git pull --ff-only
 step "npm install"
 npm install --no-audit --no-fund
 
+# Snapshot the DB before applying migrations. SQLite is one file —
+# a copy is a complete backup. If a migration corrupts state, the
+# pre-migration backup is sitting next to the live DB; stop the service
+# and `mv data/wardrobe.db.bak.<stamp> data/wardrobe.db` to roll back.
+# Backups older than 14 days are pruned to keep the directory tidy.
+if [[ -f data/wardrobe.db ]]; then
+  step "backup db"
+  stamp=$(date +%Y%m%d-%H%M%S)
+  cp data/wardrobe.db "data/wardrobe.db.bak.${stamp}"
+  echo "  saved data/wardrobe.db.bak.${stamp}"
+  find data -maxdepth 1 -name 'wardrobe.db.bak.*' -mtime +14 -delete 2>/dev/null || true
+fi
+
 step "prisma migrate deploy"
 npx prisma migrate deploy
 
