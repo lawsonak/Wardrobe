@@ -28,14 +28,14 @@ export default function BulkActionsBar({ itemIds }: { itemIds: string[] }) {
   const anyBusy = tagBusy || bgBusy || approveBusy;
 
   async function aiTagAll() {
-    if (
-      !confirm(
-        `AI-tag up to ${Math.min(count, 25)} item${count === 1 ? "" : "s"}? ` +
-          `Items the model is at least ${Math.round(promoteAtConfidence * 100)}% sure about will move to active.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirmDialog({
+      title: `AI-tag up to ${Math.min(count, 25)} item${count === 1 ? "" : "s"}?`,
+      body:
+        `Items the model is at least ${Math.round(promoteAtConfidence * 100)}% sure about ` +
+        `will move to active. The rest stay here for review.`,
+      confirmText: "Tag them",
+    });
+    if (!ok) return;
     setTagBusy(true);
     setTagMessage("Tagging…");
     try {

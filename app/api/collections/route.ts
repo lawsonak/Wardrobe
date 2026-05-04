@@ -13,10 +13,33 @@ export async function GET() {
   const collections = await prisma.collection.findMany({
     where: { ownerId: userId },
     orderBy: { updatedAt: "desc" },
-    include: {
+    // Card-shaped projection so list responses don't drag the full
+    // Item rows (notes, fitDetails, pendingAiSuggestions, etc).
+    select: {
+      id: true,
+      kind: true,
+      name: true,
+      description: true,
+      destination: true,
+      startDate: true,
+      endDate: true,
+      occasion: true,
+      season: true,
+      activities: true,
+      updatedAt: true,
       items: {
-        include: { item: true },
         take: 6,
+        select: {
+          item: {
+            select: {
+              id: true,
+              imagePath: true,
+              imageBgRemovedPath: true,
+              category: true,
+              subType: true,
+            },
+          },
+        },
       },
       _count: { select: { items: true } },
     },

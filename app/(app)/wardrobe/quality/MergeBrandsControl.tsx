@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { confirmDialog } from "@/components/ConfirmDialog";
 
 export default function MergeBrandsControl({
   a,
@@ -15,7 +16,14 @@ export default function MergeBrandsControl({
   const [error, setError] = useState<string | null>(null);
 
   async function merge(sourceId: string, targetId: string) {
-    if (!confirm(`Merge "${sourceId === a.id ? a.name : b.name}" into "${targetId === a.id ? a.name : b.name}"?\nAll items will be re-tagged.`)) return;
+    const sourceName = sourceId === a.id ? a.name : b.name;
+    const targetName = targetId === a.id ? a.name : b.name;
+    const ok = await confirmDialog({
+      title: `Merge "${sourceName}" into "${targetName}"?`,
+      body: `All items currently tagged "${sourceName}" will be re-tagged "${targetName}".`,
+      confirmText: "Merge",
+    });
+    if (!ok) return;
     setBusy(true);
     setError(null);
     try {

@@ -46,6 +46,32 @@ export async function fetchWithRetry(
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
 
+/**
+ * Server-side fetch with an explicit timeout. Unlike `fetchWithRetry`,
+ * no retry — the caller decides whether the request is idempotent
+ * enough to repeat. Surfaces a clean "Request timed out" Error so
+ * upstream code can log / surface it instead of waiting for the route
+ * handler's `maxDuration` to fire.
+ */
+export async function fetchWithTimeout(
+  url: string | URL,
+  init: RequestInit | undefined,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...(init ?? {}), signal: controller.signal });
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Map an Error from fetchWithRetry into a user-facing one-liner. */
 export function friendlyFetchError(err: unknown, fallback = "Something went wrong."): string {
   const msg = err instanceof Error ? err.message : String(err);

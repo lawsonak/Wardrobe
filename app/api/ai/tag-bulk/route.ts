@@ -137,12 +137,28 @@ async function runBatch(
   let errors = 0;
   const errorList: Array<{ itemId: string; reason: string }> = [];
 
-  for (const item of items) {
+  // Process up to N items in parallel. Each AI call burns one Gemini
+  // round-trip (often two with describeItem); serialised, a 25-item
+  // batch is ~25 s of mostly-idle network wait. With CONCURRENCY=3
+  // it's ~8 s. Counters and errorList are mutated from inside the
+  // workers — JS is single-threaded so the increments / pushes are
+  // safe between awaits, no atomics needed.
+  const CONCURRENCY = 3;
+  let cursor = 0;
+  const workers = Array(Math.min(CONCURRENCY, items.length)).fill(0).map(async () => {
+    while (cursor < items.length) {
+      const item = items[cursor++];
+      await processItem(item);
+    }
+  });
+  await Promise.all(workers);
+
+  async function processItem(item: typeof items[number]) {
     const main = await readUpload(item.imagePath);
     if (!main) {
       errors++;
       errorList.push({ itemId: item.id, reason: "Main photo not on disk" });
-      continue;
+      return;
     }
     const label = item.labelImagePath ? await readUpload(item.labelImagePath) : null;
 
@@ -217,13 +233,27 @@ async function runBatch(
           const text = s.brand.trim();
           const key = brandKey(text);
           if (key) {
-            const upserted = await prisma.brand.upsert({
-              where: { ownerId_nameKey: { ownerId: userId, nameKey: key } },
-              update: {},
-              create: { ownerId: userId, name: text, nameKey: key },
-            });
-            data.brand = upserted.name;
-            data.brandId = upserted.id;
+            // Two concurrent workers can both miss an existing brand
+            // and both try to insert it. The unique index ensures only
+            // one wins; the loser falls back to a lookup so this item
+            // still ends up linked to the canonical row instead of
+            // erroring out.
+            let upserted: Awaited<ReturnType<typeof prisma.brand.upsert>> | null = null;
+            try {
+              upserted = await prisma.brand.upsert({
+                where: { ownerId_nameKey: { ownerId: userId, nameKey: key } },
+                update: {},
+                create: { ownerId: userId, name: text, nameKey: key },
+              });
+            } catch {
+              upserted = await prisma.brand.findUnique({
+                where: { ownerId_nameKey: { ownerId: userId, nameKey: key } },
+              });
+            }
+            if (upserted) {
+              data.brand = upserted.name;
+              data.brandId = upserted.id;
+            }
           }
         }
       }

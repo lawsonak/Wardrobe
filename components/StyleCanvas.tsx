@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import MannequinSilhouette from "@/components/MannequinSilhouette";
+import { confirmDialog } from "@/components/ConfirmDialog";
 import { slotForItem, type Slot } from "@/lib/constants";
 
 export type CanvasItem = {
@@ -255,8 +256,13 @@ export default function StyleCanvas({
     }
   }
 
-  function resetAll() {
-    if (!confirm("Reset every piece to its default position?")) return;
+  async function resetAll() {
+    const ok = await confirmDialog({
+      title: "Reset every piece?",
+      body: "Each layer goes back to its default position. You can't undo this.",
+      confirmText: "Reset",
+    });
+    if (!ok) return;
     setLayers((prev) =>
       prev.map((l) => {
         const d = SLOT_DEFAULTS[l.slot];

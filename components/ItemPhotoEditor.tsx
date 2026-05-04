@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { removeBackground, resetBackgroundRemover } from "@/lib/bgRemoval";
 import { heicToJpeg, isHeic } from "@/lib/heic";
 import { normalizeOrientation, rotateImage } from "@/lib/imageOrientation";
+import { confirmDialog } from "@/components/ConfirmDialog";
 import ProgressBar from "@/components/ProgressBar";
 
 // Two stacked controls for the item-detail page:
@@ -138,7 +139,12 @@ export default function ItemPhotoEditor({
   }
 
   async function clearLabel() {
-    if (!confirm("Remove the label / tag photo?")) return;
+    const ok = await confirmDialog({
+      title: "Remove the label / tag photo?",
+      confirmText: "Remove",
+      destructive: true,
+    });
+    if (!ok) return;
     setBusy(true);
     setError(null);
     try {
@@ -235,7 +241,12 @@ export default function ItemPhotoEditor({
   }
 
   async function clearBgRemoval() {
-    if (!confirm("Use the original photo and drop the background-removed version?")) return;
+    const ok = await confirmDialog({
+      title: "Drop the background-removed version?",
+      body: "The closet will go back to showing the original photo.",
+      confirmText: "Use original",
+    });
+    if (!ok) return;
     setBusy(true);
     setError(null);
     try {

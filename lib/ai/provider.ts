@@ -4,6 +4,14 @@
 
 import { DisabledProvider, type TagProvider, type TagResult } from "./types";
 import { COLOR_NAMES } from "@/lib/constants";
+import { fetchWithTimeout } from "@/lib/fetchRetry";
+
+// Hard ceiling on how long any single Gemini call is allowed to hang.
+// Image generation legitimately takes 5–15s, structured tagging 3–8s.
+// 30s is comfortably above the slow-but-working tail and well below
+// the route handlers' 60–90s `maxDuration`, so a stuck call surfaces
+// as a clean error rather than a long mystery wait.
+const GEMINI_TIMEOUT_MS = 30_000;
 
 let _cached: TagProvider | null = null;
 
@@ -232,11 +240,15 @@ function makeGemini(): TagProvider {
           const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
             step.model,
           )}:generateContent?key=${encodeURIComponent(key)}`;
-          const r = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          });
+          const r = await fetchWithTimeout(
+            url,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            },
+            GEMINI_TIMEOUT_MS,
+          );
           httpStatus = r.status;
           const text = await r.text();
           if (r.ok) {
@@ -396,11 +408,15 @@ function makeGemini(): TagProvider {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
           GEMINI_MODEL,
         )}:generateContent?key=${encodeURIComponent(key)}`;
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
+        const res = await fetchWithTimeout(
+          url,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          },
+          GEMINI_TIMEOUT_MS,
+        );
         const responseText = await res.text();
         if (!res.ok) {
           let detail = `HTTP ${res.status}`;
@@ -511,11 +527,15 @@ function makeGemini(): TagProvider {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
           GEMINI_MODEL,
         )}:generateContent?key=${encodeURIComponent(key)}`;
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
+        const res = await fetchWithTimeout(
+          url,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          },
+          GEMINI_TIMEOUT_MS,
+        );
         const responseText = await res.text();
         if (!res.ok) {
           let detail = `HTTP ${res.status}`;
@@ -635,11 +655,15 @@ function makeGemini(): TagProvider {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
           GEMINI_MODEL,
         )}:generateContent?key=${encodeURIComponent(key)}`;
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
+        const res = await fetchWithTimeout(
+          url,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          },
+          GEMINI_TIMEOUT_MS,
+        );
         const responseText = await res.text();
         if (!res.ok) {
           let detail = `HTTP ${res.status}`;
@@ -714,11 +738,15 @@ function makeGemini(): TagProvider {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
           GEMINI_MODEL,
         )}:generateContent?key=${encodeURIComponent(key)}`;
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
+        const res = await fetchWithTimeout(
+          url,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          },
+          GEMINI_TIMEOUT_MS,
+        );
         const responseText = await res.text();
         if (!res.ok) {
           let detail = `HTTP ${res.status}`;
@@ -791,11 +819,15 @@ function makeGemini(): TagProvider {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
           GEMINI_MODEL,
         )}:generateContent?key=${encodeURIComponent(key)}`;
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
+        const res = await fetchWithTimeout(
+          url,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          },
+          GEMINI_TIMEOUT_MS,
+        );
         const responseText = await res.text();
         if (!res.ok) {
           let detail = `HTTP ${res.status}`;
