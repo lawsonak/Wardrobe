@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ACTIVITIES, SEASONS, csvToList } from "@/lib/constants";
 import { cn } from "@/lib/cn";
+import { confirmDialog } from "@/components/ConfirmDialog";
 import ItemPicker, { type Selectable } from "./ItemPicker";
 import CollectionShop from "./CollectionShop";
 
@@ -186,7 +187,13 @@ export default function CollectionEditor({
   }
 
   async function remove() {
-    if (!confirm(`Delete "${collection.name}"?`)) return;
+    const ok = await confirmDialog({
+      title: `Delete "${collection.name}"?`,
+      body: "The pieces inside stay in your closet — only the collection is removed.",
+      confirmText: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
     setBusy(true);
     await fetch(`/api/collections/${collection.id}`, { method: "DELETE" });
     router.push("/collections");
