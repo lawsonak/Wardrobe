@@ -211,7 +211,11 @@ model CollectionItem {
   collectionId String
   collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
   itemId       String
-  item         Item       @relation(fields: [itemId], references: [id])
+  // Cascade so deleting an item cleans up its collection memberships
+  // automatically. The item delete handler also calls deleteMany on
+  // these rows explicitly — belt and braces, since older DBs that
+  // pre-date this migration won't have the cascade until they migrate.
+  item         Item       @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@unique([collectionId, itemId])
 }

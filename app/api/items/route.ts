@@ -9,7 +9,8 @@ export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = (session?.user as { id?: string } | undefined)?.id;
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = req.nextUrl;
   const category = searchParams.get("category") || undefined;
@@ -19,6 +20,11 @@ export async function GET(req: NextRequest) {
 
   const items = await prisma.item.findMany({
     where: {
+      // Owner-scope guard: every closet view is per-profile. Without
+      // this filter the endpoint returned every user's items to any
+      // authenticated caller, which broke the documented "profiles
+      // are separate" model.
+      ownerId: userId,
       ...(category ? { category } : {}),
       ...(fav ? { isFavorite: true } : {}),
       ...(status ? { status } : {}),

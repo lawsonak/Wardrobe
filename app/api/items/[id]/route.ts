@@ -12,9 +12,10 @@ const UPLOAD_ROOT = path.join(process.cwd(), "data", "uploads");
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = (session?.user as { id?: string } | undefined)?.id;
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
-  const item = await prisma.item.findUnique({ where: { id } });
+  const item = await prisma.item.findFirst({ where: { id, ownerId: userId } });
   if (!item) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ item });
 }
@@ -24,6 +25,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const userId = (session?.user as { id?: string } | undefined)?.id;
   if (!session?.user || !userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
+
+  // Verify ownership before any work — otherwise either user could
+  // edit the other's items, which contradicts the per-profile model.
+  const existing = await prisma.item.findFirst({
+    where: { id, ownerId: userId },
+    select: { id: true },
+  });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = await req.json();
   const data: Record<string, unknown> = {};
@@ -101,12 +110,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = (session?.user as { id?: string } | undefined)?.id;
+  if (!session?.user || !userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
-  const item = await prisma.item.findUnique({ where: { id } });
+  const item = await prisma.item.findFirst({ where: { id, ownerId: userId } });
   if (!item) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  // Drop every reference to this item before the row itself goes,
+  // otherwise the foreign-key constraints on OutfitItem and
+  // CollectionItem cause the delete to fail with a 500. (The schema
+  // also adds ON DELETE CASCADE for CollectionItem as defense in
+  // depth — these explicit deletes also wipe the join rows from any
+  // older DB that hasn't run that migration yet.)
   await prisma.outfitItem.deleteMany({ where: { itemId: id } });
+  await prisma.collectionItem.deleteMany({ where: { itemId: id } });
   await prisma.item.delete({ where: { id } });
 
   for (const p of [item.imagePath, item.imageBgRemovedPath, item.labelImagePath].filter(Boolean) as string[]) {
