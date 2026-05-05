@@ -4,13 +4,15 @@ import sharp from "sharp";
 
 export const UPLOAD_ROOT = path.join(process.cwd(), "data", "uploads");
 
-// iPhone photos are routinely 3–4 MB at 4032×3024. The closet grid
-// shows hundreds of these as small thumbnails — serving the originals
-// over LAN is the single biggest performance hit. Resize to a max edge
-// of 1600 px (more than enough for the item-detail hero on a 4K
-// monitor) and re-encode at quality 85; that brings a typical photo
-// from 3 MB to ~250 KB without visible quality loss.
-const MAX_EDGE_PX = 1600;
+// iPhone photos are routinely 3–4 MB at 4032×3024. Two-tier storage:
+// `MAX_EDGE_PX` is the display variant served everywhere (closet grid,
+// outfit cards, item-detail hero, AI try-on) — small + fast over LAN.
+// The full-resolution upload is preserved untouched alongside it via
+// `saveUploadWithOriginal`, so the item-detail page's tap-to-zoom
+// shows real detail (embroidery, stitching, fabric weave) instead of
+// pixel mush. JPEG q85 is a near-imperceptible quality loss against
+// the source, with ~10× the throughput of the raw file.
+const MAX_EDGE_PX = 1024;
 const JPEG_QUALITY = 85;
 const WEBP_QUALITY = 85;
 
@@ -105,6 +107,89 @@ export async function saveUpload(
   const fullPath = path.join(userDir, filename);
   await fs.writeFile(fullPath, buf);
   return path.posix.join(userId, filename);
+}
+
+/**
+ * Two-tier write for user-precious photos: persist the original
+ * untouched and a small display variant alongside it. Returns both
+ * paths for the caller to store on the row.
+ *
+ * The display variant is always ~1024 px max edge / q85 — small and
+ * fast for grids, cards, and the AI try-on input. The original keeps
+ * full resolution for the item-detail tap-to-zoom; we still pipe it
+ * through `sharp().rotate()` so EXIF rotation is baked in (otherwise
+ * iPhone landscape shots come out sideways on browsers that ignore
+ * EXIF in zoomed views).
+ *
+ * GIFs and unsupported codecs fall back to a single raw write — sharp
+ * would lose animation and we don't have a reasonable display variant.
+ */
+export async function saveUploadWithOriginal(
+  userId: string,
+  idPrefix: string,
+  file: File,
+  suffix: string,
+  options?: { bust?: boolean },
+): Promise<{ displayPath: string; originalPath: string | null }> {
+  const userDir = path.join(UPLOAD_ROOT, userId);
+  await fs.mkdir(userDir, { recursive: true, mode: 0o700 });
+
+  const rawBuf = Buffer.from(await file.arrayBuffer());
+  const fallbackExt = safeExtFromMime(file.type, "png");
+  const tag = options?.bust ? `-${Math.random().toString(36).slice(2, 8)}` : "";
+
+  // GIF / unsupported types: keep the single-write path. The raw file
+  // is the display variant; no separate original (storing the same
+  // bytes twice would waste disk).
+  const knownExt = KNOWN_EXTS[file.type] ?? "";
+  if (!knownExt || knownExt === "gif") {
+    const filename = `${idPrefix}-${suffix}${tag}.${fallbackExt}`;
+    await fs.writeFile(path.join(userDir, filename), rawBuf);
+    return { displayPath: path.posix.join(userId, filename), originalPath: null };
+  }
+
+  // Original: EXIF-rotated, otherwise untouched. Re-encoding with
+  // sharp at the same format + quality 100 (jpeg) / lossless (webp) /
+  // max compression (png) gets us the rotation without measurable
+  // quality loss.
+  let originalBuf: Buffer = rawBuf;
+  let originalExt = knownExt;
+  try {
+    const orig = sharp(rawBuf, { failOn: "none" }).rotate();
+    if (knownExt === "png") {
+      originalBuf = await orig.png({ compressionLevel: 9 }).toBuffer();
+    } else if (knownExt === "webp") {
+      originalBuf = await orig.webp({ lossless: true }).toBuffer();
+    } else {
+      originalBuf = await orig.jpeg({ quality: 95, mozjpeg: true }).toBuffer();
+      originalExt = "jpg";
+    }
+  } catch {
+    // Sharp failed — fall back to the raw bytes. Lightbox might show
+    // the wrong orientation on EXIF-rotated images but the photo is
+    // still there.
+    originalBuf = rawBuf;
+    originalExt = fallbackExt;
+  }
+
+  const { buf: displayBuf, ext: displayExt } = await compressImage(
+    rawBuf,
+    file.type,
+    fallbackExt,
+  );
+
+  const displayName = `${idPrefix}-${suffix}${tag}.${displayExt}`;
+  const originalName = `${idPrefix}-${suffix}${tag}-orig.${originalExt}`;
+
+  await Promise.all([
+    fs.writeFile(path.join(userDir, displayName), displayBuf),
+    fs.writeFile(path.join(userDir, originalName), originalBuf),
+  ]);
+
+  return {
+    displayPath: path.posix.join(userId, displayName),
+    originalPath: path.posix.join(userId, originalName),
+  };
 }
 
 export async function saveBuffer(

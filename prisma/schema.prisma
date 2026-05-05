@@ -30,6 +30,13 @@ model Item {
   ownerId            String
   owner              User     @relation(fields: [ownerId], references: [id])
   imagePath          String
+  // Optional pointer to the untouched, full-resolution upload kept on
+  // disk alongside the display-sized `imagePath`. The item detail page
+  // serves this when the user taps the hero to zoom; everything else
+  // (closet grid, outfit cards, AI try-on) renders the much smaller
+  // `imagePath`. Items uploaded before this column existed leave it
+  // null and the lightbox falls back to `imagePath`.
+  imageOriginalPath  String?
   imageBgRemovedPath String?
   labelImagePath     String?
   // active | needs_review | draft
@@ -104,6 +111,9 @@ model ItemPhoto {
   itemId             String
   item               Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
   imagePath          String
+  // Same two-tier shape as Item: full-resolution copy preserved on
+  // disk so the carousel's tap-to-zoom shows real detail.
+  imageOriginalPath  String?
   imageBgRemovedPath String?
   // Free-form label, e.g. "back", "side", "detail of the buttons".
   label              String?
