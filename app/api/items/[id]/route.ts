@@ -144,7 +144,12 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   await prisma.collectionItem.deleteMany({ where: { itemId: id } });
   await prisma.item.delete({ where: { id } });
 
-  for (const p of [item.imagePath, item.imageBgRemovedPath, item.labelImagePath].filter(Boolean) as string[]) {
+  for (const p of [
+    item.imagePath,
+    item.imageOriginalPath,
+    item.imageBgRemovedPath,
+    item.labelImagePath,
+  ].filter(Boolean) as string[]) {
     try {
       await fs.unlink(path.join(UPLOAD_ROOT, p));
     } catch {

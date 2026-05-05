@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
-import { saveUpload as save } from "@/lib/uploads";
+import { saveUpload as save, saveUploadWithOriginal as saveWithOrig } from "@/lib/uploads";
 
 export const runtime = "nodejs";
 
@@ -9,6 +9,8 @@ export const runtime = "nodejs";
 // with the main photo's `<itemId>-orig.jpg` pattern.
 const saveUpload = (userId: string, itemId: string, file: File, suffix: string) =>
   save(userId, itemId, file, `angle-${suffix}`, { bust: true });
+const saveAnglePhoto = (userId: string, itemId: string, file: File) =>
+  saveWithOrig(userId, itemId, file, "angle-orig", { bust: true });
 
 // POST /api/items/[id]/photos
 //
@@ -39,7 +41,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!image || !(image instanceof File) || image.size === 0) {
     return NextResponse.json({ error: "Missing image" }, { status: 400 });
   }
-  const imagePath = await saveUpload(userId, id, image, "orig");
+  const { displayPath: imagePath, originalPath: imageOriginalPath } = await saveAnglePhoto(
+    userId,
+    id,
+    image,
+  );
 
   let imageBgRemovedPath: string | null = null;
   const bg = form.get("imageBgRemoved");
@@ -55,6 +61,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     data: {
       itemId: id,
       imagePath,
+      imageOriginalPath,
       imageBgRemovedPath,
       label: labelText,
       position: item._count.photos,

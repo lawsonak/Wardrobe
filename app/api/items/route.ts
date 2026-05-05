@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { CATEGORIES, listToCsv } from "@/lib/constants";
 import { brandKey } from "@/lib/brand";
-import { saveUpload } from "@/lib/uploads";
+import { saveUpload, saveUploadWithOriginal } from "@/lib/uploads";
 import { describeItem, logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
@@ -120,7 +120,12 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  const imagePath = await saveUpload(userId, created.id, original, "orig");
+  // Two-tier write for the main photo: a small display variant
+  // (everything-but-zoom) plus the untouched original for the item
+  // detail page's tap-to-zoom. Bg-removed and label photos stay
+  // single-variant — utility renders, not user-precious memories.
+  const { displayPath: imagePath, originalPath: imageOriginalPath } =
+    await saveUploadWithOriginal(userId, created.id, original, "orig");
   let imageBgRemovedPath: string | null = null;
   if (bgRemoved && bgRemoved instanceof File && bgRemoved.size > 0) {
     imageBgRemovedPath = await saveUpload(userId, created.id, bgRemoved, "bg");
@@ -132,7 +137,7 @@ export async function POST(req: NextRequest) {
 
   const updated = await prisma.item.update({
     where: { id: created.id },
-    data: { imagePath, imageBgRemovedPath, labelImagePath },
+    data: { imagePath, imageOriginalPath, imageBgRemovedPath, labelImagePath },
   });
 
   await logActivity({
