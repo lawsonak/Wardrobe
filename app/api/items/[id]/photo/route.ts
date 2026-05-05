@@ -3,7 +3,9 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import {
   saveUpload as save,
+  saveBuffer,
   saveUploadWithOriginal as saveWithOrig,
+  rotateOnDisk,
   unlinkUpload as unlink,
 } from "@/lib/uploads";
 
@@ -15,6 +17,16 @@ const saveUpload = (userId: string, itemId: string, file: File, suffix: string) 
   save(userId, itemId, file, suffix, { bust: true });
 const saveMainUpload = (userId: string, itemId: string, file: File, suffix: string) =>
   saveWithOrig(userId, itemId, file, suffix, { bust: true });
+
+// Pull a 90 / 180 / 270 from a request body, defaulting to 90 if the
+// caller fat-fingered something. Anything outside the valid set falls
+// back so a bad client can't inject a free-form rotation we'd happily
+// run through sharp.
+function parseDegrees(value: unknown): 90 | 180 | 270 {
+  if (value === 180) return 180;
+  if (value === 270) return 270;
+  return 90;
+}
 
 // Replace photos on an existing item.
 //   - `image` (required for `which=main`): new main photo
@@ -114,6 +126,69 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const updated = await prisma.item.update({
       where: { id },
       data: { labelImagePath: null },
+    });
+    await unlink(oldPath);
+    return NextResponse.json({ item: updated });
+  }
+
+  // Rotate the main hero photo by 90 / 180 / 270° on the server.
+  // Reads the existing original (or display variant for legacy items
+  // with no original), rotates with sharp, runs the rotated buffer
+  // back through the two-tier save so the new display + original both
+  // come out the right way up. Bg-removed variant is rotated alongside
+  // so the closet card stays in sync.
+  if (which === "main-rotate") {
+    const degrees = parseDegrees(Number(form.get("degrees")));
+    const sourcePath = item.imageOriginalPath ?? item.imagePath;
+    const { buf, ext } = await rotateOnDisk(sourcePath, degrees);
+    const mime =
+      ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+    const rotatedFile = new File([new Uint8Array(buf)], `rotated.${ext}`, { type: mime });
+    const { displayPath: newImage, originalPath: newOriginal } = await saveMainUpload(
+      userId,
+      id,
+      rotatedFile,
+      "orig",
+    );
+
+    let newBg: string | null = null;
+    if (item.imageBgRemovedPath) {
+      const { buf: bgBuf, ext: bgExt } = await rotateOnDisk(item.imageBgRemovedPath, degrees);
+      const tag = Math.random().toString(36).slice(2, 8);
+      newBg = await saveBuffer(userId, id, bgBuf, `bg-${tag}`, bgExt);
+    }
+
+    const oldImage = item.imagePath;
+    const oldOriginal = item.imageOriginalPath;
+    const oldBg = item.imageBgRemovedPath;
+    const updated = await prisma.item.update({
+      where: { id },
+      data: {
+        imagePath: newImage,
+        imageOriginalPath: newOriginal,
+        imageBgRemovedPath: newBg,
+      },
+    });
+    await unlink(oldImage);
+    await unlink(oldOriginal);
+    await unlink(oldBg);
+    return NextResponse.json({ item: updated });
+  }
+
+  // Rotate the label / tag photo. Single-variant — labels don't have
+  // an "original" tier — so just rewrite in place under a new tag.
+  if (which === "label-rotate") {
+    if (!item.labelImagePath) {
+      return NextResponse.json({ error: "No label photo to rotate" }, { status: 400 });
+    }
+    const degrees = parseDegrees(Number(form.get("degrees")));
+    const { buf, ext } = await rotateOnDisk(item.labelImagePath, degrees);
+    const tag = Math.random().toString(36).slice(2, 8);
+    const newPath = await saveBuffer(userId, id, buf, `label-${tag}`, ext);
+    const oldPath = item.labelImagePath;
+    const updated = await prisma.item.update({
+      where: { id },
+      data: { labelImagePath: newPath },
     });
     await unlink(oldPath);
     return NextResponse.json({ item: updated });
