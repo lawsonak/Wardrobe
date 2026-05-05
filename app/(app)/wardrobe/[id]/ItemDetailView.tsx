@@ -6,7 +6,8 @@ import type { Category } from "@/lib/constants";
 import { FavoriteToggle, DeleteItemButton } from "./ItemActions";
 import ItemNav from "./ItemNav";
 import { type Angle } from "./ItemAngles";
-import ItemPhotoCarousel, { type CarouselPhoto } from "@/components/ItemPhotoCarousel";
+import PhotoCarouselClient, { type RawPhoto } from "./PhotoCarouselClient";
+import LabelPhotoView from "@/components/LabelPhotoView";
 import SetLink from "./SetLink";
 
 type DetailItem = {
@@ -183,11 +184,15 @@ export default function ItemDetailView({
 
   // Hero + extra angles, combined into a single Instagram-style swipe
   // carousel. Main photo always renders first; angles fall back to the
-  // raw upload when no bg-removed variant exists.
-  const photos: CarouselPhoto[] = [
-    { id: "main", src, zoomSrc, label: null },
-    ...angles.map((a) => ({
+  // raw upload when no bg-removed variant exists. The `kind` field
+  // tells the client wrapper which API to hit when the user rotates
+  // a slide from inside the lightbox.
+  const photos: RawPhoto[] = [
+    { id: "main", src, zoomSrc, label: null, kind: "hero" },
+    ...angles.map<RawPhoto>((a) => ({
       id: a.id,
+      angleId: a.id,
+      kind: "angle",
       src: a.imageBgRemovedPath
         ? `/api/uploads/${a.imageBgRemovedPath}`
         : `/api/uploads/${a.imagePath}`,
@@ -217,7 +222,7 @@ export default function ItemDetailView({
       </div>
 
       {/* Hero + angles in a single swipeable carousel with dot pager */}
-      <ItemPhotoCarousel photos={photos} alt={heading} />
+      <PhotoCarouselClient itemId={item.id} photos={photos} alt={heading} />
 
       {/* Title bar */}
       <div className="flex items-start justify-between gap-3">
@@ -335,17 +340,13 @@ export default function ItemDetailView({
         <OutfitsList outfits={outfits} />
       )}
 
-      {/* Label / tag photo (if any) */}
+      {/* Label / tag photo (if any). Tap to open the lightbox; rotate
+          buttons land in the lightbox toolbar. */}
       {labelSrc && (
         <section>
           <p className="label mb-1">Label / tag photo</p>
           <div className="overflow-hidden rounded-xl ring-1 ring-stone-100">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={labelSrc}
-              alt="Label tag"
-              className="max-h-72 w-full bg-cream-50 object-contain p-2"
-            />
+            <LabelPhotoView itemId={item.id} src={labelSrc} />
           </div>
         </section>
       )}

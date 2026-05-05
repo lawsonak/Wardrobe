@@ -216,3 +216,49 @@ export async function unlinkUpload(relPath: string | null | undefined): Promise<
     /* ignore */
   }
 }
+
+/**
+ * Rotate an existing on-disk upload by 90° increments and return the
+ * rotated bytes + canonical extension. Doesn't write — the caller
+ * decides whether to save through `saveBuffer` (single-variant), wrap
+ * in a File and run `saveUploadWithOriginal` (two-tier), etc.
+ *
+ * Reads via the relative path stored in the DB (e.g.
+ * `<userId>/<id>-orig.jpg`). EXIF orientation on the source is
+ * applied first so the physical rotation lands in the direction the
+ * user actually sees. The returned buffer has no EXIF — orientation
+ * is baked into the pixel data.
+ */
+export async function rotateOnDisk(
+  relPath: string,
+  degrees: 90 | 180 | 270,
+): Promise<{ buf: Buffer; ext: "png" | "jpg" | "webp" }> {
+  const abs = path.join(UPLOAD_ROOT, relPath);
+  const input = await fs.readFile(abs);
+  const ext = (path.extname(relPath).toLowerCase().replace(".", "") || "jpg") as
+    | "png"
+    | "jpg"
+    | "jpeg"
+    | "webp";
+
+  // Sharp's .rotate() takes EITHER no args (use EXIF) OR an explicit
+  // angle (ignore EXIF). Two passes so we apply EXIF on the first
+  // (no-op for files already EXIF-baked by saveUploadWithOriginal,
+  // but correct for legacy photos that still carry orientation flags)
+  // and the user's rotation on the second.
+  const oriented = await sharp(input, { failOn: "none" }).rotate().toBuffer();
+  const pipeline = sharp(oriented).rotate(degrees);
+  if (ext === "png") {
+    return { buf: await pipeline.png({ compressionLevel: 9 }).toBuffer(), ext: "png" };
+  }
+  if (ext === "webp") {
+    return { buf: await pipeline.webp({ quality: WEBP_QUALITY }).toBuffer(), ext: "webp" };
+  }
+  // jpg / jpeg — re-encode at q90 (a hair higher than display q85; we
+  // expect at most a couple of rotations in a row, so the cumulative
+  // re-encode loss stays imperceptible).
+  return {
+    buf: await pipeline.jpeg({ quality: 90, mozjpeg: true }).toBuffer(),
+    ext: "jpg",
+  };
+}
