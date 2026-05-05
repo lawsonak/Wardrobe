@@ -28,7 +28,12 @@ export async function POST() {
   const [items, wishlist, photos, outfits] = await Promise.all([
     prisma.item.findMany({
       where: { ownerId: userId },
-      select: { imagePath: true, imageBgRemovedPath: true, labelImagePath: true },
+      select: {
+        imagePath: true,
+        imageOriginalPath: true,
+        imageBgRemovedPath: true,
+        labelImagePath: true,
+      },
     }),
     prisma.wishlistItem.findMany({
       where: { ownerId: userId },
@@ -36,7 +41,11 @@ export async function POST() {
     }),
     prisma.itemPhoto.findMany({
       where: { item: { ownerId: userId } },
-      select: { imagePath: true, imageBgRemovedPath: true },
+      select: {
+        imagePath: true,
+        imageOriginalPath: true,
+        imageBgRemovedPath: true,
+      },
     }),
     prisma.outfit.findMany({
       where: { ownerId: userId },
@@ -46,12 +55,14 @@ export async function POST() {
   const referenced = new Set<string>();
   for (const it of items) {
     if (it.imagePath) referenced.add(it.imagePath);
+    if (it.imageOriginalPath) referenced.add(it.imageOriginalPath);
     if (it.imageBgRemovedPath) referenced.add(it.imageBgRemovedPath);
     if (it.labelImagePath) referenced.add(it.labelImagePath);
   }
   for (const w of wishlist) if (w.imagePath) referenced.add(w.imagePath);
   for (const p of photos) {
     if (p.imagePath) referenced.add(p.imagePath);
+    if (p.imageOriginalPath) referenced.add(p.imageOriginalPath);
     if (p.imageBgRemovedPath) referenced.add(p.imageBgRemovedPath);
   }
   for (const o of outfits) if (o.tryOnImagePath) referenced.add(o.tryOnImagePath);

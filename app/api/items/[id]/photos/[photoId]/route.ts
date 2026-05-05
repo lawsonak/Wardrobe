@@ -53,6 +53,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
   await prisma.itemPhoto.delete({ where: { id: photoId } });
   await unlink(photo.imagePath);
+  await unlink(photo.imageOriginalPath);
   await unlink(photo.imageBgRemovedPath);
 
   return NextResponse.json({ ok: true });

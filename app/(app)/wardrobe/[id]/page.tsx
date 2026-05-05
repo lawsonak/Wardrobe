@@ -102,6 +102,7 @@ export default async function ItemDetail({
   const angles = item.photos.map((p) => ({
     id: p.id,
     imagePath: p.imagePath,
+    imageOriginalPath: p.imageOriginalPath,
     imageBgRemovedPath: p.imageBgRemovedPath,
     label: p.label,
   }));
@@ -159,6 +160,7 @@ export default async function ItemDetail({
         item={{
           id: item.id,
           imagePath: item.imagePath,
+          imageOriginalPath: item.imageOriginalPath ?? null,
           imageBgRemovedPath: item.imageBgRemovedPath ?? null,
           labelImagePath: item.labelImagePath ?? null,
           category: item.category,
