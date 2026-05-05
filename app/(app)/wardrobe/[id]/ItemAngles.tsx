@@ -13,6 +13,7 @@ import ProgressBar from "@/components/ProgressBar";
 export type Angle = {
   id: string;
   imagePath: string;
+  imageOriginalPath: string | null;
   imageBgRemovedPath: string | null;
   label: string | null;
 };

@@ -7,6 +7,12 @@ import ZoomableImage from "@/components/ZoomableImage";
 export type CarouselPhoto = {
   id: string;
   src: string;
+  // Optional pointer to the full-resolution original. When present,
+  // tapping to zoom loads this instead of `src` so the lightbox shows
+  // real detail. Older photos (uploaded before two-tier storage
+  // landed) leave it undefined and the lightbox shows the display
+  // variant.
+  zoomSrc?: string;
   label: string | null;
 };
 
@@ -62,6 +68,7 @@ export default function ItemPhotoCarousel({
       <div className="tile-bg flex aspect-square w-full items-center justify-center overflow-hidden rounded-2xl p-6">
         <ZoomableImage
           src={only.src}
+          zoomSrc={only.zoomSrc}
           alt={only.label ?? alt}
           className="h-full w-full object-contain"
         />
@@ -85,6 +92,7 @@ export default function ItemPhotoCarousel({
           >
             <ZoomableImage
               src={p.src}
+              zoomSrc={p.zoomSrc}
               alt={p.label ?? alt}
               className="h-full w-full object-contain"
               draggable={false}

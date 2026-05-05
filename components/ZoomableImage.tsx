@@ -6,19 +6,28 @@ import { useEffect, useRef, useState } from "react";
 // uses `touch-action: pinch-zoom` so the OS handles natural pinch + pan
 // without us reinventing gesture math. On desktop, click the backdrop or
 // hit Esc to close.
+//
+// `zoomSrc` is an optional separate URL used only inside the lightbox —
+// we render a small display variant inline (fast LAN load, fewer pixels
+// to decode for grids) and load the untouched original on demand when
+// the user actually taps to zoom. Falls back to `src` when no original
+// exists (older items, generated artifacts).
 export default function ZoomableImage({
   src,
+  zoomSrc,
   alt,
   className,
   draggable,
 }: {
   src: string;
+  zoomSrc?: string;
   alt: string;
   className?: string;
   draggable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lightboxSrc = zoomSrc ?? src;
 
   useEffect(() => {
     if (!open) return;
@@ -66,7 +75,7 @@ export default function ZoomableImage({
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={src}
+              src={lightboxSrc}
               alt={alt}
               draggable={false}
               className="mx-auto block h-auto w-auto max-w-full select-none"

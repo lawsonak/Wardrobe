@@ -12,6 +12,7 @@ import SetLink from "./SetLink";
 type DetailItem = {
   id: string;
   imagePath: string;
+  imageOriginalPath: string | null;
   imageBgRemovedPath: string | null;
   labelImagePath: string | null;
   category: string;
@@ -160,6 +161,12 @@ export default function ItemDetailView({
   const src = item.imageBgRemovedPath
     ? `/api/uploads/${item.imageBgRemovedPath}`
     : `/api/uploads/${item.imagePath}`;
+  // Lightbox always pulls the untouched original when we have one; the
+  // bg-removed cutout (and the older display variant on legacy items)
+  // is fine for grids but loses real detail when zoomed.
+  const zoomSrc = item.imageOriginalPath
+    ? `/api/uploads/${item.imageOriginalPath}`
+    : `/api/uploads/${item.imagePath}`;
   const labelSrc = item.labelImagePath ? `/api/uploads/${item.labelImagePath}` : null;
 
   const seasons = csvToList(item.seasons);
@@ -178,11 +185,14 @@ export default function ItemDetailView({
   // carousel. Main photo always renders first; angles fall back to the
   // raw upload when no bg-removed variant exists.
   const photos: CarouselPhoto[] = [
-    { id: "main", src, label: null },
+    { id: "main", src, zoomSrc, label: null },
     ...angles.map((a) => ({
       id: a.id,
       src: a.imageBgRemovedPath
         ? `/api/uploads/${a.imageBgRemovedPath}`
+        : `/api/uploads/${a.imagePath}`,
+      zoomSrc: a.imageOriginalPath
+        ? `/api/uploads/${a.imageOriginalPath}`
         : `/api/uploads/${a.imagePath}`,
       label: a.label,
     })),
