@@ -7,6 +7,7 @@ import EditItemForm from "./EditItemForm";
 import ItemDetailView from "./ItemDetailView";
 import ItemAngles from "./ItemAngles";
 import ItemPhotoEditor from "@/components/ItemPhotoEditor";
+import LabelPhotoView from "@/components/LabelPhotoView";
 
 export const dynamic = "force-dynamic";
 
@@ -215,8 +216,7 @@ export default async function ItemDetail({
             <div>
               <p className="label mb-1">Label / tag photo</p>
               <div className="overflow-hidden rounded-xl ring-1 ring-stone-100">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={labelSrc} alt="Label tag" className="max-h-72 w-full bg-cream-50 object-contain p-2" />
+                <LabelPhotoView itemId={item.id} src={labelSrc} />
               </div>
             </div>
           )}
@@ -224,7 +224,6 @@ export default async function ItemDetail({
           <ItemPhotoEditor
             itemId={item.id}
             imagePath={item.imagePath}
-            imageBgRemovedPath={item.imageBgRemovedPath}
             hasBgRemoved={!!item.imageBgRemovedPath}
             hasLabelPhoto={!!labelSrc}
           />

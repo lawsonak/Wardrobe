@@ -13,6 +13,11 @@ export type CarouselPhoto = {
   // landed) leave it undefined and the lightbox shows the display
   // variant.
   zoomSrc?: string;
+  // Optional rotation handler for the photo backing this slide. When
+  // provided, the lightbox renders ↺ / ↻ buttons. The carousel
+  // doesn't know whether it's a hero, angle, or label — it just
+  // forwards whatever the parent wires up.
+  onRotate?: (degrees: 90 | 270) => void | Promise<void>;
   label: string | null;
 };
 
@@ -71,6 +76,7 @@ export default function ItemPhotoCarousel({
           zoomSrc={only.zoomSrc}
           alt={only.label ?? alt}
           className="h-full w-full object-contain"
+          onRotate={only.onRotate}
         />
       </div>
     );
@@ -96,6 +102,7 @@ export default function ItemPhotoCarousel({
               alt={p.label ?? alt}
               className="h-full w-full object-contain"
               draggable={false}
+              onRotate={p.onRotate}
             />
           </div>
         ))}

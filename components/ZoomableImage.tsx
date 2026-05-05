@@ -12,22 +12,41 @@ import { useEffect, useRef, useState } from "react";
 // to decode for grids) and load the untouched original on demand when
 // the user actually taps to zoom. Falls back to `src` when no original
 // exists (older items, generated artifacts).
+//
+// `onRotate` is an optional callback. When provided, the lightbox
+// renders a small ↺ / ↻ toolbar in the top-left so the user can rotate
+// the photo from any place a photo is viewed (hero, angle, label).
+// The callback is responsible for the round-trip — typically firing
+// the relevant /api/.../rotate endpoint and calling router.refresh().
 export default function ZoomableImage({
   src,
   zoomSrc,
   alt,
   className,
   draggable,
+  onRotate,
 }: {
   src: string;
   zoomSrc?: string;
   alt: string;
   className?: string;
   draggable?: boolean;
+  onRotate?: (degrees: 90 | 270) => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const [rotating, setRotating] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lightboxSrc = zoomSrc ?? src;
+
+  async function rotate(degrees: 90 | 270) {
+    if (!onRotate || rotating) return;
+    setRotating(true);
+    try {
+      await onRotate(degrees);
+    } finally {
+      setRotating(false);
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -93,6 +112,45 @@ export default function ZoomableImage({
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
             </svg>
           </button>
+          {onRotate && (
+            <div
+              className="absolute left-4 top-4 flex items-center gap-2"
+              style={{ top: "max(1rem, env(safe-area-inset-top))" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => rotate(270)}
+                disabled={rotating}
+                aria-label="Rotate 90° counter-clockwise"
+                title="Rotate 90° counter-clockwise"
+                className="grid h-10 w-10 place-items-center rounded-full bg-white/10 text-white backdrop-blur-sm transition hover:bg-white/20 disabled:opacity-50"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 12a9 9 0 1 0 3-6.7" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 4v5h5" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => rotate(90)}
+                disabled={rotating}
+                aria-label="Rotate 90° clockwise"
+                title="Rotate 90° clockwise"
+                className="grid h-10 w-10 place-items-center rounded-full bg-white/10 text-white backdrop-blur-sm transition hover:bg-white/20 disabled:opacity-50"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 1 1-3-6.7" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 4v5h-5" />
+                </svg>
+              </button>
+              {rotating && (
+                <span className="text-xs text-white/80" aria-live="polite">
+                  Rotating…
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
     </>

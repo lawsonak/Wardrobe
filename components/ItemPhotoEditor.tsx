@@ -16,13 +16,11 @@ import ProgressBar from "@/components/ProgressBar";
 export default function ItemPhotoEditor({
   itemId,
   imagePath,
-  imageBgRemovedPath,
   hasBgRemoved,
   hasLabelPhoto,
 }: {
   itemId: string;
   imagePath: string;
-  imageBgRemovedPath: string | null;
   hasBgRemoved: boolean;
   hasLabelPhoto: boolean;
 }) {
@@ -199,47 +197,6 @@ export default function ItemPhotoEditor({
     }
   }
 
-  // Rotate the main photo (and the bg-removed variant when present)
-  // 90° in either direction. Reuses the same /api/items/[id]/photo
-  // ?which=main endpoint so old files get unlinked and the URLs
-  // bust the browser cache. mtime changes invalidate try-on caches
-  // automatically via the hash in /api/outfits/[id]/tryon.
-  async function rotateBy(degrees: 90 | 270) {
-    setError(null);
-    setBusy(true);
-    try {
-      setStage("Rotating…");
-      const mainRes = await fetch(`/api/uploads/${imagePath}`);
-      if (!mainRes.ok) throw new Error(`HTTP ${mainRes.status} loading photo`);
-      const mainBlob = await mainRes.blob();
-      const rotatedMain = await rotateImage(mainBlob, degrees, { mimeType: "image/jpeg" });
-
-      let rotatedBg: File | null = null;
-      if (imageBgRemovedPath) {
-        const bgRes = await fetch(`/api/uploads/${imageBgRemovedPath}`);
-        if (bgRes.ok) {
-          const bgBlob = await bgRes.blob();
-          rotatedBg = await rotateImage(bgBlob, degrees, { mimeType: "image/png" });
-        }
-      }
-
-      setStage("Saving…");
-      const fd = new FormData();
-      fd.append("which", "main");
-      fd.append("image", rotatedMain);
-      if (rotatedBg) fd.append("imageBgRemoved", rotatedBg);
-      const res = await fetch(`/api/items/${itemId}/photo`, { method: "POST", body: fd });
-      if (!res.ok) throw new Error(await res.text());
-      router.refresh();
-    } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : "Couldn't rotate the photo.");
-    } finally {
-      setBusy(false);
-      setStage(null);
-    }
-  }
-
   async function clearBgRemoval() {
     const ok = await confirmDialog({
       title: "Drop the background-removed version?",
@@ -273,26 +230,6 @@ export default function ItemPhotoEditor({
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" disabled={busy} onClick={() => mainFileRef.current?.click()} className="btn-secondary text-xs">
           📸 Replace photo
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => rotateBy(270)}
-          className="btn-ghost text-xs text-stone-600"
-          title="Rotate 90° counter-clockwise"
-          aria-label="Rotate 90° counter-clockwise"
-        >
-          ↺ Rotate
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => rotateBy(90)}
-          className="btn-ghost text-xs text-stone-600"
-          title="Rotate 90° clockwise"
-          aria-label="Rotate 90° clockwise"
-        >
-          ↻ Rotate
         </button>
         <button type="button" disabled={busy} onClick={rerunBgRemoval} className="btn-ghost text-xs text-blush-600">
           ✂️ {hasBgRemoved ? "Re-run bg removal" : "Remove background"}
