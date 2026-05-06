@@ -208,6 +208,26 @@ export async function saveBuffer(
   return path.posix.join(userId, filename);
 }
 
+/**
+ * Read the dimensions of an on-disk upload without decoding the full
+ * image — sharp parses just the file header. Returns null if the file
+ * is missing or unreadable.
+ */
+export async function getImageDimensions(
+  relPath: string,
+): Promise<{ width: number; height: number } | null> {
+  try {
+    const meta = await sharp(path.join(UPLOAD_ROOT, relPath)).metadata();
+    if (!meta.width || !meta.height) return null;
+    return { width: meta.width, height: meta.height };
+  } catch {
+    return null;
+  }
+}
+
+/** Display variant max edge — kept in sync with `MAX_EDGE_PX` above. */
+export const DISPLAY_MAX_EDGE_PX = MAX_EDGE_PX;
+
 export async function unlinkUpload(relPath: string | null | undefined): Promise<void> {
   if (!relPath) return;
   try {
