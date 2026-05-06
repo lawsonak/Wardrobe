@@ -8,6 +8,7 @@ import { getForecast, cToF } from "@/lib/weather";
 import { getUserMannequin } from "@/lib/mannequin";
 import MannequinUpload from "@/components/MannequinUpload";
 import ShowOnboardingLink from "@/components/ShowOnboardingLink";
+import PhotoOptimizerButton from "@/components/PhotoOptimizerButton";
 import { relativeTime } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +34,17 @@ export default async function SettingsPage() {
   const firstName = firstNameFromUser(session?.user);
   const prefs = await getPrefs();
 
-  const [items, outfits, wishlist, brands, forecast, mannequin, activity] = await Promise.all([
+  const [
+    items,
+    outfits,
+    wishlist,
+    brands,
+    forecast,
+    mannequin,
+    activity,
+    legacyItems,
+    legacyAngles,
+  ] = await Promise.all([
     prisma.item.count({ where: { ownerId: userId } }),
     prisma.outfit.count({ where: { ownerId: userId } }),
     prisma.wishlistItem.count({ where: { ownerId: userId } }),
@@ -49,7 +60,18 @@ export default async function SettingsPage() {
       take: 50,
       select: { id: true, kind: true, summary: true, createdAt: true },
     }),
+    // "Legacy" photos = uploaded before two-tier storage shipped.
+    // We can't tell at the DB level whether the file is actually
+    // oversized (would need a sharp metadata read per file), so
+    // this is an upper bound: items with no original recorded.
+    // The optimizer itself will skip any that are already small
+    // enough to leave alone.
+    prisma.item.count({ where: { ownerId: userId, imageOriginalPath: null } }),
+    prisma.itemPhoto.count({
+      where: { item: { ownerId: userId }, imageOriginalPath: null },
+    }),
   ]);
+  const legacyPhotoCount = legacyItems + legacyAngles;
   const lastActiveAt = activity[0]?.createdAt ?? null;
 
   return (
@@ -143,6 +165,33 @@ export default async function SettingsPage() {
         <a href="/api/export" className="btn-primary mt-3 inline-flex" download>
           Download backup (JSON)
         </a>
+      </section>
+
+      <section className="card p-4">
+        <h2 className="font-display text-lg text-stone-800">Photo storage</h2>
+        <p className="mt-1 text-sm text-stone-600">
+          Two-tier storage shipped recently — every new photo gets a small display
+          variant for fast loading and keeps the full-resolution original for
+          tap-to-zoom. Photos uploaded before that, or any that slipped through,
+          are still living as full-size files.
+        </p>
+        {legacyPhotoCount === 0 ? (
+          <p className="mt-3 text-sm text-sage-700">
+            ✓ All your photos are already in the new shape.
+          </p>
+        ) : (
+          <>
+            <p className="mt-3 text-xs text-stone-500">
+              Up to {legacyPhotoCount} photo{legacyPhotoCount === 1 ? "" : "s"} from
+              before this feature shipped. The optimizer scans each one and only
+              touches the ones that actually need it — anything already at the
+              right size is left alone.
+            </p>
+            <div className="mt-3">
+              <PhotoOptimizerButton />
+            </div>
+          </>
+        )}
       </section>
 
       <section className="card p-4">

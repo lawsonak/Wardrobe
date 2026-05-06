@@ -54,6 +54,8 @@ export type ActivityKind =
   | "ai.suggestion"
   | "ai.tryon"
   | "ai.bg-remove-batch"
+  // Maintenance
+  | "photos.optimize"
   // Auth
   | "auth.signin";
 
