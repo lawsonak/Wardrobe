@@ -9,6 +9,7 @@ import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import { haptic } from "@/lib/haptics";
 import ProgressBar from "@/components/ProgressBar";
+import ZoomableImage from "@/components/ZoomableImage";
 
 export type Angle = {
   id: string;
@@ -111,6 +112,24 @@ export default function ItemAngles({
     }
   }
 
+  // Rotation lives in the lightbox toolbar — same affordance as the
+  // hero / label / read-only angles. Closure builder per thumbnail
+  // so each ZoomableImage sees the right photoId.
+  function rotateAngle(photoId: string) {
+    return async (degrees: 90 | 270) => {
+      const res = await fetch(`/api/items/${itemId}/photos/${photoId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ degrees }),
+      });
+      if (!res.ok) {
+        toast("Couldn't rotate the photo", "error");
+        return;
+      }
+      router.refresh();
+    };
+  }
+
   // Read-only thumbnail strip (no add / remove controls).
   if (!editing && angles.length === 0) return null;
 
@@ -122,24 +141,31 @@ export default function ItemAngles({
             const src = a.imageBgRemovedPath
               ? `/api/uploads/${a.imageBgRemovedPath}`
               : `/api/uploads/${a.imagePath}`;
+            // Lightbox always loads the untouched original when one
+            // exists; legacy angles fall back to the display variant.
+            const zoomSrc = a.imageOriginalPath
+              ? `/api/uploads/${a.imageOriginalPath}`
+              : `/api/uploads/${a.imagePath}`;
             return (
               <div key={a.id} className="relative">
-                <a
-                  href={`/api/uploads/${a.imagePath}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <div
                   className="tile-bg flex h-20 w-20 items-center justify-center overflow-hidden rounded-xl ring-1 ring-stone-100"
-                  title={a.label ?? "Open full size"}
+                  title={a.label ?? "Tap to view + rotate"}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={src} alt={a.label ?? "Angle"} className="h-full w-full object-contain p-1" />
-                </a>
+                  <ZoomableImage
+                    src={src}
+                    zoomSrc={zoomSrc}
+                    alt={a.label ?? "Angle"}
+                    className="h-full w-full object-contain p-1"
+                    onRotate={editing ? rotateAngle(a.id) : undefined}
+                  />
+                </div>
                 {editing && (
                   <button
                     type="button"
                     onClick={() => remove(a.id)}
                     aria-label="Remove angle"
-                    className="absolute -right-1.5 -top-1.5 grid h-6 w-6 place-items-center rounded-full bg-white text-stone-500 shadow-card ring-1 ring-stone-200 hover:text-blush-600"
+                    className="absolute -right-1.5 -top-1.5 z-10 grid h-6 w-6 place-items-center rounded-full bg-white text-stone-500 shadow-card ring-1 ring-stone-200 hover:text-blush-600"
                   >
                     <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
