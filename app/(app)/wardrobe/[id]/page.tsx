@@ -7,6 +7,7 @@ import EditItemForm from "./EditItemForm";
 import ItemDetailView from "./ItemDetailView";
 import ItemAngles from "./ItemAngles";
 import ItemPhotoEditor from "@/components/ItemPhotoEditor";
+import HeroPhotoView from "@/components/HeroPhotoView";
 import LabelPhotoView from "@/components/LabelPhotoView";
 
 export const dynamic = "force-dynamic";
@@ -193,6 +194,11 @@ export default async function ItemDetail({
   const src = item.imageBgRemovedPath
     ? `/api/uploads/${item.imageBgRemovedPath}`
     : `/api/uploads/${item.imagePath}`;
+  // Lightbox loads the untouched original when one exists; legacy
+  // items fall back to the display variant.
+  const heroZoomSrc = item.imageOriginalPath
+    ? `/api/uploads/${item.imageOriginalPath}`
+    : `/api/uploads/${item.imagePath}`;
   const labelSrc = item.labelImagePath ? `/api/uploads/${item.labelImagePath}` : null;
 
   return (
@@ -208,8 +214,12 @@ export default async function ItemDetail({
         {/* Images column */}
         <div className="space-y-3">
           <div className="tile-bg flex aspect-square w-full items-center justify-center overflow-hidden rounded-2xl p-6">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={src} alt={item.subType ?? item.category} className="h-full w-full object-contain" />
+            <HeroPhotoView
+              itemId={item.id}
+              src={src}
+              zoomSrc={heroZoomSrc}
+              alt={item.subType ?? item.category}
+            />
           </div>
 
           {labelSrc && (
