@@ -7,6 +7,7 @@ import {
   saveUploadWithOriginal as saveWithOrig,
   rotateOnDisk,
   unlinkUpload as unlink,
+  computeDHash,
 } from "@/lib/uploads";
 
 export const runtime = "nodejs";
@@ -65,6 +66,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (bg && bg instanceof File && bg.size > 0) {
       newBg = await saveUpload(userId, id, bg, "bg");
     }
+    // Recompute phash since the photo bytes are entirely new — the
+    // previous fingerprint described a photo that no longer exists.
+    const newPhash = await computeDHash(Buffer.from(await image.arrayBuffer()));
     const oldImage = item.imagePath;
     const oldOriginal = item.imageOriginalPath;
     const oldBg = item.imageBgRemovedPath;
@@ -74,6 +78,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         imagePath: newImage,
         imageOriginalPath: newOriginal,
         imageBgRemovedPath: newBg,
+        phash: newPhash,
       },
     });
     await unlink(oldImage);

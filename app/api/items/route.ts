@@ -3,8 +3,20 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { CATEGORIES, listToCsv } from "@/lib/constants";
 import { brandKey } from "@/lib/brand";
-import { saveUpload, saveUploadWithOriginal } from "@/lib/uploads";
+import {
+  saveUpload,
+  saveUploadWithOriginal,
+  computeDHash,
+  hammingDistance,
+} from "@/lib/uploads";
 import { describeItem, logActivity } from "@/lib/activity";
+
+// Hamming distance threshold for "looks similar." 0 = identical,
+// 64 = maximally different. ≤ 10 (about 16% bit difference) catches
+// the same garment shot from a slightly different angle without
+// flagging unrelated photos. Tuned by eye; easy to dial later.
+const SIMILAR_PHASH_THRESHOLD = 10;
+const SIMILAR_RESULT_LIMIT = 5;
 
 export const runtime = "nodejs";
 
@@ -131,9 +143,16 @@ export async function POST(req: NextRequest) {
     imageBgRemovedPath = await saveUpload(userId, created.id, bgRemoved, "bg");
   }
 
+  // Perceptual hash of the source upload. Computed off the raw bytes
+  // so re-encoding into the display variant doesn't perturb the hash.
+  // Used right below to surface possible duplicates back to the
+  // client; null on sharp failures so the column is "no info" rather
+  // than a misleading match.
+  const phash = await computeDHash(Buffer.from(await original.arrayBuffer()));
+
   const updated = await prisma.item.update({
     where: { id: created.id },
-    data: { imagePath, imageOriginalPath, imageBgRemovedPath },
+    data: { imagePath, imageOriginalPath, imageBgRemovedPath, phash },
   });
 
   // Label photo (if any) goes to ItemPhoto kind="label" — items can
@@ -160,5 +179,60 @@ export async function POST(req: NextRequest) {
     targetId: updated.id,
   });
 
-  return NextResponse.json({ item: updated });
+  // "You might already own this" check. Pull every other phash for
+  // this user (a 500-item closet is ~8 KB of strings, negligible),
+  // then compute Hamming distance in app code — SQLite can't do
+  // bitwise XOR on text columns natively. Anything within the
+  // threshold rides back in the response so the client can prompt.
+  const similar: Array<{
+    id: string;
+    distance: number;
+    imagePath: string;
+    imageBgRemovedPath: string | null;
+    category: string;
+    subType: string | null;
+    color: string | null;
+    brand: string | null;
+  }> = [];
+  if (phash) {
+    const others = await prisma.item.findMany({
+      where: {
+        ownerId: userId,
+        phash: { not: null },
+        id: { not: updated.id },
+      },
+      select: {
+        id: true,
+        phash: true,
+        imagePath: true,
+        imageBgRemovedPath: true,
+        category: true,
+        subType: true,
+        color: true,
+        brand: true,
+      },
+    });
+    for (const o of others) {
+      if (!o.phash) continue;
+      const dist = hammingDistance(phash, o.phash);
+      if (dist <= SIMILAR_PHASH_THRESHOLD) {
+        similar.push({
+          id: o.id,
+          distance: dist,
+          imagePath: o.imagePath,
+          imageBgRemovedPath: o.imageBgRemovedPath,
+          category: o.category,
+          subType: o.subType,
+          color: o.color,
+          brand: o.brand,
+        });
+      }
+    }
+    similar.sort((a, b) => a.distance - b.distance);
+  }
+
+  return NextResponse.json({
+    item: updated,
+    similar: similar.slice(0, SIMILAR_RESULT_LIMIT),
+  });
 }

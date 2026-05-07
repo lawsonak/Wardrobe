@@ -38,6 +38,12 @@ model Item {
   // null and the lightbox falls back to `imagePath`.
   imageOriginalPath  String?
   imageBgRemovedPath String?
+  // Perceptual hash (dHash, 64 bits as 16 hex chars) of the photo at
+  // upload time. Compared via Hamming distance against the rest of
+  // the closet on /api/items POST so the user gets a "you might
+  // already own this" warning when they accidentally photograph the
+  // same garment twice. Null on items uploaded before this shipped.
+  phash              String?
   // active | needs_review | draft
   status             String   @default("active")
   category           String
