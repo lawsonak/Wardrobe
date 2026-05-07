@@ -5,6 +5,7 @@ import { CATEGORIES, type Category } from "@/lib/constants";
 import { firstNameFromUser } from "@/lib/userName";
 import SmartSearchBar from "./SmartSearchBar";
 import ClosetGallery from "./ClosetGallery";
+import ApplyPendingAiBar from "./ApplyPendingAiBar";
 import { inferredCategoriesFor } from "@/lib/activities";
 
 export const dynamic = "force-dynamic";
@@ -255,6 +256,14 @@ export default async function WardrobePage({
             </Link>
           ))}
         </div>
+      )}
+
+      {/* Bulk-approve action bar — only when the user is actively
+          looking at the pending-AI list. Approving "all" while
+          viewing the broader closet would touch items the user
+          can't see, which is surprising. */}
+      {pendingOnly && pendingAiCount > 0 && (
+        <ApplyPendingAiBar count={pendingAiCount} />
       )}
 
       {looseMatchBanner && (

@@ -26,6 +26,7 @@ export type ActivityKind =
   | "item.delete"
   | "item.bulk-create"
   | "item.bulk-approve"
+  | "item.bulk-apply-pending"
   | "item.photo.update"
   // Outfits
   | "outfit.create"
