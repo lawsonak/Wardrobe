@@ -62,6 +62,26 @@ export default function AddItemForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reopenCamera, setReopenCamera] = useState(false);
+
+  // "You might already own this" prompt. When the upload response
+  // includes `similar` matches (within Hamming distance threshold),
+  // we hold off on resetting / navigating and surface the matches
+  // here so the user can decide. `pendingItemId` is the id of the
+  // item we just saved — kept around so "Remove this one" can DELETE
+  // it without a re-lookup.
+  type SimilarMatch = {
+    id: string;
+    distance: number;
+    imagePath: string;
+    imageBgRemovedPath: string | null;
+    category: string;
+    subType: string | null;
+    color: string | null;
+    brand: string | null;
+  };
+  const [similarMatches, setSimilarMatches] = useState<SimilarMatch[] | null>(null);
+  const [pendingItemId, setPendingItemId] = useState<string | null>(null);
+  const [similarBusy, setSimilarBusy] = useState(false);
   const [autoTagState, setAutoTagState] = useState<"idle" | "running" | "done" | "disabled" | "error">("idle");
   const [autoTagMessage, setAutoTagMessage] = useState<string | null>(null);
   const autoTagProgress = useTimedProgress(autoTagState === "running", 18);
@@ -366,7 +386,23 @@ export default function AddItemForm() {
     try {
       const res = await fetch("/api/items", { method: "POST", body: fd });
       if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json().catch(() => ({}))) as {
+        item?: { id: string };
+        similar?: SimilarMatch[];
+      };
       haptic("success");
+
+      // "You might already own this" check. Server returned at least
+      // one item with a perceptual hash within the duplicate
+      // threshold — pause the finalize flow and let the user decide
+      // before they end up with two photos of the same blouse.
+      if (data.similar && data.similar.length > 0 && data.item?.id) {
+        setPendingItemId(data.item.id);
+        setSimilarMatches(data.similar);
+        setSubmitting(false);
+        return;
+      }
+
       if (addAnother || batchMode) {
         // Reset form for next item
         setOriginal(null);
@@ -417,10 +453,43 @@ export default function AddItemForm() {
     await submit(batchMode);
   }
 
+  // "Keep both" path: close the prompt and head to the closet. We
+  // skip the batch-mode reset on purpose — once the user has made an
+  // explicit "yes I want both" decision, surfacing the camera again
+  // immediately feels disorienting.
+  function similarKeepBoth() {
+    setSimilarMatches(null);
+    setPendingItemId(null);
+    toast("Saved to closet");
+    router.push("/wardrobe");
+    router.refresh();
+  }
+
+  // "Remove this one" path: DELETE the just-saved item and route the
+  // user to the existing match so they can see what's already there.
+  // The DELETE endpoint already cascades through outfit / collection
+  // memberships and unlinks photos; for a brand-new item with no
+  // memberships yet, the result is a clean undo.
+  async function similarRemoveAndGoToMatch(matchId: string) {
+    if (!pendingItemId) return;
+    setSimilarBusy(true);
+    try {
+      await fetch(`/api/items/${pendingItemId}`, { method: "DELETE" });
+      toast("Kept the existing one");
+      router.push(`/wardrobe/${matchId}`);
+      router.refresh();
+    } catch (err) {
+      console.error(err);
+      toast("Couldn't remove the duplicate", "error");
+      setSimilarBusy(false);
+    }
+  }
+
   const previewUrl = !useOriginal && bgUrl ? bgUrl : originalUrl;
 
   return (
-    <form onSubmit={onSubmit} className="space-y-5">
+    <>
+      <form onSubmit={onSubmit} className="space-y-5">
       {/* Main photo */}
       <div className="card p-4">
         <div className="tile-bg mb-3 grid aspect-square w-full place-items-center overflow-hidden rounded-2xl">
@@ -672,5 +741,74 @@ export default function AddItemForm() {
       </div>
 
     </form>
+
+    {/* Post-save "you might already own this" prompt. Renders as a
+        fixed-position modal over the form so the user can see what
+        they just saved and what it looks like vs the existing one. */}
+    {similarMatches && pendingItemId && (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Looks similar to items already in your closet"
+        className="fixed inset-0 z-50 flex items-end justify-center bg-stone-900/40 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-6 backdrop-blur-sm sm:items-center"
+      >
+        <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-card ring-1 ring-stone-100">
+          <div className="px-5 pt-5">
+            <h2 className="font-display text-xl text-stone-800">
+              Already in your closet?
+            </h2>
+            <p className="mt-1 text-sm text-stone-600">
+              The photo you just added looks{" "}
+              {similarMatches.length === 1 ? "like this piece" : "similar to these pieces"} you
+              already own. Want to remove the new one or keep both?
+            </p>
+          </div>
+          <ul className="mt-3 grid grid-cols-1 gap-2 px-5 sm:grid-cols-2">
+            {similarMatches.map((m) => {
+              const src = m.imageBgRemovedPath
+                ? `/api/uploads/${m.imageBgRemovedPath}`
+                : `/api/uploads/${m.imagePath}`;
+              const heading = m.subType ?? m.category;
+              const subhead = [m.color, m.brand].filter(Boolean).join(" · ");
+              return (
+                <li
+                  key={m.id}
+                  className="flex items-center gap-2 rounded-xl bg-cream-50 p-2 ring-1 ring-stone-100"
+                >
+                  <div className="tile-bg flex h-14 w-14 flex-none items-center justify-center overflow-hidden rounded-lg">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={src} alt={heading} className="h-full w-full object-contain p-1" />
+                  </div>
+                  <div className="min-w-0 flex-1 text-xs">
+                    <p className="truncate font-medium text-stone-800">{heading}</p>
+                    {subhead && <p className="truncate text-stone-500">{subhead}</p>}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={similarBusy}
+                    onClick={() => similarRemoveAndGoToMatch(m.id)}
+                    className="btn-secondary shrink-0 text-xs"
+                    title="Remove the new upload, keep this one"
+                  >
+                    Use this one
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="flex flex-wrap items-center justify-end gap-2 px-5 pb-5 pt-4">
+            <button
+              type="button"
+              disabled={similarBusy}
+              onClick={similarKeepBoth}
+              className="btn-primary"
+            >
+              Keep both
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

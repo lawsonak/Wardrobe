@@ -209,6 +209,60 @@ export async function saveBuffer(
 }
 
 /**
+ * Compute a 64-bit perceptual hash (dHash) of an image buffer.
+ * Used for "you might already own this" warnings on new uploads —
+ * Hamming distance against an existing item's phash gives a cheap,
+ * fully-local similarity score that catches duplicate photos of the
+ * same garment far better than text matching alone.
+ *
+ * dHash works by reducing the image to 9×8 grayscale, then comparing
+ * each pair of horizontally-adjacent pixels — 64 bits total. EXIF
+ * orientation is applied first so a sideways phone photo of the
+ * same garment still hashes the same. Returns 16 hex chars.
+ */
+export async function computeDHash(buf: Buffer): Promise<string | null> {
+  try {
+    const small = await sharp(buf, { failOn: "none" })
+      .rotate()
+      .resize(9, 8, { fit: "fill" })
+      .grayscale()
+      .raw()
+      .toBuffer();
+    if (small.length < 72) return null;
+    let bits = 0n;
+    for (let row = 0; row < 8; row++) {
+      for (let col = 0; col < 8; col++) {
+        const left = small[row * 9 + col];
+        const right = small[row * 9 + col + 1];
+        bits = (bits << 1n) | (right > left ? 1n : 0n);
+      }
+    }
+    return bits.toString(16).padStart(16, "0");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Hamming distance between two 64-bit hex hashes. Returns 64 (max)
+ * for malformed inputs so a corrupt cached hash never matches.
+ */
+export function hammingDistance(a: string, b: string): number {
+  if (a.length !== 16 || b.length !== 16) return 64;
+  try {
+    let xor = BigInt("0x" + a) ^ BigInt("0x" + b);
+    let count = 0;
+    while (xor > 0n) {
+      count += Number(xor & 1n);
+      xor >>= 1n;
+    }
+    return count;
+  } catch {
+    return 64;
+  }
+}
+
+/**
  * Read the dimensions of an on-disk upload without decoding the full
  * image — sharp parses just the file header. Returns null if the file
  * is missing or unreadable.

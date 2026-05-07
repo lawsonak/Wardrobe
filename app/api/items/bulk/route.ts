@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { CATEGORIES } from "@/lib/constants";
-import { saveUploadWithOriginal } from "@/lib/uploads";
+import { saveUploadWithOriginal, computeDHash } from "@/lib/uploads";
 import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
@@ -59,9 +59,10 @@ export async function POST(req: NextRequest) {
       file,
       "orig",
     );
+    const phash = await computeDHash(Buffer.from(await file.arrayBuffer()));
     const updated = await prisma.item.update({
       where: { id: placeholder.id },
-      data: { imagePath: displayPath, imageOriginalPath: originalPath },
+      data: { imagePath: displayPath, imageOriginalPath: originalPath, phash },
     });
     created.push({ id: updated.id, imagePath: updated.imagePath });
   }
