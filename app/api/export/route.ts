@@ -52,8 +52,9 @@ export async function GET() {
     collections,
     notes:
       "Photos live on the server at data/uploads/ and are referenced by " +
-      "imagePath / imageBgRemovedPath / labelImagePath in items, and " +
-      "imagePath in wishlist. Back those up alongside this JSON.",
+      "imagePath / imageBgRemovedPath in items, ItemPhoto.imagePath for " +
+      "angles + labels, and imagePath in wishlist. Back those up alongside " +
+      "this JSON.",
   };
 
   const filename = `wardrobe-export-${new Date().toISOString().slice(0, 10)}.json`;

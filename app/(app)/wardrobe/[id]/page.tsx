@@ -6,9 +6,9 @@ import { csvToList, SLOTS } from "@/lib/constants";
 import EditItemForm from "./EditItemForm";
 import ItemDetailView from "./ItemDetailView";
 import ItemAngles from "./ItemAngles";
+import ItemLabels from "./ItemLabels";
 import ItemPhotoEditor from "@/components/ItemPhotoEditor";
 import HeroPhotoView from "@/components/HeroPhotoView";
-import LabelPhotoView from "@/components/LabelPhotoView";
 
 export const dynamic = "force-dynamic";
 
@@ -101,13 +101,25 @@ export default async function ItemDetail({
   });
   const candidates = candidateRows.filter((c) => !sisterIds.has(c.id));
 
-  const angles = item.photos.map((p) => ({
-    id: p.id,
-    imagePath: p.imagePath,
-    imageOriginalPath: p.imageOriginalPath,
-    imageBgRemovedPath: p.imageBgRemovedPath,
-    label: p.label,
-  }));
+  // Split photos by kind: angles render in the carousel, labels in
+  // their own strip. Both are tappable + rotatable.
+  const angles = item.photos
+    .filter((p) => p.kind !== "label")
+    .map((p) => ({
+      id: p.id,
+      imagePath: p.imagePath,
+      imageOriginalPath: p.imageOriginalPath,
+      imageBgRemovedPath: p.imageBgRemovedPath,
+      label: p.label,
+    }));
+  const labels = item.photos
+    .filter((p) => p.kind === "label")
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+    .map((p) => ({
+      id: p.id,
+      imagePath: p.imagePath,
+      imageOriginalPath: p.imageOriginalPath,
+    }));
 
   // Default: read-only detail view.
   if (!editing) {
@@ -164,7 +176,6 @@ export default async function ItemDetail({
           imagePath: item.imagePath,
           imageOriginalPath: item.imageOriginalPath ?? null,
           imageBgRemovedPath: item.imageBgRemovedPath ?? null,
-          labelImagePath: item.labelImagePath ?? null,
           category: item.category,
           subType: item.subType,
           color: item.color,
@@ -180,6 +191,7 @@ export default async function ItemDetail({
         }}
         outfits={detailOutfits}
         angles={angles}
+        labels={labels}
         setId={item.setId ?? null}
         setName={item.set?.name ?? null}
         sisters={sisters}
@@ -199,7 +211,6 @@ export default async function ItemDetail({
   const heroZoomSrc = item.imageOriginalPath
     ? `/api/uploads/${item.imageOriginalPath}`
     : `/api/uploads/${item.imagePath}`;
-  const labelSrc = item.labelImagePath ? `/api/uploads/${item.labelImagePath}` : null;
 
   return (
     <div className="space-y-5">
@@ -222,21 +233,15 @@ export default async function ItemDetail({
             />
           </div>
 
-          {labelSrc && (
-            <div>
-              <p className="label mb-1">Label / tag photo</p>
-              <div className="overflow-hidden rounded-xl ring-1 ring-stone-100">
-                <LabelPhotoView itemId={item.id} src={labelSrc} />
-              </div>
-            </div>
-          )}
-
           <ItemPhotoEditor
             itemId={item.id}
             imagePath={item.imagePath}
             hasBgRemoved={!!item.imageBgRemovedPath}
-            hasLabelPhoto={!!labelSrc}
           />
+          <div className="border-t border-stone-100 pt-3">
+            <p className="label mb-2">Labels / tags</p>
+            <ItemLabels itemId={item.id} labels={labels} editing />
+          </div>
           <div className="border-t border-stone-100 pt-3">
             <p className="label mb-2">Other angles</p>
             <ItemAngles itemId={item.id} angles={angles} editing />
@@ -250,7 +255,7 @@ export default async function ItemDetail({
               id: item.id,
               imagePath: item.imagePath,
               imageBgRemovedPath: item.imageBgRemovedPath ?? null,
-              labelImagePath: item.labelImagePath ?? null,
+              labelImagePath: labels[0]?.imagePath ?? null,
               category: item.category,
               subType: item.subType,
               color: item.color,

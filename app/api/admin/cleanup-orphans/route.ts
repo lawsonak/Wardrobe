@@ -32,7 +32,6 @@ export async function POST() {
         imagePath: true,
         imageOriginalPath: true,
         imageBgRemovedPath: true,
-        labelImagePath: true,
       },
     }),
     prisma.wishlistItem.findMany({
@@ -57,7 +56,6 @@ export async function POST() {
     if (it.imagePath) referenced.add(it.imagePath);
     if (it.imageOriginalPath) referenced.add(it.imageOriginalPath);
     if (it.imageBgRemovedPath) referenced.add(it.imageBgRemovedPath);
-    if (it.labelImagePath) referenced.add(it.labelImagePath);
   }
   for (const w of wishlist) if (w.imagePath) referenced.add(w.imagePath);
   for (const p of photos) {

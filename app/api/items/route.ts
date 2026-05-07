@@ -122,23 +122,35 @@ export async function POST(req: NextRequest) {
 
   // Two-tier write for the main photo: a small display variant
   // (everything-but-zoom) plus the untouched original for the item
-  // detail page's tap-to-zoom. Bg-removed and label photos stay
-  // single-variant — utility renders, not user-precious memories.
+  // detail page's tap-to-zoom. Bg-removed stays single-variant —
+  // utility render, not a user-precious memory.
   const { displayPath: imagePath, originalPath: imageOriginalPath } =
     await saveUploadWithOriginal(userId, created.id, original, "orig");
   let imageBgRemovedPath: string | null = null;
   if (bgRemoved && bgRemoved instanceof File && bgRemoved.size > 0) {
     imageBgRemovedPath = await saveUpload(userId, created.id, bgRemoved, "bg");
   }
-  let labelImagePath: string | null = null;
-  if (labelImage && labelImage instanceof File && labelImage.size > 0) {
-    labelImagePath = await saveUpload(userId, created.id, labelImage, "label");
-  }
 
   const updated = await prisma.item.update({
     where: { id: created.id },
-    data: { imagePath, imageOriginalPath, imageBgRemovedPath, labelImagePath },
+    data: { imagePath, imageOriginalPath, imageBgRemovedPath },
   });
+
+  // Label photo (if any) goes to ItemPhoto kind="label" — items can
+  // carry multiple labels (front of tag, care symbols, …). The first
+  // one auto-tag reads is the oldest by createdAt.
+  if (labelImage && labelImage instanceof File && labelImage.size > 0) {
+    const { displayPath: labelPath, originalPath: labelOriginal } =
+      await saveUploadWithOriginal(userId, created.id, labelImage, "label", { bust: true });
+    await prisma.itemPhoto.create({
+      data: {
+        itemId: created.id,
+        kind: "label",
+        imagePath: labelPath,
+        imageOriginalPath: labelOriginal,
+      },
+    });
+  }
 
   await logActivity({
     userId,
