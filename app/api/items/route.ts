@@ -9,6 +9,7 @@ import {
   computeDHash,
   hammingDistance,
 } from "@/lib/uploads";
+import { runHiResBgRemovalBatch } from "@/lib/bgRemovalServer";
 import { describeItem, logActivity } from "@/lib/activity";
 
 // Hamming distance threshold for "looks similar." 0 = identical,
@@ -177,6 +178,17 @@ export async function POST(req: NextRequest) {
     summary: `Added ${describeItem(updated)}`,
     targetType: "Item",
     targetId: updated.id,
+  });
+
+  // Hi-res cutout for the lightbox tap-to-zoom. Fire-and-forget — the
+  // bg removal model takes 5-15 s on a full-res photo, which is way
+  // too long to make the upload UX wait. The Node process keeps
+  // running after the response flushes (we're long-running on
+  // Proxmox, not serverless), so the worker finishes in the
+  // background and the user sees the cutout swap into the lightbox
+  // a few seconds after the closet refreshes.
+  void runHiResBgRemovalBatch(prisma, userId, [updated.id]).catch((err) => {
+    console.warn("hi-res bg removal kick-off failed:", err);
   });
 
   // "You might already own this" check. Pull every other phash for

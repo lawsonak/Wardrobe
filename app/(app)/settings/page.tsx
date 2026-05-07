@@ -9,6 +9,7 @@ import { getUserMannequin } from "@/lib/mannequin";
 import MannequinUpload from "@/components/MannequinUpload";
 import ShowOnboardingLink from "@/components/ShowOnboardingLink";
 import PhotoOptimizerButton from "@/components/PhotoOptimizerButton";
+import HiResCutoutBackfillButton from "@/components/HiResCutoutBackfillButton";
 import { relativeTime } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +45,7 @@ export default async function SettingsPage() {
     activity,
     legacyItems,
     legacyAngles,
+    missingHiResCutouts,
   ] = await Promise.all([
     prisma.item.count({ where: { ownerId: userId } }),
     prisma.outfit.count({ where: { ownerId: userId } }),
@@ -69,6 +71,13 @@ export default async function SettingsPage() {
     prisma.item.count({ where: { ownerId: userId, imageOriginalPath: null } }),
     prisma.itemPhoto.count({
       where: { item: { ownerId: userId }, imageOriginalPath: null },
+    }),
+    // Items missing the full-res bg-removed cutout that powers the
+    // lightbox tap-to-zoom. New uploads get one automatically via the
+    // post-upload worker; this count is the backfill queue for items
+    // that pre-date that worker.
+    prisma.item.count({
+      where: { ownerId: userId, imageBgRemovedOriginalPath: null },
     }),
   ]);
   const legacyPhotoCount = legacyItems + legacyAngles;
@@ -167,31 +176,59 @@ export default async function SettingsPage() {
         </a>
       </section>
 
-      <section className="card p-4">
-        <h2 className="font-display text-lg text-stone-800">Photo storage</h2>
-        <p className="mt-1 text-sm text-stone-600">
-          Two-tier storage shipped recently — every new photo gets a small display
-          variant for fast loading and keeps the full-resolution original for
-          tap-to-zoom. Photos uploaded before that, or any that slipped through,
-          are still living as full-size files.
-        </p>
-        {legacyPhotoCount === 0 ? (
-          <p className="mt-3 text-sm text-sage-700">
-            ✓ All your photos are already in the new shape.
+      <section className="card space-y-4 p-4">
+        <div>
+          <h2 className="font-display text-lg text-stone-800">Photo storage</h2>
+          <p className="mt-1 text-sm text-stone-600">
+            Two-tier storage shipped recently — every new photo gets a small display
+            variant for fast loading and keeps the full-resolution original for
+            tap-to-zoom. Photos uploaded before that, or any that slipped through,
+            are still living as full-size files.
           </p>
-        ) : (
-          <>
-            <p className="mt-3 text-xs text-stone-500">
-              Up to {legacyPhotoCount} photo{legacyPhotoCount === 1 ? "" : "s"} from
-              before this feature shipped. The optimizer scans each one and only
-              touches the ones that actually need it — anything already at the
-              right size is left alone.
+          {legacyPhotoCount === 0 ? (
+            <p className="mt-3 text-sm text-sage-700">
+              ✓ All your photos are already in the new shape.
             </p>
-            <div className="mt-3">
-              <PhotoOptimizerButton />
-            </div>
-          </>
-        )}
+          ) : (
+            <>
+              <p className="mt-3 text-xs text-stone-500">
+                Up to {legacyPhotoCount} photo{legacyPhotoCount === 1 ? "" : "s"} from
+                before this feature shipped. The optimizer scans each one and only
+                touches the ones that actually need it — anything already at the
+                right size is left alone.
+              </p>
+              <div className="mt-3">
+                <PhotoOptimizerButton />
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="border-t border-stone-100 pt-4">
+          <h3 className="font-display text-sm text-stone-700">Hi-res cutouts</h3>
+          <p className="mt-1 text-sm text-stone-600">
+            The lightbox tap-to-zoom prefers a full-resolution background-removed
+            cutout — the cleanest view of just the garment. New uploads get one
+            automatically in the background; anything that pre-dates the worker
+            falls back to the photo with its original background.
+          </p>
+          {missingHiResCutouts === 0 ? (
+            <p className="mt-3 text-sm text-sage-700">
+              ✓ Every item has a hi-res cutout.
+            </p>
+          ) : (
+            <>
+              <p className="mt-3 text-xs text-stone-500">
+                {missingHiResCutouts} item{missingHiResCutouts === 1 ? "" : "s"} still
+                missing one. The worker takes ~5–15 s per photo at full quality,
+                so a big batch can take a while. Runs in the background.
+              </p>
+              <div className="mt-3">
+                <HiResCutoutBackfillButton pendingCount={missingHiResCutouts} />
+              </div>
+            </>
+          )}
+        </div>
       </section>
 
       <section className="card p-4">

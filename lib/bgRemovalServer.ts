@@ -43,37 +43,59 @@ const EXT_TO_MIME: Record<string, string> = {
 type RemoveBackgroundFn = (input: Blob) => Promise<Blob>;
 
 let removerPromise: Promise<RemoveBackgroundFn> | null = null;
+let hiResRemoverPromise: Promise<RemoveBackgroundFn> | null = null;
+
+async function loadRemover(model: "small" | "medium"): Promise<RemoveBackgroundFn> {
+  const mod = await import("@imgly/background-removal-node");
+  const fn = mod.removeBackground as (input: Blob, config?: unknown) => Promise<Blob>;
+  if (typeof fn !== "function") {
+    throw new Error("background-removal-node missing removeBackground()");
+  }
+  return (input: Blob) =>
+    fn(input, { model, output: { format: "image/png" } });
+}
 
 async function getRemover(): Promise<RemoveBackgroundFn> {
   if (!removerPromise) {
-    removerPromise = (async () => {
-      const mod = await import("@imgly/background-removal-node");
-      const fn = mod.removeBackground as (input: Blob, config?: unknown) => Promise<Blob>;
-      if (typeof fn !== "function") {
-        throw new Error("background-removal-node missing removeBackground()");
-      }
-      return ((input: Blob) =>
-        fn(input, { model: "small", output: { format: "image/png" } })) as RemoveBackgroundFn;
-    })().catch((err) => {
+    removerPromise = loadRemover("small").catch((err) => {
       // Drop the cache so a future call gets a fresh shot. Without
       // this, a transient model-download failure would persist for
       // the whole process lifetime.
       removerPromise = null;
-      console.error("background-removal-node failed to load:", err);
+      console.error("background-removal-node (small) failed to load:", err);
       throw err instanceof Error ? err : new Error(String(err));
     });
   }
   return removerPromise;
 }
 
+// Hi-res path uses the "medium" model for cleaner edges at full
+// resolution. The lightbox shows every halo and chopped pixel that
+// the smaller model glosses over, so the extra inference cost
+// (~2-3× the small model) is worth it here. Cached on its own so
+// the existing display-tier flow keeps using the fast model.
+async function getHiResRemover(): Promise<RemoveBackgroundFn> {
+  if (!hiResRemoverPromise) {
+    hiResRemoverPromise = loadRemover("medium").catch((err) => {
+      hiResRemoverPromise = null;
+      console.error("background-removal-node (medium) failed to load:", err);
+      throw err instanceof Error ? err : new Error(String(err));
+    });
+  }
+  return hiResRemoverPromise;
+}
+
 // Read the file from disk, wrap in a typed Blob so the package can
 // detect the format, run bg removal, save the result, return the new
-// relative path.
+// relative path. `filenamePrefix` distinguishes display ("bg") from
+// hi-res ("bg-hires") cutouts so they live side-by-side without
+// stomping each other.
 async function processOne(
   remove: RemoveBackgroundFn,
   userId: string,
   itemId: string,
   sourceRelPath: string,
+  filenamePrefix: "bg" | "bg-hires" = "bg",
 ): Promise<string> {
   const sourceAbs = path.join(UPLOAD_ROOT, sourceRelPath);
   const ext = path.extname(sourceRelPath).toLowerCase();
@@ -94,7 +116,7 @@ async function processOne(
   const out = await remove(blob);
   const outBuf = Buffer.from(await out.arrayBuffer());
   const tag = Math.random().toString(36).slice(2, 8);
-  return saveBuffer(userId, itemId, outBuf, `bg-${tag}`, "png");
+  return saveBuffer(userId, itemId, outBuf, `${filenamePrefix}-${tag}`, "png");
 }
 
 // Public entry point: process a list of items in parallel up to
@@ -115,6 +137,86 @@ export type BgRemovalResult = {
   succeeded: string[];
   failed: Array<{ id: string; error: string }>;
 };
+
+// Hi-res batch: parallel to runBgRemovalBatch but reads imageOriginalPath
+// (full-res), runs through the bigger "medium" model, and writes to
+// imageBgRemovedOriginalPath. The lightbox tap-to-zoom prefers this
+// when present so the user sees a real cutout at zoom-quality.
+//
+// Items missing imageOriginalPath fall back to imagePath (legacy
+// uploads pre two-tier-storage). Items missing both are skipped with
+// a clear error so the per-item failure is diagnosable.
+export async function runHiResBgRemovalBatch(
+  prisma: PrismaClient,
+  userId: string,
+  itemIds: string[],
+): Promise<BgRemovalResult> {
+  if (itemIds.length === 0) return { succeeded: [], failed: [] };
+
+  const items = await prisma.item.findMany({
+    where: { id: { in: itemIds }, ownerId: userId },
+    select: {
+      id: true,
+      imagePath: true,
+      imageOriginalPath: true,
+      imageBgRemovedOriginalPath: true,
+    },
+  });
+
+  let remove: RemoveBackgroundFn;
+  try {
+    remove = await getHiResRemover();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("hi-res bg removal: model load failed:", message);
+    return {
+      succeeded: [],
+      failed: items.map((it) => ({ id: it.id, error: `model load failed: ${message.slice(0, 160)}` })),
+    };
+  }
+
+  const result: BgRemovalResult = { succeeded: [], failed: [] };
+  let cursor = 0;
+
+  async function worker() {
+    while (true) {
+      const i = cursor++;
+      if (i >= items.length) return;
+      const it = items[i];
+      const source = it.imageOriginalPath ?? it.imagePath;
+      if (!source) {
+        result.failed.push({ id: it.id, error: "No source photo on item" });
+        continue;
+      }
+      try {
+        const newPath = await processOne(remove, userId, it.id, source, "bg-hires");
+        if (
+          it.imageBgRemovedOriginalPath &&
+          it.imageBgRemovedOriginalPath !== newPath
+        ) {
+          await unlinkUpload(it.imageBgRemovedOriginalPath);
+        }
+        await prisma.item.update({
+          where: { id: it.id },
+          data: { imageBgRemovedOriginalPath: newPath },
+        });
+        result.succeeded.push(it.id);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (result.failed.length === 0 && err instanceof Error) {
+          console.error(`hi-res bg removal failed for item ${it.id}:`, err);
+        } else {
+          console.warn(`hi-res bg removal failed for item ${it.id}:`, message);
+        }
+        result.failed.push({ id: it.id, error: message.slice(0, 200) });
+      }
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(MAX_CONCURRENT, items.length) }, worker);
+  await Promise.all(workers);
+  return result;
+}
 
 export async function runBgRemovalBatch(
   prisma: PrismaClient,

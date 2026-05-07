@@ -38,6 +38,12 @@ model Item {
   // null and the lightbox falls back to `imagePath`.
   imageOriginalPath  String?
   imageBgRemovedPath String?
+  // Full-resolution background-removed cutout. Generated server-side
+  // from imageOriginalPath (slower / better edge fidelity than the
+  // browser-side path), used only by the lightbox tap-to-zoom so the
+  // user sees a real garment cutout instead of pixel mush at zoom.
+  // Background work fires after upload; null until ready.
+  imageBgRemovedOriginalPath String?
   // Perceptual hash (dHash, 64 bits as 16 hex chars) of the photo at
   // upload time. Compared via Hamming distance against the rest of
   // the closet on /api/items POST so the user gets a "you might

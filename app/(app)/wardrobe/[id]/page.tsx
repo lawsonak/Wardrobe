@@ -176,6 +176,7 @@ export default async function ItemDetail({
           imagePath: item.imagePath,
           imageOriginalPath: item.imageOriginalPath ?? null,
           imageBgRemovedPath: item.imageBgRemovedPath ?? null,
+          imageBgRemovedOriginalPath: item.imageBgRemovedOriginalPath ?? null,
           category: item.category,
           subType: item.subType,
           color: item.color,
@@ -206,11 +207,14 @@ export default async function ItemDetail({
   const src = item.imageBgRemovedPath
     ? `/api/uploads/${item.imageBgRemovedPath}`
     : `/api/uploads/${item.imagePath}`;
-  // Lightbox loads the untouched original when one exists; legacy
-  // items fall back to the display variant.
-  const heroZoomSrc = item.imageOriginalPath
-    ? `/api/uploads/${item.imageOriginalPath}`
-    : `/api/uploads/${item.imagePath}`;
+  // Lightbox prefers the full-res cutout (clean garment, no
+  // distractions), falls through to the original (full-res, with
+  // background), then the display variant for legacy items.
+  const heroZoomSrc = item.imageBgRemovedOriginalPath
+    ? `/api/uploads/${item.imageBgRemovedOriginalPath}`
+    : item.imageOriginalPath
+      ? `/api/uploads/${item.imageOriginalPath}`
+      : `/api/uploads/${item.imagePath}`;
 
   return (
     <div className="space-y-5">

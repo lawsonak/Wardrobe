@@ -158,6 +158,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     item.imagePath,
     item.imageOriginalPath,
     item.imageBgRemovedPath,
+    item.imageBgRemovedOriginalPath,
   ].filter(Boolean) as string[];
   for (const p of photos) {
     if (p.imagePath) filesToUnlink.push(p.imagePath);

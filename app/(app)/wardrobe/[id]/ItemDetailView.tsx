@@ -15,6 +15,7 @@ type DetailItem = {
   imagePath: string;
   imageOriginalPath: string | null;
   imageBgRemovedPath: string | null;
+  imageBgRemovedOriginalPath: string | null;
   category: string;
   subType: string | null;
   color: string | null;
@@ -166,9 +167,22 @@ export default function ItemDetailView({
   // Lightbox always pulls the untouched original when we have one; the
   // bg-removed cutout (and the older display variant on legacy items)
   // is fine for grids but loses real detail when zoomed.
-  const zoomSrc = item.imageOriginalPath
-    ? `/api/uploads/${item.imageOriginalPath}`
-    : `/api/uploads/${item.imagePath}`;
+  // Lightbox preference order (best first):
+  //   1. imageBgRemovedOriginalPath — full-res cutout from the
+  //      server-side worker. Prefer this so the user gets a clean
+  //      garment-only zoom (no floor / wall distractions) at real
+  //      pixel detail. Null until the post-upload worker finishes,
+  //      so a brand-new item falls through to the original.
+  //   2. imageOriginalPath — full-res, *with* background. The
+  //      "preserved exactly as uploaded" tier kept around for cases
+  //      where the bg-removal mask isn't right.
+  //   3. imagePath — display variant. Last-resort for legacy items
+  //      that pre-date two-tier storage.
+  const zoomSrc = item.imageBgRemovedOriginalPath
+    ? `/api/uploads/${item.imageBgRemovedOriginalPath}`
+    : item.imageOriginalPath
+      ? `/api/uploads/${item.imageOriginalPath}`
+      : `/api/uploads/${item.imagePath}`;
 
   const seasons = csvToList(item.seasons);
   const activities = csvToList(item.activities);
