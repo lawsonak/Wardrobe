@@ -168,7 +168,16 @@ async function runBatch(
       errorList.push({ itemId: item.id, reason: "Main photo not on disk" });
       return;
     }
-    const label = item.labelImagePath ? await readUpload(item.labelImagePath) : null;
+    // First label by createdAt — labels are stored as ItemPhoto rows
+    // with kind="label" since multi-label support shipped. The oldest
+    // is the canonical one for AI, matching the order the user added
+    // them in.
+    const labelRow = await prisma.itemPhoto.findFirst({
+      where: { itemId: item.id, kind: "label" },
+      orderBy: { createdAt: "asc" },
+      select: { imagePath: true },
+    });
+    const label = labelRow ? await readUpload(labelRow.imagePath) : null;
 
     try {
       // Two-pass: describe the item first (free-form prose where the

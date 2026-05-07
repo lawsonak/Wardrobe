@@ -7,7 +7,7 @@ import { FavoriteToggle, DeleteItemButton } from "./ItemActions";
 import ItemNav from "./ItemNav";
 import { type Angle } from "./ItemAngles";
 import PhotoCarouselClient, { type RawPhoto } from "./PhotoCarouselClient";
-import LabelPhotoView from "@/components/LabelPhotoView";
+import ItemLabels, { type Label } from "./ItemLabels";
 import SetLink from "./SetLink";
 
 type DetailItem = {
@@ -15,7 +15,6 @@ type DetailItem = {
   imagePath: string;
   imageOriginalPath: string | null;
   imageBgRemovedPath: string | null;
-  labelImagePath: string | null;
   category: string;
   subType: string | null;
   color: string | null;
@@ -142,6 +141,7 @@ export default function ItemDetailView({
   item,
   outfits,
   angles,
+  labels,
   setId,
   setName,
   sisters,
@@ -152,6 +152,7 @@ export default function ItemDetailView({
   item: DetailItem;
   outfits: DetailOutfit[];
   angles: Angle[];
+  labels: Label[];
   setId: string | null;
   setName: string | null;
   sisters: Sister[];
@@ -168,7 +169,6 @@ export default function ItemDetailView({
   const zoomSrc = item.imageOriginalPath
     ? `/api/uploads/${item.imageOriginalPath}`
     : `/api/uploads/${item.imagePath}`;
-  const labelSrc = item.labelImagePath ? `/api/uploads/${item.labelImagePath}` : null;
 
   const seasons = csvToList(item.seasons);
   const activities = csvToList(item.activities);
@@ -340,14 +340,15 @@ export default function ItemDetailView({
         <OutfitsList outfits={outfits} />
       )}
 
-      {/* Label / tag photo (if any). Tap to open the lightbox; rotate
-          buttons land in the lightbox toolbar. */}
-      {labelSrc && (
+      {/* Label / tag photos (if any). Tap any to open the lightbox;
+          rotate buttons land in the lightbox toolbar. Read-only here
+          — the edit page handles add / delete. */}
+      {labels.length > 0 && (
         <section>
-          <p className="label mb-1">Label / tag photo</p>
-          <div className="overflow-hidden rounded-xl ring-1 ring-stone-100">
-            <LabelPhotoView itemId={item.id} src={labelSrc} />
-          </div>
+          <p className="label mb-2">
+            Label{labels.length === 1 ? "" : "s"} / tag{labels.length === 1 ? "" : "s"}
+          </p>
+          <ItemLabels itemId={item.id} labels={labels} />
         </section>
       )}
 

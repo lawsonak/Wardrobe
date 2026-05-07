@@ -19,13 +19,22 @@ export default async function MetadataQualityPage() {
   const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
   const firstName = firstNameFromUser(session?.user);
 
-  const [items, brands] = await Promise.all([
+  const [items, brands, labelCounts] = await Promise.all([
     prisma.item.findMany({
       where: { ownerId: userId },
       orderBy: { createdAt: "desc" },
     }),
     prisma.brand.findMany({ where: { ownerId: userId }, orderBy: { name: "asc" } }),
+    // "Has at least one label photo" lookup since labels moved out of
+    // Item.labelImagePath into ItemPhoto kind="label". Group-by gives
+    // a single round-trip vs N+1.
+    prisma.itemPhoto.groupBy({
+      by: ["itemId"],
+      where: { kind: "label", item: { ownerId: userId } },
+      _count: { _all: true },
+    }),
   ]);
+  const itemsWithLabels = new Set(labelCounts.map((r) => r.itemId));
 
   // Item-level issues
   const issues: Issue[] = [];
@@ -37,7 +46,7 @@ export default async function MetadataQualityPage() {
     if (!item.color) missing.push("color");
     if (csvToList(item.seasons).length === 0) missing.push("seasons");
     if (csvToList(item.activities).length === 0) missing.push("activities");
-    if (item.labelImagePath && !item.brand) missing.push("brand from label");
+    if (itemsWithLabels.has(item.id) && !item.brand) missing.push("brand from label");
     if (missing.length > 0) {
       issues.push({
         itemId: item.id,

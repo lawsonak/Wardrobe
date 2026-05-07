@@ -142,14 +142,29 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   // older DB that hasn't run that migration yet.)
   await prisma.outfitItem.deleteMany({ where: { itemId: id } });
   await prisma.collectionItem.deleteMany({ where: { itemId: id } });
+
+  // Pull every photo (angles + labels) so we can unlink their files
+  // on disk after the cascade drops their rows. ItemPhoto.itemId has
+  // ON DELETE CASCADE so the rows themselves go automatically — but
+  // Prisma's cascade is DB-only and would leave the files orphaned.
+  const photos = await prisma.itemPhoto.findMany({
+    where: { itemId: id },
+    select: { imagePath: true, imageOriginalPath: true, imageBgRemovedPath: true },
+  });
+
   await prisma.item.delete({ where: { id } });
 
-  for (const p of [
+  const filesToUnlink: string[] = [
     item.imagePath,
     item.imageOriginalPath,
     item.imageBgRemovedPath,
-    item.labelImagePath,
-  ].filter(Boolean) as string[]) {
+  ].filter(Boolean) as string[];
+  for (const p of photos) {
+    if (p.imagePath) filesToUnlink.push(p.imagePath);
+    if (p.imageOriginalPath) filesToUnlink.push(p.imageOriginalPath);
+    if (p.imageBgRemovedPath) filesToUnlink.push(p.imageBgRemovedPath);
+  }
+  for (const p of filesToUnlink) {
     try {
       await fs.unlink(path.join(UPLOAD_ROOT, p));
     } catch {

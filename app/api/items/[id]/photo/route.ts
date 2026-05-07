@@ -28,11 +28,15 @@ function parseDegrees(value: unknown): 90 | 180 | 270 {
   return 90;
 }
 
-// Replace photos on an existing item.
+// Replace / rotate the MAIN photo (and its bg-removed companion) on
+// an existing item. Label photos used to live here too, but moved to
+// /api/items/[id]/photos with kind="label" so an item can carry many
+// labels — see that route for label add / delete / rotate.
 //   - `image` (required for `which=main`): new main photo
 //   - `imageBgRemoved` (optional, with `which=main`): pre-removed companion
-//   - `label` (with `which=label`): new label/tag photo
-// `which=label-clear` removes the label photo entirely.
+//   - `which=main-rotate { degrees }` server-side rotate
+//   - `which=bg`: replace just the bg-removed variant
+//   - `which=bg-clear`: drop the bg-removed variant
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id;
@@ -106,31 +110,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ item: updated });
   }
 
-  if (which === "label") {
-    const label = form.get("label");
-    if (!label || !(label instanceof File) || label.size === 0) {
-      return NextResponse.json({ error: "Missing label image" }, { status: 400 });
-    }
-    const newPath = await saveUpload(userId, id, label, "label");
-    const oldPath = item.labelImagePath;
-    const updated = await prisma.item.update({
-      where: { id },
-      data: { labelImagePath: newPath },
-    });
-    await unlink(oldPath);
-    return NextResponse.json({ item: updated });
-  }
-
-  if (which === "label-clear") {
-    const oldPath = item.labelImagePath;
-    const updated = await prisma.item.update({
-      where: { id },
-      data: { labelImagePath: null },
-    });
-    await unlink(oldPath);
-    return NextResponse.json({ item: updated });
-  }
-
   // Rotate the main hero photo by 90 / 180 / 270° on the server.
   // Reads the existing original (or display variant for legacy items
   // with no original), rotates with sharp, runs the rotated buffer
@@ -172,25 +151,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     await unlink(oldImage);
     await unlink(oldOriginal);
     await unlink(oldBg);
-    return NextResponse.json({ item: updated });
-  }
-
-  // Rotate the label / tag photo. Single-variant — labels don't have
-  // an "original" tier — so just rewrite in place under a new tag.
-  if (which === "label-rotate") {
-    if (!item.labelImagePath) {
-      return NextResponse.json({ error: "No label photo to rotate" }, { status: 400 });
-    }
-    const degrees = parseDegrees(Number(form.get("degrees")));
-    const { buf, ext } = await rotateOnDisk(item.labelImagePath, degrees);
-    const tag = Math.random().toString(36).slice(2, 8);
-    const newPath = await saveBuffer(userId, id, buf, `label-${tag}`, ext);
-    const oldPath = item.labelImagePath;
-    const updated = await prisma.item.update({
-      where: { id },
-      data: { labelImagePath: newPath },
-    });
-    await unlink(oldPath);
     return NextResponse.json({ item: updated });
   }
 

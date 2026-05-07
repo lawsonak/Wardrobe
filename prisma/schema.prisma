@@ -38,7 +38,6 @@ model Item {
   // null and the lightbox falls back to `imagePath`.
   imageOriginalPath  String?
   imageBgRemovedPath String?
-  labelImagePath     String?
   // active | needs_review | draft
   status             String   @default("active")
   category           String
@@ -110,6 +109,13 @@ model ItemPhoto {
   id                 String   @id @default(cuid())
   itemId             String
   item               Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  // "angle" (default) for additional full-body shots, "label" for
+  // tag / care-symbol close-ups. Originally Item.labelImagePath stored
+  // a single label per item; consolidating into ItemPhoto lets each
+  // item carry many labels (front of tag, back of tag, brand, care
+  // symbols) without a separate model. AI auto-tag reads the oldest
+  // kind=label row by createdAt.
+  kind               String   @default("angle")
   imagePath          String
   // Same two-tier shape as Item: full-resolution copy preserved on
   // disk so the carousel's tap-to-zoom shows real detail.
