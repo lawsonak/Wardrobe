@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { CATEGORIES } from "@/lib/constants";
 import { saveUploadWithOriginal, computeDHash } from "@/lib/uploads";
+import { runHiResBgRemovalBatch } from "@/lib/bgRemovalServer";
 import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
@@ -73,6 +74,16 @@ export async function POST(req: NextRequest) {
       kind: "item.bulk-create",
       summary: `Imported ${created.length} item${created.length === 1 ? "" : "s"}`,
       meta: { count: created.length, defaultCategory: rawCategory },
+    });
+
+    // Hi-res cutout pass. Fire-and-forget — the bulk-tag worker
+    // already runs in the background after this route flushes; this
+    // joins the same pattern. With concurrency 3, ~10 s per photo,
+    // a 50-photo import finishes hi-res cutouts in ~3 min while the
+    // user goes about their day.
+    const ids = created.map((c) => c.id);
+    void runHiResBgRemovalBatch(prisma, userId, ids).catch((err) => {
+      console.warn("hi-res bg removal kick-off failed (bulk):", err);
     });
   }
 

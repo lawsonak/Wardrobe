@@ -9,6 +9,7 @@ import {
   unlinkUpload as unlink,
   computeDHash,
 } from "@/lib/uploads";
+import { runHiResBgRemovalBatch } from "@/lib/bgRemovalServer";
 
 export const runtime = "nodejs";
 
@@ -84,6 +85,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     await unlink(oldImage);
     await unlink(oldOriginal);
     await unlink(oldBg);
+    // Re-run the hi-res cutout in the background — the previous one
+    // was for the photo that no longer exists. Fire-and-forget; the
+    // helper unlinks the stale cutout as part of its update.
+    void runHiResBgRemovalBatch(prisma, userId, [id]).catch((err) => {
+      console.warn("hi-res bg removal kick-off failed (replace):", err);
+    });
     return NextResponse.json({ item: updated });
   }
 
@@ -141,21 +148,38 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const tag = Math.random().toString(36).slice(2, 8);
       newBg = await saveBuffer(userId, id, bgBuf, `bg-${tag}`, bgExt);
     }
+    // Hi-res cutout: rotate it physically too if present, so the
+    // lightbox stays in sync with the rotated original. We rotate
+    // the existing PNG rather than re-running bg removal — same
+    // mask, just transformed pixels, preserves the edge fidelity
+    // the worker already produced.
+    let newHiResBg: string | null = null;
+    if (item.imageBgRemovedOriginalPath) {
+      const { buf: hbBuf, ext: hbExt } = await rotateOnDisk(
+        item.imageBgRemovedOriginalPath,
+        degrees,
+      );
+      const tag = Math.random().toString(36).slice(2, 8);
+      newHiResBg = await saveBuffer(userId, id, hbBuf, `bg-hires-${tag}`, hbExt);
+    }
 
     const oldImage = item.imagePath;
     const oldOriginal = item.imageOriginalPath;
     const oldBg = item.imageBgRemovedPath;
+    const oldHiResBg = item.imageBgRemovedOriginalPath;
     const updated = await prisma.item.update({
       where: { id },
       data: {
         imagePath: newImage,
         imageOriginalPath: newOriginal,
         imageBgRemovedPath: newBg,
+        imageBgRemovedOriginalPath: newHiResBg,
       },
     });
     await unlink(oldImage);
     await unlink(oldOriginal);
     await unlink(oldBg);
+    await unlink(oldHiResBg);
     return NextResponse.json({ item: updated });
   }
 

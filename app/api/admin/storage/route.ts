@@ -49,6 +49,7 @@ export async function GET() {
         imagePath: true,
         imageOriginalPath: true,
         imageBgRemovedPath: true,
+        imageBgRemovedOriginalPath: true,
       },
     }),
     prisma.wishlistItem.findMany({
@@ -74,6 +75,7 @@ export async function GET() {
     if (it.imagePath) referenced.add(it.imagePath);
     if (it.imageOriginalPath) referenced.add(it.imageOriginalPath);
     if (it.imageBgRemovedPath) referenced.add(it.imageBgRemovedPath);
+    if (it.imageBgRemovedOriginalPath) referenced.add(it.imageBgRemovedOriginalPath);
   }
   for (const w of wishlist) if (w.imagePath) referenced.add(w.imagePath);
   for (const p of photos) {
