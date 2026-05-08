@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
   const original = form.get("image");
   const bgRemoved = form.get("imageBgRemoved");
   const labelImage = form.get("labelImage");
+  const labelBgRemoved = form.get("labelImageBgRemoved");
   const category = String(form.get("category") || "");
   if (!original || !(original instanceof File) || !category) {
     return NextResponse.json({ error: "Missing image or category" }, { status: 400 });
@@ -158,16 +159,24 @@ export async function POST(req: NextRequest) {
 
   // Label photo (if any) goes to ItemPhoto kind="label" — items can
   // carry multiple labels (front of tag, care symbols, …). The first
-  // one auto-tag reads is the oldest by createdAt.
+  // one auto-tag reads is the oldest by createdAt. Bg-removed
+  // companion is optional; the client runs bg removal in the same
+  // pass it does for the main photo, so we accept the cutout here
+  // and the strip can prefer it the same way it does for angles.
   if (labelImage && labelImage instanceof File && labelImage.size > 0) {
     const { displayPath: labelPath, originalPath: labelOriginal } =
       await saveUploadWithOriginal(userId, created.id, labelImage, "label", { bust: true });
+    let labelBgPath: string | null = null;
+    if (labelBgRemoved && labelBgRemoved instanceof File && labelBgRemoved.size > 0) {
+      labelBgPath = await saveUpload(userId, created.id, labelBgRemoved, "label-bg");
+    }
     await prisma.itemPhoto.create({
       data: {
         itemId: created.id,
         kind: "label",
         imagePath: labelPath,
         imageOriginalPath: labelOriginal,
+        imageBgRemovedPath: labelBgPath,
       },
     });
   }

@@ -2,25 +2,30 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { removeBackground } from "@/lib/bgRemoval";
 import { heicToJpeg, isHeic } from "@/lib/heic";
 import { normalizeOrientation } from "@/lib/imageOrientation";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import { haptic } from "@/lib/haptics";
+import ProgressBar from "@/components/ProgressBar";
 import ZoomableImage from "@/components/ZoomableImage";
 
 export type Label = {
   id: string;
   imagePath: string;
   imageOriginalPath: string | null;
+  imageBgRemovedPath: string | null;
 };
 
 // Adds + removes label / tag photos on an item. Mirrors ItemAngles
-// but skips client-side background removal — labels are flat tag
-// photos, no figure to cut out — and uses kind="label" on the
-// shared /api/items/[id]/photos endpoint. Each thumbnail opens the
-// lightbox with rotate controls, same gesture surface as everywhere
-// else photos appear.
+// down to the bg-removal pass — labels were originally skipped on the
+// theory that "flat tag photos have no figure to cut out", but a
+// bg-removed tag isolates the tag itself and drops the closet floor /
+// hand holding it, which reads way better in the strip. Same /api/
+// items/[id]/photos endpoint with kind="label". Each thumbnail opens
+// the lightbox with rotate controls, same gesture surface as
+// everywhere else photos appear.
 export default function ItemLabels({
   itemId,
   labels,
@@ -34,6 +39,8 @@ export default function ItemLabels({
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<string | null>(null);
+  const [bgProgress, setBgProgress] = useState(0);
+  const [bgPhase, setBgPhase] = useState<"fetch" | "compute" | "other" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function add(picked: File) {
@@ -50,10 +57,31 @@ export default function ItemLabels({
       } catch (err) {
         console.warn("orientation normalize failed", err);
       }
+      setStage(null);
+      setBgProgress(0);
+      let bgBlob: Blob | null = null;
+      try {
+        bgBlob = await removeBackground(file, {
+          onProgress: (p) => {
+            setBgPhase(p.phase);
+            setBgProgress(p.fraction);
+          },
+        });
+        setBgProgress(1);
+      } catch (err) {
+        // Non-fatal — labels still upload as-is, the strip just won't
+        // have a cutout to prefer over the raw photo.
+        console.error("bg removal failed (label)", err);
+      } finally {
+        setBgPhase(null);
+      }
       setStage("Saving…");
       const fd = new FormData();
       fd.append("image", file);
       fd.append("kind", "label");
+      if (bgBlob) {
+        fd.append("imageBgRemoved", new File([bgBlob], "bg.png", { type: "image/png" }));
+      }
       const res = await fetch(`/api/items/${itemId}/photos`, { method: "POST", body: fd });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -112,10 +140,14 @@ export default function ItemLabels({
       {labels.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {labels.map((l) => {
-            const src = `/api/uploads/${l.imagePath}`;
+            // Prefer the bg-removed cutout in the strip when present;
+            // legacy labels (no cutout) fall back to the raw image.
+            const src = l.imageBgRemovedPath
+              ? `/api/uploads/${l.imageBgRemovedPath}`
+              : `/api/uploads/${l.imagePath}`;
             const zoomSrc = l.imageOriginalPath
               ? `/api/uploads/${l.imageOriginalPath}`
-              : src;
+              : `/api/uploads/${l.imagePath}`;
             return (
               <div key={l.id} className="relative">
                 <div className="tile-bg flex h-20 w-20 items-center justify-center overflow-hidden rounded-xl ring-1 ring-stone-100">
@@ -168,6 +200,19 @@ export default function ItemLabels({
             </button>
             {error && <span className="text-xs text-blush-700">{error}</span>}
           </div>
+          {busy && bgPhase && (
+            <ProgressBar
+              value={bgProgress}
+              label={
+                bgPhase === "fetch"
+                  ? "Loading model…"
+                  : bgPhase === "compute"
+                    ? "Removing background…"
+                    : "Preparing…"
+              }
+              hint={`${Math.round(bgProgress * 100)}%`}
+            />
+          )}
         </>
       )}
     </div>
