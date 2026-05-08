@@ -205,8 +205,22 @@ export default function BulkUpload() {
         fd.append("images", working.file, working.file.name);
         const res = await fetch("/api/items/bulk", { method: "POST", body: fd });
         if (!res.ok) {
-          const detail = await res.text().catch(() => "");
-          throw new Error(detail || `HTTP ${res.status}`);
+          // Pull the server's reason if we can. JSON 4xx responses from
+          // /api/items/bulk look like { error: "..." }; non-JSON
+          // failures (nginx 413, generic 500 HTML) get fallback to the
+          // status code so the user doesn't see a wall of HTML.
+          const ct = res.headers.get("content-type") || "";
+          let detail = "";
+          if (ct.includes("application/json")) {
+            const body = (await res.json().catch(() => null)) as { error?: string } | null;
+            detail = body?.error ?? "";
+          } else {
+            const text = (await res.text().catch(() => "")).trim();
+            // Heuristic: HTML error pages aren't useful to surface;
+            // keep a short text body if it's plausibly a plain message.
+            if (text && !text.startsWith("<") && text.length < 500) detail = text;
+          }
+          throw new Error(detail || `HTTP ${res.status} ${res.statusText || ""}`.trim());
         }
         const data = (await res.json()) as { created: Array<{ id: string; imagePath: string }> };
         const created = data.created?.[0];
@@ -215,7 +229,10 @@ export default function BulkUpload() {
       } catch (err) {
         console.error(err);
         const message = err instanceof Error ? err.message : "Upload failed";
-        update(working.id, { state: "error", error: message.slice(0, 200) });
+        // Cap is generous so the user sees the full server message
+        // (e.g. a 413 body, a sharp error explaining a corrupt JPEG)
+        // instead of a head-truncated snippet that ends mid-sentence.
+        update(working.id, { state: "error", error: message.slice(0, 500) });
       }
     }
 
@@ -384,6 +401,7 @@ export default function BulkUpload() {
       {step === 3 && (
         <Step3Done
           counts={counts}
+          failedJobs={jobs.filter((j) => j.state === "error")}
           aiBanner={aiBanner}
           bgBanner={bgBanner}
           defaultStatus={defaultStatus}
@@ -790,12 +808,14 @@ function Step2Processing({
 
 function Step3Done({
   counts,
+  failedJobs,
   aiBanner,
   bgBanner,
   defaultStatus,
   onUploadAnother,
 }: {
   counts: { total: number; uploaded: number; error: number };
+  failedJobs: Job[];
   aiBanner: string | null;
   bgBanner: string | null;
   defaultStatus: "needs_review" | "active";
@@ -813,10 +833,38 @@ function Step3Done({
         </h2>
         {counts.error > 0 && (
           <p className="text-sm text-blush-700">
-            {counts.error} failed — see the queue above for details.
+            {counts.error} failed — details below.
           </p>
         )}
       </div>
+
+      {/* Per-failure detail. Step 2 had the live queue with each
+          job's error message inline, but Step 3 used to drop that
+          and just summarize "N failed — see the queue above"
+          while the queue was already gone. Render the failures
+          here so the user can actually see the cause without
+          having to back out and re-upload. */}
+      {failedJobs.length > 0 && (
+        <div className="card space-y-3 p-4">
+          <p className="text-sm font-medium text-blush-800">What failed</p>
+          <ul className="space-y-3">
+            {failedJobs.map((j) => (
+              <li key={j.id} className="flex items-start gap-3 text-sm">
+                <div className="tile-bg h-12 w-12 shrink-0 overflow-hidden rounded-lg">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={j.previewUrl} alt="" className="h-full w-full object-cover" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium text-stone-800">{j.file.name}</p>
+                  <p className="break-words text-xs text-blush-700">
+                    {j.error || "Failed (no detail returned by the server)"}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {aiBanner && (
         <div className="rounded-xl bg-blush-100/60 px-3 py-2 text-sm text-blush-800 ring-1 ring-blush-200">
