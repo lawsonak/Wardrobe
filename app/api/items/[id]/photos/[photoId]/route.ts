@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import {
   rotateOnDisk,
   saveBuffer,
+  saveUpload as save,
   saveUploadWithOriginal,
   unlinkUpload,
 } from "@/lib/uploads";
@@ -11,6 +12,8 @@ import {
 export const runtime = "nodejs";
 
 const unlink = unlinkUpload;
+const saveUpload = (userId: string, itemId: string, file: File, suffix: string) =>
+  save(userId, itemId, file, suffix, { bust: true });
 
 function parseDegrees(value: unknown): 90 | 180 | 270 {
   if (value === 180) return 180;
@@ -40,13 +43,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   return NextResponse.json({ photo: updated });
 }
 
-// POST /api/items/[id]/photos/[photoId] — rotate the angle photo by
-// 90 / 180 / 270°. Server-side via sharp; reads the existing original
-// (or display variant for legacy angles), rotates, runs the rotated
-// buffer back through the two-tier save so display + original stay
-// in sync. Bg-removed variant is rotated alongside if present.
-//
-// Body shape: { degrees: 90 | 180 | 270 }
+// POST /api/items/[id]/photos/[photoId] — two shapes, picked by
+// content-type:
+//   - JSON  { degrees }                  → server-side rotation
+//   - multipart { which:"bg", imageBgRemoved } → save / replace the
+//     bg-removed cutout on this angle / label without touching the
+//     source photo. Mirrors `which=bg` on /api/items/[id]/photo and
+//     is what the admin BgCleanup walker calls when extending bg
+//     removal to ItemPhoto rows.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string; photoId: string }> }) {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id;
@@ -57,6 +61,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     where: { id: photoId, itemId: id, item: { ownerId: userId } },
   });
   if (!photo) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const contentType = req.headers.get("content-type") || "";
+  if (contentType.startsWith("multipart/form-data")) {
+    const form = await req.formData();
+    const which = String(form.get("which") || "bg");
+    if (which !== "bg") {
+      return NextResponse.json({ error: "Unknown which" }, { status: 400 });
+    }
+    const bg = form.get("imageBgRemoved");
+    if (!bg || !(bg instanceof File) || bg.size === 0) {
+      return NextResponse.json({ error: "Missing imageBgRemoved" }, { status: 400 });
+    }
+    const suffix = photo.kind === "label" ? "label-bg" : "angle-bg";
+    const newBg = await saveUpload(userId, id, bg, suffix);
+    const oldBg = photo.imageBgRemovedPath;
+    const updated = await prisma.itemPhoto.update({
+      where: { id: photoId },
+      data: { imageBgRemovedPath: newBg },
+    });
+    await unlink(oldBg);
+    return NextResponse.json({ photo: updated });
+  }
 
   const body = await req.json().catch(() => ({}));
   const degrees = parseDegrees(Number(body.degrees));
