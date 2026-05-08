@@ -243,20 +243,14 @@ export default async function WardrobePage({
             )}
           </Link>
         )}
-        {/* Show / hide Backroom items mixed into the closet. The
-            dedicated /wardrobe/backroom page (lock icon in the
-            header above) is where the user lives if they want to
-            see ONLY Backroom items. */}
-        <Link
-          href={includeBackroom ? dropParam(sp, "backroom") : `/wardrobe?${withParam(sp, "backroom", "1")}`}
-          className={"chip " + (includeBackroom ? "chip-on" : "chip-off")}
-          title={includeBackroom ? "Hide Backroom items" : "Mix Backroom items into the closet"}
-        >
-          🔒 Backroom
-        </Link>
       </div>
 
-      {/* Quick taxonomy filter (form, kept for keyboard-only / no-AI users) */}
+      {/* Quick taxonomy filter (form, kept for keyboard-only / no-AI
+          users). The Backroom toggle lives here too — out of the
+          immediately-visible quick-filter row above, but still one tap
+          deeper if the user wants to mix private items into the
+          gallery without hopping over to /wardrobe/backroom. The lock
+          icon in the header stays as the primary entry point. */}
       <details className="card p-3 text-sm">
         <summary className="cursor-pointer select-none text-stone-600">More filters</summary>
         <form className="mt-3 flex flex-wrap items-center gap-2" action="/wardrobe">
@@ -269,6 +263,10 @@ export default async function WardrobePage({
           <label className="chip chip-off cursor-pointer">
             <input type="checkbox" name="fav" value="1" defaultChecked={favOnly} className="mr-1" />
             Favorites
+          </label>
+          <label className="chip chip-off cursor-pointer">
+            <input type="checkbox" name="backroom" value="1" defaultChecked={includeBackroom} className="mr-1" />
+            🔒 Show Backroom
           </label>
           <button className="btn-secondary" type="submit">Apply</button>
         </form>

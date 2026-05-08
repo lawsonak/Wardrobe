@@ -38,7 +38,7 @@ export default async function BackroomPage() {
             {items.length} item{items.length === 1 ? "" : "s"} hidden from the main closet, outfit builder, and AI prompts.
           </p>
         </div>
-        <Link href="/wardrobe/new?backroom=1" className="btn-primary">+ Add</Link>
+        <Link href="/wardrobe/new?backroom=1" className="btn-primary whitespace-nowrap">+ Add</Link>
       </div>
 
       {items.length === 0 ? (
