@@ -6,7 +6,10 @@ import { describeItem, logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
 
-const PHOTO_KINDS = ["angle", "label"] as const;
+// `pending` is the third kind — used by merge to mark folded photos
+// as "we don't know if this is a tag or an angle yet, the user will
+// triage on the item edit page."
+const PHOTO_KINDS = ["angle", "label", "pending"] as const;
 type PhotoKind = (typeof PHOTO_KINDS)[number];
 
 const MAX_SOURCES_PER_CALL = 25;
@@ -21,12 +24,15 @@ const MAX_SOURCES_PER_CALL = 25;
 // default), any extra photos already on the source are moved across
 // preserving their kind, and the source row is deleted.
 //
-// Body: { sourceIds: string[], asKind?: "angle" | "label" }
+// Body: { sourceIds: string[], asKind?: "angle" | "label" | "pending" }
 //   - sourceIds: items to merge INTO `id`. Owner-checked.
 //   - asKind: kind to assign to each source's main-photo row on the
-//     target. Defaults to "label" since that's the dominant flow.
-//     Photos that already lived on the source as ItemPhoto rows keep
-//     their original kind.
+//     target. Defaults to "pending" so the user reviews each new
+//     photo on the merged item's detail page and tags it as either
+//     a tag/label close-up or an extra angle. Photos that already
+//     lived on the source as ItemPhoto rows keep their original
+//     kind — only the source's *main* photo, which had no role
+//     before merge, lands in pending.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id;
@@ -43,10 +49,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         ),
       )
     : [];
-  const rawKind = String(body?.asKind ?? "label");
+  const rawKind = String(body?.asKind ?? "pending");
   const asKind: PhotoKind = (PHOTO_KINDS as readonly string[]).includes(rawKind)
     ? (rawKind as PhotoKind)
-    : "label";
+    : "pending";
 
   if (sourceIds.length === 0) {
     return NextResponse.json({ error: "No source items provided" }, { status: 400 });

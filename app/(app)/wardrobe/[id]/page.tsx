@@ -8,6 +8,7 @@ import ItemDetailView from "./ItemDetailView";
 import ItemAngles from "./ItemAngles";
 import ItemLabels from "./ItemLabels";
 import ItemMerge from "./ItemMerge";
+import PendingPhotoReview from "./PendingPhotoReview";
 import ItemPhotoEditor from "@/components/ItemPhotoEditor";
 import HeroPhotoView from "@/components/HeroPhotoView";
 
@@ -103,9 +104,12 @@ export default async function ItemDetail({
   const candidates = candidateRows.filter((c) => !sisterIds.has(c.id));
 
   // Split photos by kind: angles render in the carousel, labels in
-  // their own strip. Both are tappable + rotatable.
+  // their own strip, and "pending" rows (created by /api/items/.../merge
+  // so the user can decide each one's role) get a dedicated review
+  // panel above the labels strip. Both confirmed strips are tappable
+  // + rotatable.
   const angles = item.photos
-    .filter((p) => p.kind !== "label")
+    .filter((p) => p.kind === "angle")
     .map((p) => ({
       id: p.id,
       imagePath: p.imagePath,
@@ -120,6 +124,14 @@ export default async function ItemDetail({
       id: p.id,
       imagePath: p.imagePath,
       imageOriginalPath: p.imageOriginalPath,
+      imageBgRemovedPath: p.imageBgRemovedPath,
+    }));
+  const pendings = item.photos
+    .filter((p) => p.kind === "pending")
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+    .map((p) => ({
+      id: p.id,
+      imagePath: p.imagePath,
       imageBgRemovedPath: p.imageBgRemovedPath,
     }));
 
@@ -252,6 +264,15 @@ export default async function ItemDetail({
             imagePath={item.imagePath}
             hasBgRemoved={!!item.imageBgRemovedPath}
           />
+          {/* Pending photos from a recent merge — render BEFORE the
+              labels/angles strips so the user resolves them first
+              and the strips stay clean. Hidden when there are
+              none. */}
+          {pendings.length > 0 && (
+            <div className="border-t border-stone-100 pt-3">
+              <PendingPhotoReview itemId={item.id} photos={pendings} />
+            </div>
+          )}
           <div className="border-t border-stone-100 pt-3">
             <p className="label mb-2">Labels / tags</p>
             <ItemLabels itemId={item.id} labels={labels} editing />
