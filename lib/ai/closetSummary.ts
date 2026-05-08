@@ -23,8 +23,13 @@ export type ClosetSummary = {
 };
 
 export async function buildClosetSummary(userId: string): Promise<ClosetSummary> {
+  // Backroom items are excluded unconditionally from the closet
+  // summary that feeds AI prompts. The summary is read by features
+  // like "today's product suggestion" and "shop for this trip" that
+  // never opt-in to private items, so the simplest correct behaviour
+  // is to never include them in the snapshot.
   const items = await prisma.item.findMany({
-    where: { ownerId: userId, status: "active" },
+    where: { ownerId: userId, status: "active", isBackroom: false },
     select: {
       brand: true,
       color: true,

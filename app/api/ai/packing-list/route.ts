@@ -59,8 +59,17 @@ export async function POST(req: NextRequest) {
     if (Object.keys(clean).length > 0) targets = clean;
   }
 
+  // Backroom items off by default. Trip-builder form exposes an
+  // explicit "include private items" toggle for romantic getaways /
+  // honeymoons.
+  const includeBackroom = body.includeBackroom === true;
+
   const items = await prisma.item.findMany({
-    where: { ownerId: userId, status: "active" },
+    where: {
+      ownerId: userId,
+      status: "active",
+      ...(includeBackroom ? {} : { isBackroom: false }),
+    },
     orderBy: { createdAt: "desc" },
     take: 250,
   });

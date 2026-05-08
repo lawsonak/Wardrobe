@@ -11,6 +11,7 @@ import {
 } from "@/lib/uploads";
 import { runHiResBgRemovalBatch } from "@/lib/bgRemovalServer";
 import { describeItem, logActivity } from "@/lib/activity";
+import { backroomItemFilter, readBackroomParam } from "@/lib/backroom";
 
 // Hamming distance threshold for "looks similar." 0 = identical,
 // 64 = maximally different. ≤ 10 (about 16% bit difference) catches
@@ -31,6 +32,10 @@ export async function GET(req: NextRequest) {
   const fav = searchParams.get("fav") === "1";
   const search = searchParams.get("q")?.trim();
   const status = searchParams.get("status") || undefined;
+  const includeBackroom = readBackroomParam(searchParams.get("backroom") ?? undefined);
+  // ?backroom=only is the dedicated /wardrobe/backroom page — show
+  // ONLY backroom items, ignoring the default-hide.
+  const onlyBackroom = searchParams.get("backroom") === "only";
 
   const items = await prisma.item.findMany({
     where: {
@@ -39,6 +44,7 @@ export async function GET(req: NextRequest) {
       // authenticated caller, which broke the documented "profiles
       // are separate" model.
       ownerId: userId,
+      ...(onlyBackroom ? { isBackroom: true } : backroomItemFilter(includeBackroom)),
       ...(category ? { category } : {}),
       ...(fav ? { isFavorite: true } : {}),
       ...(status ? { status } : {}),
@@ -89,6 +95,7 @@ export async function POST(req: NextRequest) {
   const seasons = listToCsv(form.getAll("seasons").map(String));
   const activities = listToCsv(form.getAll("activities").map(String));
   const isFavorite = form.get("isFavorite") === "1";
+  const isBackroom = form.get("isBackroom") === "1";
   const statusVal = (form.get("status") as string | null) || "active";
 
   // Resolve brand: use brandId if it's the current user's, else upsert by key.
@@ -130,6 +137,7 @@ export async function POST(req: NextRequest) {
       activities,
       notes,
       isFavorite,
+      isBackroom,
       status: statusVal,
     },
   });
@@ -221,6 +229,12 @@ export async function POST(req: NextRequest) {
         ownerId: userId,
         phash: { not: null },
         id: { not: updated.id },
+        // Backroom items don't surface in the "you might already own
+        // this" picker for non-Backroom uploads, and vice versa —
+        // matching the closet's default-hide behaviour. (If the user
+        // is uploading a Backroom item, we still match against other
+        // Backroom items below.)
+        isBackroom: updated.isBackroom,
       },
       select: {
         id: true,

@@ -2,15 +2,22 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import CollectionCard from "./CollectionCard";
+import { backroomCollectionFilter, readBackroomParam } from "@/lib/backroom";
 
 export const dynamic = "force-dynamic";
 
-export default async function CollectionsPage() {
+export default async function CollectionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ backroom?: string }>;
+}) {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
+  const sp = await searchParams;
+  const includeBackroom = readBackroomParam(sp.backroom);
 
   const collections = await prisma.collection.findMany({
-    where: { ownerId: userId },
+    where: { ownerId: userId, ...backroomCollectionFilter(includeBackroom) },
     orderBy: { updatedAt: "desc" },
     // Card preview only needs slot + thumbnail bits. Trim everything
     // else so a closet of 50+ trip-collections doesn't drag a few MB
@@ -51,7 +58,16 @@ export default async function CollectionsPage() {
           <h1 className="mt-1 font-display text-3xl text-blush-700">Collections</h1>
           <p className="text-sm text-stone-500">Trips and themed sets — destination, dates, activities, AI-curated packing.</p>
         </div>
-        <Link href="/collections/new" className="btn-primary whitespace-nowrap">+ New</Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={includeBackroom ? "/collections" : "/collections?backroom=1"}
+            className={"chip text-xs " + (includeBackroom ? "chip-on" : "chip-off")}
+            title={includeBackroom ? "Hide collections with Backroom items" : "Include collections with Backroom items"}
+          >
+            🔒 Backroom
+          </Link>
+          <Link href="/collections/new" className="btn-primary whitespace-nowrap">+ New</Link>
+        </div>
       </div>
 
       {collections.length === 0 ? (

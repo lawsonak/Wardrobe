@@ -48,6 +48,11 @@ export async function GET(req: NextRequest) {
     where: {
       ownerId: userId,
       status: "active",
+      // Wishlist warnings are about the visible closet — Backroom
+      // items don't surface here. (User's intimate items shouldn't
+      // be referenced in a generic "you might already own X"
+      // popup.)
+      isBackroom: false,
       ...(category ? { category } : {}),
       OR: ors,
     },

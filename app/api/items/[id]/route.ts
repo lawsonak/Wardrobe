@@ -38,6 +38,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const body = await req.json();
   const data: Record<string, unknown> = {};
   if (typeof body.isFavorite === "boolean") data.isFavorite = body.isFavorite;
+  if (typeof body.isBackroom === "boolean") data.isBackroom = body.isBackroom;
   if (typeof body.subType === "string") data.subType = body.subType || null;
   if (typeof body.color === "string") data.color = body.color || null;
   if (typeof body.size === "string") data.size = body.size || null;

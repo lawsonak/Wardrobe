@@ -7,6 +7,7 @@ import SmartSearchBar from "./SmartSearchBar";
 import ClosetGallery from "./ClosetGallery";
 import ApplyPendingAiBar from "./ApplyPendingAiBar";
 import { inferredCategoriesFor } from "@/lib/activities";
+import { backroomItemFilter, readBackroomParam } from "@/lib/backroom";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,10 @@ export default async function WardrobePage({
     /** "1" → only show items with pending AI suggestions staged from
      *  a bulk re-tag run that the user hasn't reviewed yet. */
     pending?: string;
+    /** "1" → mix Backroom items into the closet view. Default off so
+     *  intimates / costumes don't show up in casual scrolling. The
+     *  dedicated /wardrobe/backroom page sets this server-side. */
+    backroom?: string;
   }>;
 }) {
   const [sp, session] = await Promise.all([searchParams, auth()]);
@@ -43,6 +48,7 @@ export default async function WardrobePage({
   const color = sp.color?.trim() || undefined;
   const season = sp.season?.trim() || undefined;
   const activity = sp.activity?.trim() || undefined;
+  const includeBackroom = readBackroomParam(sp.backroom);
 
   // Activity filter pulls in categories that strongly imply that
   // activity — e.g. "beach" surfaces every Swimwear item even when
@@ -73,6 +79,7 @@ export default async function WardrobePage({
   };
   const buildWhere = (drop: Set<string>) => ({
     ownerId: userId,
+    ...backroomItemFilter(includeBackroom),
     ...(!drop.has("category") && category ? { category } : {}),
     ...(favOnly ? { isFavorite: true } : {}),
     // `pending=1` shows everything with a non-null pendingAiSuggestions
@@ -178,6 +185,17 @@ export default async function WardrobePage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Backroom door — opens the dedicated page where intimate
+              items live. Sits next to the main actions so it's always
+              one tap away but doesn't shout. */}
+          <Link
+            href="/wardrobe/backroom"
+            className="grid h-9 w-9 place-items-center rounded-full bg-stone-100 text-stone-500 hover:bg-stone-200 hover:text-stone-700"
+            aria-label="Open Backroom"
+            title="Backroom"
+          >
+            🔒
+          </Link>
           <Link href="/wardrobe/new" className="btn-primary">+ Add</Link>
           <Link href="/wardrobe/bulk" className="btn-secondary text-xs">Import</Link>
         </div>
@@ -225,6 +243,17 @@ export default async function WardrobePage({
             )}
           </Link>
         )}
+        {/* Show / hide Backroom items mixed into the closet. The
+            dedicated /wardrobe/backroom page (lock icon in the
+            header above) is where the user lives if they want to
+            see ONLY Backroom items. */}
+        <Link
+          href={includeBackroom ? dropParam(sp, "backroom") : `/wardrobe?${withParam(sp, "backroom", "1")}`}
+          className={"chip " + (includeBackroom ? "chip-on" : "chip-off")}
+          title={includeBackroom ? "Hide Backroom items" : "Mix Backroom items into the closet"}
+        >
+          🔒 Backroom
+        </Link>
       </div>
 
       {/* Quick taxonomy filter (form, kept for keyboard-only / no-AI users) */}

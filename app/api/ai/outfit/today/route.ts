@@ -131,8 +131,12 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const again = body?.again === true;
 
+  // Today's outfit always excludes Backroom items — it's the daily
+  // "what should I wear" prompt and there's no UI surface for an
+  // opt-in here. Romantic / private picks live in the explicit
+  // build-outfit form.
   const items = await prisma.item.findMany({
-    where: { ownerId: userId, status: "active" },
+    where: { ownerId: userId, status: "active", isBackroom: false },
     orderBy: { createdAt: "desc" },
     take: 250,
   });

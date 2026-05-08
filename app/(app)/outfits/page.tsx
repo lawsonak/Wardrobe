@@ -4,17 +4,19 @@ import { prisma } from "@/lib/db";
 import { ACTIVITIES, SEASONS, SLOTS } from "@/lib/constants";
 import OutfitCard from "@/components/OutfitCard";
 import { firstNameFromUser } from "@/lib/userName";
+import { backroomOutfitFilter, readBackroomParam } from "@/lib/backroom";
 
 export const dynamic = "force-dynamic";
 
 export default async function OutfitsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ activity?: string; season?: string; fav?: string }>;
+  searchParams: Promise<{ activity?: string; season?: string; fav?: string; backroom?: string }>;
 }) {
   const [sp, session] = await Promise.all([searchParams, auth()]);
   const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
   const firstName = firstNameFromUser(session?.user);
+  const includeBackroom = readBackroomParam(sp.backroom);
 
   const outfits = await prisma.outfit.findMany({
     where: {
@@ -22,6 +24,10 @@ export default async function OutfitsPage({
       // when filters are wide-open. An empty userId still produces an
       // empty result set since no row's ownerId is "".
       ownerId: userId,
+      // Cascade: an outfit containing a Backroom item is itself
+      // hidden unless the toggle is on. Compiled to a NOT EXISTS
+      // subquery on OutfitItem.
+      ...backroomOutfitFilter(includeBackroom),
       ...(sp.activity ? { activity: sp.activity } : {}),
       ...(sp.season ? { season: sp.season } : {}),
       ...(sp.fav === "1" ? { isFavorite: true } : {}),
@@ -72,7 +78,16 @@ export default async function OutfitsPage({
           <h1 className="font-display text-3xl text-blush-700">{title}</h1>
           <p className="text-sm text-stone-500">{outfits.length} saved</p>
         </div>
-        <Link href="/outfits/builder" className="btn-primary">+ Build</Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={includeBackroom ? "/outfits" : "/outfits?backroom=1"}
+            className={"chip text-xs " + (includeBackroom ? "chip-on" : "chip-off")}
+            title={includeBackroom ? "Hide outfits with Backroom items" : "Include outfits with Backroom items"}
+          >
+            🔒 Backroom
+          </Link>
+          <Link href="/outfits/builder" className="btn-primary">+ Build</Link>
+        </div>
       </div>
 
       <form action="/outfits" className="flex flex-wrap gap-2">

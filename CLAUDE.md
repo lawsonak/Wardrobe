@@ -135,6 +135,7 @@ The closet's tagged `activities` field is restricted to the enum, but Collection
 | Shop for this trip / collection | `lib/ai/collectionShop.ts` (Stage 1 specs), `lib/retailerSearch.ts` (Stage 2 retailer picker), `lib/ai/shopPipeline.ts` (orchestrator), `app/api/ai/collection-shop/route.ts`, `app/(app)/collections/CollectionShop.tsx` |
 | Web product lookup (manual on item edit) | `lib/ai/productLookup.ts`, `app/api/ai/lookup-product/route.ts` |
 | Merge items (fold source photos onto a target, delete sources) | `app/api/items/[id]/merge/route.ts`, `app/(app)/wardrobe/[id]/ItemMerge.tsx` |
+| Backroom (hidden items: lingerie, costumes, etc) | `lib/backroom.ts` (filter helpers), `app/(app)/wardrobe/backroom/page.tsx` (dedicated page); `Item.isBackroom` flag |
 | Closet snapshot helper (shared by AI prompts) | `lib/ai/closetSummary.ts` |
 | Personal mannequin (per-user) | `lib/mannequin.ts`, `lib/ai/mannequin.ts`, `app/api/mannequin/route.ts`, `components/MannequinUpload.tsx` |
 | Global mannequin asset | `public/mannequin/base.png` + `base.json` |

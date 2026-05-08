@@ -3,15 +3,22 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import CollectionWizard from "../CollectionWizard";
 import type { Selectable } from "../ItemPicker";
+import { backroomItemFilter, readBackroomParam } from "@/lib/backroom";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewCollectionPage() {
+export default async function NewCollectionPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ backroom?: string }>;
+}) {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
+  const sp = await searchParams;
+  const includeBackroom = readBackroomParam(sp.backroom);
 
   const items = await prisma.item.findMany({
-    where: { ownerId: userId, status: "active" },
+    where: { ownerId: userId, status: "active", ...backroomItemFilter(includeBackroom) },
     orderBy: { createdAt: "desc" },
   });
 
@@ -29,12 +36,21 @@ export default async function NewCollectionPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <Link href="/collections" className="text-sm text-blush-600 hover:underline">← Collections</Link>
-        <h1 className="mt-1 font-display text-3xl text-blush-700">New collection</h1>
-        <p className="text-sm text-stone-500">Tell us about the trip — we&rsquo;ll handle the packing list.</p>
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <Link href="/collections" className="text-sm text-blush-600 hover:underline">← Collections</Link>
+          <h1 className="mt-1 font-display text-3xl text-blush-700">New collection</h1>
+          <p className="text-sm text-stone-500">Tell us about the trip — we&rsquo;ll handle the packing list.</p>
+        </div>
+        <Link
+          href={includeBackroom ? "/collections/new" : "/collections/new?backroom=1"}
+          className={"chip text-xs " + (includeBackroom ? "chip-on" : "chip-off")}
+          title={includeBackroom ? "Hide Backroom items from the picker" : "Include Backroom items in the picker"}
+        >
+          🔒 Backroom
+        </Link>
       </div>
-      <CollectionWizard items={selectable} />
+      <CollectionWizard items={selectable} includeBackroom={includeBackroom} />
     </div>
   );
 }

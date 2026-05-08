@@ -4,17 +4,22 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import CollectionEditor, { type CollectionData } from "../CollectionEditor";
 import type { Selectable } from "../ItemPicker";
+import { readBackroomParam } from "@/lib/backroom";
 
 export const dynamic = "force-dynamic";
 
 export default async function CollectionDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ backroom?: string }>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
+  const includeBackroom = readBackroomParam(sp.backroom);
 
   const collection = await prisma.collection.findFirst({
     where: { id, ownerId: userId },
@@ -22,8 +27,18 @@ export default async function CollectionDetailPage({
   });
   if (!collection) notFound();
 
+  // Same pattern as the outfit editor: items already in the
+  // collection always render so the user can de-select them, even
+  // when the Backroom toggle is off.
+  const existingItemIds = collection.items.map((i) => i.itemId);
   const items = await prisma.item.findMany({
-    where: { ownerId: userId },
+    where: {
+      ownerId: userId,
+      OR: [
+        ...(includeBackroom ? [{}] : [{ isBackroom: false }]),
+        { id: { in: existingItemIds } },
+      ],
+    },
     orderBy: { createdAt: "desc" },
   });
 
@@ -58,12 +73,21 @@ export default async function CollectionDetailPage({
 
   return (
     <div className="space-y-5">
-      <div>
-        <Link href="/collections" className="text-sm text-blush-600 hover:underline">← Collections</Link>
-        <h1 className="mt-1 font-display text-3xl text-blush-700">{collection.name}</h1>
-        <p className="text-sm text-stone-500">{subtitle}</p>
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <Link href="/collections" className="text-sm text-blush-600 hover:underline">← Collections</Link>
+          <h1 className="mt-1 font-display text-3xl text-blush-700">{collection.name}</h1>
+          <p className="text-sm text-stone-500">{subtitle}</p>
+        </div>
+        <Link
+          href={includeBackroom ? `/collections/${id}` : `/collections/${id}?backroom=1`}
+          className={"chip text-xs " + (includeBackroom ? "chip-on" : "chip-off")}
+          title={includeBackroom ? "Hide Backroom items from the picker" : "Include Backroom items in the picker"}
+        >
+          🔒 Backroom
+        </Link>
       </div>
-      <CollectionEditor collection={data} items={selectable} />
+      <CollectionEditor collection={data} items={selectable} includeBackroom={includeBackroom} />
     </div>
   );
 }

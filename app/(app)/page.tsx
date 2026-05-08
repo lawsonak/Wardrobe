@@ -30,7 +30,7 @@ export default async function Dashboard() {
   const [recent, outfitCount, itemCount, favoriteCount, needsReviewCount, wishlistCount] =
     await Promise.all([
       prisma.item.findMany({
-        where: { ownerId: userId, status: "active" },
+        where: { ownerId: userId, status: "active", isBackroom: false },
         orderBy: { createdAt: "desc" },
         take: 8,
       }),
@@ -74,6 +74,9 @@ export default async function Dashboard() {
       }
     | null = null;
   if (savedPick) {
+    // Backroom items can absolutely be in a saved Today's Outfit pick
+    // — the AI route requires opt-in but, once saved, the dashboard
+    // card faithfully shows what was picked. No filter here.
     const pickedItemRows = await prisma.item.findMany({
       where: { ownerId: userId, id: { in: savedPick.itemIds } },
       select: {
@@ -115,6 +118,7 @@ export default async function Dashboard() {
     FROM Item
     WHERE ownerId = ${userId}
       AND status = 'active'
+      AND isBackroom = 0
       AND strftime('%m-%d', createdAt) = ${todayMD}
       AND CAST(strftime('%Y', createdAt) AS INTEGER) < ${currentYear}
     ORDER BY createdAt DESC

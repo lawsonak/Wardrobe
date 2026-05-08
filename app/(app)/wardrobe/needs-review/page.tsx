@@ -13,10 +13,15 @@ export default async function NeedsReviewPage() {
   const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
   const firstName = firstNameFromUser(session?.user);
 
+  // Default-hide Backroom items even from the needs-review queue —
+  // the user can still review them by visiting /wardrobe/backroom.
+  // This page is the high-traffic post-bulk-upload triage view, so
+  // intimate items shouldn't show up here without explicit intent.
   const items = await prisma.item.findMany({
     where: {
       ownerId: userId,
       status: "needs_review",
+      isBackroom: false,
     },
     orderBy: { createdAt: "asc" },
   });

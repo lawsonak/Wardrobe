@@ -35,7 +35,15 @@ const SHOP_STEPS = [
   { n: 4, label: "Shop" },
 ] as const;
 
-export default function CollectionWizard({ items }: { items: Selectable[] }) {
+export default function CollectionWizard({
+  items,
+  includeBackroom = false,
+}: {
+  items: Selectable[];
+  /** Mirrors the picker's URL-level Backroom toggle for the AI
+   *  packing-list call. */
+  includeBackroom?: boolean;
+}) {
   const router = useRouter();
   const itemsById = useMemo(() => {
     const m = new Map<string, Selectable>();
@@ -186,6 +194,7 @@ export default function CollectionWizard({ items }: { items: Selectable[] }) {
           ...aiPayload,
           activities,
           targets: cleanTargets,
+          includeBackroom,
         }),
       });
       const d = (await res.json()) as {

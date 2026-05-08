@@ -3,16 +3,21 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { listToCsv } from "@/lib/constants";
 import { logActivity } from "@/lib/activity";
+import { backroomCollectionFilter, readBackroomParam } from "@/lib/backroom";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id;
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const includeBackroom = readBackroomParam(
+    req.nextUrl.searchParams.get("backroom") ?? undefined,
+  );
+
   const collections = await prisma.collection.findMany({
-    where: { ownerId: userId },
+    where: { ownerId: userId, ...backroomCollectionFilter(includeBackroom) },
     orderBy: { updatedAt: "desc" },
     // Card-shaped projection so list responses don't drag the full
     // Item rows (notes, fitDetails, pendingAiSuggestions, etc).
