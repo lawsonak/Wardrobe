@@ -21,7 +21,13 @@ function parseDegrees(value: unknown): 90 | 180 | 270 {
   return 90;
 }
 
-// PATCH /api/items/[id]/photos/[photoId] — rename label.
+// PATCH /api/items/[id]/photos/[photoId] — rename label, or promote
+// a pending photo to "label" / "angle". The merge endpoint folds a
+// source item's main photo onto the target as kind="pending"; the
+// user resolves the pending state from the item-edit page by
+// PATCHing kind here.
+const PATCHABLE_KINDS = ["angle", "label", "pending"] as const;
+
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string; photoId: string }> }) {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id;
@@ -38,6 +44,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const data: Record<string, unknown> = {};
   if (body.label === null) data.label = null;
   else if (typeof body.label === "string") data.label = body.label.trim().slice(0, 60) || null;
+  if (typeof body.kind === "string") {
+    if (!(PATCHABLE_KINDS as readonly string[]).includes(body.kind)) {
+      return NextResponse.json({ error: "Invalid kind" }, { status: 400 });
+    }
+    data.kind = body.kind;
+  }
 
   const updated = await prisma.itemPhoto.update({ where: { id: photoId }, data });
   return NextResponse.json({ photo: updated });
