@@ -129,11 +129,17 @@ export default async function ItemDetail({
     // first), so:
     //   "previous" = newer item       → createdAt > current, asc
     //   "next"     = older item       → createdAt < current, desc
+    //
+    // Scope to the same isBackroom bucket as the current item so
+    // swiping inside the 🌶 closet stays inside it (and vice
+    // versa) — otherwise the next/prev arrows would silently jump
+    // the user from the 🌶 page back into the main closet.
     const [prevItem, nextItem] = await Promise.all([
       prisma.item.findFirst({
         where: {
           ownerId: userId,
           status: "active",
+          isBackroom: item.isBackroom,
           createdAt: { gt: item.createdAt },
         },
         orderBy: { createdAt: "asc" },
@@ -143,6 +149,7 @@ export default async function ItemDetail({
         where: {
           ownerId: userId,
           status: "active",
+          isBackroom: item.isBackroom,
           createdAt: { lt: item.createdAt },
         },
         orderBy: { createdAt: "desc" },
