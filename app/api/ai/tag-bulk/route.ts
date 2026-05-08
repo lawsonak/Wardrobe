@@ -75,8 +75,15 @@ export async function POST(req: NextRequest) {
 
   const items = await prisma.item.findMany({
     where: requestedIds
-      ? { ownerId: userId, id: { in: requestedIds } }
-      : { ownerId: userId, status: "needs_review" },
+      ? // Explicit per-id list — respect what the caller passed even if
+        // it includes Backroom items. The user owns those rows and is
+        // asking for them by id.
+        { ownerId: userId, id: { in: requestedIds } }
+      : // Legacy fallback: walk the needs_review queue. Skip Backroom
+        // items here so they aren't auto-tagged through generic prompts
+        // — the user can explicitly request auto-tag on Backroom items
+        // via the per-item button or by passing their ids.
+        { ownerId: userId, status: "needs_review", isBackroom: false },
     orderBy: { createdAt: "asc" },
     take: limit,
   });

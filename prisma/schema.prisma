@@ -79,6 +79,14 @@ model Item {
   activities         String   @default("")
   notes              String?
   isFavorite         Boolean  @default(false)
+  // "Backroom" flag — items the user wants hidden from the default
+  // closet view, outfit builder, collection picker, and AI prompts.
+  // Toggle-able back into view via a per-page filter; the dedicated
+  // /wardrobe/backroom page lives behind a lock icon in the closet
+  // header. Outfits / Collections that contain a Backroom item are
+  // hidden by the same toggle via an EXISTS join — no separate
+  // column on Outfit / Collection.
+  isBackroom         Boolean  @default(false)
   // Optional link to a "matching set" — e.g. a swimsuit's top + bottom
   // bought together. Items in a set still belong to the closet
   // independently and can be mixed and matched in any outfit.
@@ -92,6 +100,7 @@ model Item {
   photos          ItemPhoto[]
 
   @@index([ownerId])
+  @@index([ownerId, isBackroom])
 }
 
 // A "matching set" of items that came together — like a swimsuit

@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { SLOTS, type Slot } from "@/lib/constants";
 import { logActivity } from "@/lib/activity";
+import { backroomOutfitFilter, readBackroomParam } from "@/lib/backroom";
 
 export const runtime = "nodejs";
 
@@ -15,12 +16,14 @@ export async function GET(req: NextRequest) {
   const activity = searchParams.get("activity") || undefined;
   const season = searchParams.get("season") || undefined;
   const fav = searchParams.get("fav") === "1";
+  const includeBackroom = readBackroomParam(searchParams.get("backroom") ?? undefined);
 
   const outfits = await prisma.outfit.findMany({
     where: {
       // Owner-scope guard. Without this the endpoint returned every
       // user's outfits to any authenticated caller.
       ownerId: userId,
+      ...backroomOutfitFilter(includeBackroom),
       ...(activity ? { activity } : {}),
       ...(season ? { season } : {}),
       ...(fav ? { isFavorite: true } : {}),

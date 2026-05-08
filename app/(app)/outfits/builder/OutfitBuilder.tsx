@@ -70,9 +70,13 @@ export type InitialOutfit = {
 export default function OutfitBuilder({
   items,
   initial,
+  includeBackroom = false,
 }: {
   items: BuilderItem[];
   initial?: InitialOutfit;
+  /** Mirrors the URL state on the page wrapper. When true, the AI
+   *  Surprise call is allowed to consider Backroom items. */
+  includeBackroom?: boolean;
 }) {
   const router = useRouter();
   const search = useSearchParams();
@@ -240,6 +244,10 @@ export default function OutfitBuilder({
           occasion,
           season: season || undefined,
           activity: activity || undefined,
+          // Mirror the picker's Backroom toggle to the AI call so a
+          // user who flipped Backroom on for the picker also gets it
+          // considered by Surprise.
+          includeBackroom,
         }),
       });
       const data = await res.json().catch(() => ({}));

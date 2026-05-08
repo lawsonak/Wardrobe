@@ -56,6 +56,10 @@ export default function BulkUpload() {
   const [step, setStep] = useState<Step>(1);
   const [defaultCategory, setDefaultCategory] = useState<DefaultCategory>(AUTO_CATEGORY);
   const [defaultStatus, setDefaultStatus] = useState<"needs_review" | "active">("needs_review");
+  // "Mark all as Backroom" — applied to every item in this batch. The
+  // edit page lets the user toggle individual rows back if they
+  // accidentally lumped a non-Backroom photo in.
+  const [allBackroom, setAllBackroom] = useState(false);
   const [removeBg, setRemoveBg] = useState(true);
   const [aiTag, setAiTag] = useState(true);
   const [promoteAtConfidence, setPromoteAtConfidence] = useState(0.85);
@@ -197,6 +201,7 @@ export default function BulkUpload() {
         const fd = new FormData();
         fd.append("category", defaultCategory);
         fd.append("status", defaultStatus);
+        if (allBackroom) fd.append("isBackroom", "1");
         fd.append("images", working.file, working.file.name);
         const res = await fetch("/api/items/bulk", { method: "POST", body: fd });
         if (!res.ok) {
@@ -347,6 +352,8 @@ export default function BulkUpload() {
           setPromoteAtConfidence={setPromoteAtConfidence}
           removeBg={removeBg}
           setRemoveBg={setRemoveBg}
+          allBackroom={allBackroom}
+          setAllBackroom={setAllBackroom}
           jobs={jobs}
           onFiles={onFiles}
           onRemove={remove}
@@ -439,6 +446,8 @@ function Step1Choose({
   setPromoteAtConfidence,
   removeBg,
   setRemoveBg,
+  allBackroom,
+  setAllBackroom,
   jobs,
   onFiles,
   onRemove,
@@ -455,6 +464,8 @@ function Step1Choose({
   setPromoteAtConfidence: (v: number) => void;
   removeBg: boolean;
   setRemoveBg: (v: boolean) => void;
+  allBackroom: boolean;
+  setAllBackroom: (v: boolean) => void;
   jobs: Job[];
   onFiles: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onRemove: (id: string) => void;
@@ -541,6 +552,27 @@ function Step1Choose({
                   {removeBg
                     ? "Runs on the server. Safe to close the tab — you'll get a notification when it's done."
                     : "Skip background removal for this batch."}
+                </span>
+              </span>
+            </label>
+
+            {/* Mark every item in this batch as Backroom — useful when
+                doing a single-session intimate-import (lingerie set,
+                costume haul, etc). Per-item override happens via the
+                edit page after upload. */}
+            <label className="flex items-start gap-2 text-sm text-stone-700">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={allBackroom}
+                onChange={(e) => setAllBackroom(e.target.checked)}
+              />
+              <span>
+                <span className="font-medium">🔒 Mark all as Backroom</span>
+                <span className="block text-xs text-stone-500">
+                  {allBackroom
+                    ? "Every item lands hidden from the default closet, outfit builder, and AI prompts."
+                    : "Tag everything in this batch as private — opens to the Backroom page only."}
                 </span>
               </span>
             </label>

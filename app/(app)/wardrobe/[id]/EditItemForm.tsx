@@ -40,6 +40,7 @@ type Item = {
   seasons: string[];
   activities: string[];
   isFavorite: boolean;
+  isBackroom: boolean;
   status: string;
   fitDetails: string | null;
   fitNotes: string | null;
@@ -69,6 +70,7 @@ export default function EditItemForm({ item }: { item: Item }) {
   const [seasons, setSeasons] = useState<string[]>(item.seasons);
   const [activities, setActivities] = useState<string[]>(item.activities);
   const [isFavorite, setIsFavorite] = useState(item.isFavorite);
+  const [isBackroom, setIsBackroom] = useState(item.isBackroom);
   const [status, setStatus] = useState<ItemStatus>(item.status as ItemStatus);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -766,6 +768,7 @@ export default function EditItemForm({ item }: { item: Item }) {
         seasons,
         activities,
         isFavorite,
+        isBackroom,
         status,
       }),
     });
@@ -877,11 +880,27 @@ export default function EditItemForm({ item }: { item: Item }) {
         <textarea className="input min-h-[64px]" value={notes} onChange={(e) => setNotes(e.target.value)} />
       </div>
 
-      <div className="flex items-center justify-between">
-        <label className="flex items-center gap-2 text-sm text-stone-700">
-          <input type="checkbox" checked={isFavorite} onChange={(e) => setIsFavorite(e.target.checked)} />
-          Favorite
-        </label>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="flex items-center gap-2 text-sm text-stone-700">
+            <input type="checkbox" checked={isFavorite} onChange={(e) => setIsFavorite(e.target.checked)} />
+            Favorite
+          </label>
+          {/* Backroom flag — hides this item from the default closet,
+              outfit builder, collection picker, and AI prompts.
+              Toggleable via the lock chip on each of those surfaces. */}
+          <label
+            className="flex items-center gap-2 text-sm text-stone-700"
+            title="Hide from the default closet, outfits, collections, and AI prompts."
+          >
+            <input
+              type="checkbox"
+              checked={isBackroom}
+              onChange={(e) => setIsBackroom(e.target.checked)}
+            />
+            🔒 Backroom
+          </label>
+        </div>
 
         <div>
           <label className="label text-right">Status</label>

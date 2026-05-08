@@ -24,7 +24,11 @@ import { fetchWithRetry, friendlyFetchError } from "@/lib/fetchRetry";
 import ProgressBar from "@/components/ProgressBar";
 import { useTimedProgress } from "@/lib/progress";
 
-export default function AddItemForm() {
+export default function AddItemForm({
+  defaultBackroom = false,
+}: {
+  defaultBackroom?: boolean;
+}) {
   const router = useRouter();
   const search = useSearchParams();
   const batchMode = search.get("batch") === "1";
@@ -64,6 +68,7 @@ export default function AddItemForm() {
   const [seasons, setSeasons] = useState<string[]>([]);
   const [activities, setActivities] = useState<string[]>([]);
   const [isFavorite, setIsFavorite] = useState(false);
+  const [isBackroom, setIsBackroom] = useState(defaultBackroom);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reopenCamera, setReopenCamera] = useState(false);
@@ -409,6 +414,7 @@ export default function AddItemForm() {
     seasons.forEach((s) => fd.append("seasons", s));
     activities.forEach((a) => fd.append("activities", a));
     if (isFavorite) fd.append("isFavorite", "1");
+    if (isBackroom) fd.append("isBackroom", "1");
 
     try {
       const res = await fetch("/api/items", { method: "POST", body: fd });
@@ -706,6 +712,20 @@ export default function AddItemForm() {
         <label className="flex items-center gap-2 text-sm text-stone-700">
           <input type="checkbox" checked={isFavorite} onChange={(e) => setIsFavorite(e.target.checked)} />
           Mark as favorite
+        </label>
+
+        {/* Backroom flag — keeps the piece out of the default closet,
+            outfit builder, collection picker, and AI prompts. */}
+        <label
+          className="flex items-center gap-2 text-sm text-stone-700"
+          title="Hide from the default closet, outfits, collections, and AI prompts."
+        >
+          <input
+            type="checkbox"
+            checked={isBackroom}
+            onChange={(e) => setIsBackroom(e.target.checked)}
+          />
+          🔒 Backroom
         </label>
       </div>
 

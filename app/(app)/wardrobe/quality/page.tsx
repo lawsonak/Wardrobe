@@ -21,7 +21,11 @@ export default async function MetadataQualityPage() {
 
   const [items, brands, labelCounts] = await Promise.all([
     prisma.item.findMany({
-      where: { ownerId: userId },
+      // Backroom items are excluded from the quality dashboard so
+      // the metadata-completeness counts stay focused on the user's
+      // visible closet. The dedicated /wardrobe/backroom page is
+      // where intimate items are managed.
+      where: { ownerId: userId, isBackroom: false },
       orderBy: { createdAt: "desc" },
     }),
     prisma.brand.findMany({ where: { ownerId: userId }, orderBy: { name: "asc" } }),

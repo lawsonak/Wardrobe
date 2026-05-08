@@ -281,6 +281,7 @@ export default async function ItemDetail({
               seasons: csvToList(item.seasons),
               activities: csvToList(item.activities),
               isFavorite: item.isFavorite,
+              isBackroom: item.isBackroom,
               status: item.status,
               pendingAiSuggestions: item.pendingAiSuggestions ?? null,
             }}

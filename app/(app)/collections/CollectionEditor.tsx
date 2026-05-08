@@ -32,9 +32,14 @@ type Kind = "trip" | "general";
 export default function CollectionEditor({
   collection,
   items,
+  includeBackroom = false,
 }: {
   collection: CollectionData;
   items: Selectable[];
+  /** Mirrors the picker's URL-level Backroom toggle. When true, the
+   *  "Re-build packing list with AI" call is allowed to consider
+   *  Backroom items. */
+  includeBackroom?: boolean;
 }) {
   const router = useRouter();
 
@@ -126,6 +131,7 @@ export default function CollectionEditor({
           occasion: occasion || undefined,
           notes: notes || undefined,
           activities,
+          includeBackroom,
         }),
       });
       const d = (await res.json()) as {

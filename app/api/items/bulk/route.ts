@@ -35,6 +35,10 @@ export async function POST(req: NextRequest) {
   const statusVal = isAuto
     ? "needs_review"
     : (form.get("status") as string | null) || "needs_review";
+  // Optional Backroom flag for the entire batch — useful when the user
+  // is importing intimate items in one shot. Per-item override happens
+  // via the edit page after upload.
+  const isBackroom = form.get("isBackroom") === "1";
 
   const files = form.getAll("images").filter((x): x is File => x instanceof File && x.size > 0);
   if (files.length === 0) {
@@ -52,6 +56,7 @@ export async function POST(req: NextRequest) {
         imagePath: "pending",
         category,
         status: statusVal,
+        isBackroom,
       },
     });
     const { displayPath, originalPath } = await saveUploadWithOriginal(

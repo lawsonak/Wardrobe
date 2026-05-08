@@ -37,9 +37,17 @@ export async function POST(req: NextRequest) {
   const season = typeof body.season === "string" ? body.season.trim() : "";
   const activity = typeof body.activity === "string" ? body.activity.trim() : "";
   const useWeather = body.useWeather !== false; // default true
+  // Backroom items are excluded by default. The build-outfit form
+  // exposes an explicit "include private items" toggle that flips
+  // this on for romantic / private occasion prompts.
+  const includeBackroom = body.includeBackroom === true;
 
   const items = await prisma.item.findMany({
-    where: { ownerId: userId, status: "active" },
+    where: {
+      ownerId: userId,
+      status: "active",
+      ...(includeBackroom ? {} : { isBackroom: false }),
+    },
     orderBy: { createdAt: "desc" },
     take: 250,
   });
