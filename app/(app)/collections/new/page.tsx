@@ -45,9 +45,9 @@ export default async function NewCollectionPage({
         <Link
           href={includeBackroom ? "/collections/new" : "/collections/new?backroom=1"}
           className={"chip text-xs " + (includeBackroom ? "chip-on" : "chip-off")}
-          title={includeBackroom ? "Hide Spicy items from the picker" : "Include Spicy items in the picker"}
+          title={includeBackroom ? "Hide 🌶 items from the picker" : "Include 🌶 items in the picker"}
         >
-          🌶 Spicy
+          🌶
         </Link>
       </div>
       <CollectionWizard items={selectable} includeBackroom={includeBackroom} />

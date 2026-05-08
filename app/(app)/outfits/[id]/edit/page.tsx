@@ -64,9 +64,9 @@ export default async function EditOutfitPage({
         <Link
           href={includeBackroom ? `/outfits/${id}/edit` : `/outfits/${id}/edit?backroom=1`}
           className={"chip text-xs " + (includeBackroom ? "chip-on" : "chip-off")}
-          title={includeBackroom ? "Hide Spicy items from the picker" : "Include Spicy items in the picker"}
+          title={includeBackroom ? "Hide 🌶 items from the picker" : "Include 🌶 items in the picker"}
         >
-          🌶 Spicy
+          🌶
         </Link>
       </div>
       <Suspense>

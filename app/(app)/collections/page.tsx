@@ -62,9 +62,9 @@ export default async function CollectionsPage({
           <Link
             href={includeBackroom ? "/collections" : "/collections?backroom=1"}
             className={"chip text-xs " + (includeBackroom ? "chip-on" : "chip-off")}
-            title={includeBackroom ? "Hide collections with Spicy items" : "Include collections with Spicy items"}
+            title={includeBackroom ? "Hide collections with 🌶 items" : "Include collections with 🌶 items"}
           >
-            🌶 Spicy
+            🌶
           </Link>
           <Link href="/collections/new" className="btn-primary whitespace-nowrap">+ New</Link>
         </div>

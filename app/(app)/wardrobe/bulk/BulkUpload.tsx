@@ -586,11 +586,11 @@ function Step1Choose({
                 onChange={(e) => setAllBackroom(e.target.checked)}
               />
               <span>
-                <span className="font-medium">🌶 Mark all as Spicy</span>
+                <span className="font-medium">🌶 Mark all</span>
                 <span className="block text-xs text-stone-500">
                   {allBackroom
-                    ? "Every item lands on the Spicy page only — hidden from the main closet, outfit builder, and AI prompts."
-                    : "Tag everything in this batch as Spicy — only visible in the dedicated Spicy page."}
+                    ? "Every item lands on the 🌶 page only — hidden from the main closet, outfit builder, and AI prompts."
+                    : "Tag everything in this batch with 🌶 — only visible in the dedicated 🌶 page."}
                 </span>
               </span>
             </label>
