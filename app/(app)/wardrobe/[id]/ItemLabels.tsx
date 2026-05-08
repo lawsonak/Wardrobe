@@ -8,6 +8,7 @@ import { normalizeOrientation } from "@/lib/imageOrientation";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import { haptic } from "@/lib/haptics";
+import BgRetryControl from "@/components/BgRetryControl";
 import ProgressBar from "@/components/ProgressBar";
 import ZoomableImage from "@/components/ZoomableImage";
 
@@ -170,6 +171,11 @@ export default function ItemLabels({
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
                     </svg>
                   </button>
+                )}
+                {editing && l.imageBgRemovedPath && (
+                  <div className="mt-0.5 text-center">
+                    <BgRetryControl itemId={itemId} photoId={l.id} variant="button" />
+                  </div>
                 )}
               </div>
             );

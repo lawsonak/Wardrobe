@@ -8,6 +8,7 @@ import { normalizeOrientation } from "@/lib/imageOrientation";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import { haptic } from "@/lib/haptics";
+import BgRetryControl from "@/components/BgRetryControl";
 import ProgressBar from "@/components/ProgressBar";
 import ZoomableImage from "@/components/ZoomableImage";
 
@@ -174,6 +175,11 @@ export default function ItemAngles({
                 )}
                 {a.label && (
                   <p className="mt-0.5 truncate text-center text-[10px] text-stone-500">{a.label}</p>
+                )}
+                {editing && a.imageBgRemovedPath && (
+                  <div className="mt-0.5 text-center">
+                    <BgRetryControl itemId={itemId} photoId={a.id} variant="button" />
+                  </div>
                 )}
               </div>
             );

@@ -17,6 +17,7 @@
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import sharp from "sharp";
 import type { PrismaClient } from "@prisma/client";
 import { UPLOAD_ROOT, saveBuffer, unlinkUpload } from "@/lib/uploads";
 
@@ -85,6 +86,55 @@ async function getHiResRemover(): Promise<RemoveBackgroundFn> {
   return hiResRemoverPromise;
 }
 
+// Aggressiveness levels for the per-photo "Adjust cutout" retry. The
+// model itself doesn't expose a threshold, so we post-process the
+// alpha channel: dilate it to preserve more of the original image
+// (looser cutout) or contract it to remove more (tighter cutout).
+//
+// Slider mapping (0..4) — 2 is the default no-op level so existing
+// callers that don't pass `aggressiveness` keep their previous
+// output exactly.
+//
+//   0  Most loose — heavy alpha boost, fuzzy edges remain
+//   1  Loose
+//   2  Normal (no post-process)
+//   3  Tight
+//   4  Most tight — alpha shrunk hard, sharp clipped edges
+export type Aggressiveness = 0 | 1 | 2 | 3 | 4;
+export const DEFAULT_AGGRESSIVENESS: Aggressiveness = 2;
+
+// Per-level (multiplier, offset) on the alpha channel. The result is
+// clamped to [0, 255] by sharp's linear() output range.
+const ALPHA_CURVES: Record<Aggressiveness, { a: number; b: number }> = {
+  0: { a: 1.5, b: 40 },
+  1: { a: 1.2, b: 20 },
+  2: { a: 1.0, b: 0 },
+  3: { a: 0.85, b: -20 },
+  4: { a: 0.7, b: -40 },
+};
+
+async function applyAggressiveness(rgbaPng: Buffer, level: Aggressiveness): Promise<Buffer> {
+  if (level === 2) return rgbaPng; // default, no-op fast path
+  const { a, b } = ALPHA_CURVES[level];
+  // sharp doesn't expose channel-specific linear() in one call, so
+  // split the channels, transform alpha, recombine. ensureAlpha() is
+  // a no-op when the model already wrote RGBA but defensive for the
+  // odd codepath that returns RGB.
+  const img = sharp(rgbaPng).ensureAlpha();
+  const { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
+  const px = info.width * info.height;
+  for (let i = 0; i < px; i++) {
+    const aIdx = i * 4 + 3;
+    const v = Math.round(data[aIdx] * a + b);
+    data[aIdx] = v < 0 ? 0 : v > 255 ? 255 : v;
+  }
+  return await sharp(data, {
+    raw: { width: info.width, height: info.height, channels: 4 },
+  })
+    .png({ compressionLevel: 9, effort: 6 })
+    .toBuffer();
+}
+
 // Read the file from disk, wrap in a typed Blob so the package can
 // detect the format, run bg removal, save the result, return the new
 // relative path. `filenamePrefix` distinguishes display ("bg") from
@@ -96,6 +146,7 @@ async function processOne(
   itemId: string,
   sourceRelPath: string,
   filenamePrefix: string = "bg",
+  aggressiveness: Aggressiveness = DEFAULT_AGGRESSIVENESS,
 ): Promise<string> {
   const sourceAbs = path.join(UPLOAD_ROOT, sourceRelPath);
   const ext = path.extname(sourceRelPath).toLowerCase();
@@ -114,7 +165,14 @@ async function processOne(
   // "Unsupported format: " (its codec switch reads blob.type).
   const blob = new Blob([buf], { type: mime });
   const out = await remove(blob);
-  const outBuf = Buffer.from(await out.arrayBuffer());
+  // Buffer typing: Buffer.from(...) yields Buffer<ArrayBuffer> while
+  // sharp.toBuffer() yields Buffer<ArrayBufferLike>. Widen via the
+  // base Buffer type so reassignment after applyAggressiveness type-
+  // checks; saveBuffer accepts plain Buffer.
+  let outBuf: Buffer = Buffer.from(await out.arrayBuffer());
+  if (aggressiveness !== DEFAULT_AGGRESSIVENESS) {
+    outBuf = await applyAggressiveness(outBuf, aggressiveness);
+  }
   const tag = Math.random().toString(36).slice(2, 8);
   return saveBuffer(userId, itemId, outBuf, `${filenamePrefix}-${tag}`, "png");
 }
@@ -361,4 +419,63 @@ export async function runItemPhotoBgRemovalBatch(
   const workers = Array.from({ length: Math.min(MAX_CONCURRENT, photos.length) }, worker);
   await Promise.all(workers);
   return result;
+}
+
+// One-shot retry: re-run bg removal on a single Item's source photo
+// at the given aggressiveness level, save the new cutout, and update
+// Item.imageBgRemovedPath. The previous cutout file is unlinked.
+//
+// Used by the per-item "Adjust cutout" control so the user can dial
+// the cutout up or down when the default model output trimmed too
+// much (or not enough) at the garment edges.
+export async function redoItemBgRemoval(
+  prisma: PrismaClient,
+  userId: string,
+  itemId: string,
+  aggressiveness: Aggressiveness,
+): Promise<string> {
+  const item = await prisma.item.findFirst({
+    where: { id: itemId, ownerId: userId },
+    select: { id: true, imagePath: true, imageBgRemovedPath: true },
+  });
+  if (!item) throw new Error("Item not found");
+
+  const remove = await getRemover();
+  const newPath = await processOne(remove, userId, itemId, item.imagePath, "bg", aggressiveness);
+  if (item.imageBgRemovedPath && item.imageBgRemovedPath !== newPath) {
+    await unlinkUpload(item.imageBgRemovedPath);
+  }
+  await prisma.item.update({
+    where: { id: itemId },
+    data: { imageBgRemovedPath: newPath },
+  });
+  return newPath;
+}
+
+// Same shape for ItemPhoto rows (extra angle / label close-ups).
+// `kind` already lives on the row so the filename suffix flips to
+// `label-bg` or `angle-bg` automatically.
+export async function redoItemPhotoBgRemoval(
+  prisma: PrismaClient,
+  userId: string,
+  photoId: string,
+  aggressiveness: Aggressiveness,
+): Promise<string> {
+  const photo = await prisma.itemPhoto.findFirst({
+    where: { id: photoId, item: { ownerId: userId } },
+    select: { id: true, kind: true, imagePath: true, imageBgRemovedPath: true },
+  });
+  if (!photo) throw new Error("Photo not found");
+
+  const remove = await getRemover();
+  const prefix = photo.kind === "label" ? "label-bg" : "angle-bg";
+  const newPath = await processOne(remove, userId, photoId, photo.imagePath, prefix, aggressiveness);
+  if (photo.imageBgRemovedPath && photo.imageBgRemovedPath !== newPath) {
+    await unlinkUpload(photo.imageBgRemovedPath);
+  }
+  await prisma.itemPhoto.update({
+    where: { id: photoId },
+    data: { imageBgRemovedPath: newPath },
+  });
+  return newPath;
 }
