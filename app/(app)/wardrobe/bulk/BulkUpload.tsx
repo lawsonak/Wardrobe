@@ -321,6 +321,14 @@ export default function BulkUpload() {
   }
 
   async function retryFailed() {
+    // Phase guard: while a runUploadPhase walk is in flight, phase
+    // is "uploading". A double-tap on the in-row "Retry failed"
+    // button (Step 2) without this guard would start a second
+    // concurrent walk that picks up the same error rows from
+    // jobsRef.current, both POSTing /api/items/bulk for each one
+    // and creating duplicate Items. startPipeline has the matching
+    // guard for the same reason.
+    if (phase === "uploading") return;
     cancelRef.current = false;
     await runUploadPhase();
   }
