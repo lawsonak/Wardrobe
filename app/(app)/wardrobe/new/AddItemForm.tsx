@@ -46,6 +46,11 @@ export default function AddItemForm() {
 
   const [labelPhoto, setLabelPhoto] = useState<File | null>(null);
   const [labelUrl, setLabelUrl] = useState<string | null>(null);
+  // Label bg removal mirrors the main-photo flow — labels read way
+  // better in the strip with the closet-floor / hand-holding-it
+  // background dropped. Best-effort: if the model fails or is
+  // unavailable, the label still uploads as-is.
+  const [labelBgRemoved, setLabelBgRemoved] = useState<Blob | null>(null);
 
   const [category, setCategory] = useState<Category>("Tops");
   const [subType, setSubType] = useState("");
@@ -351,6 +356,17 @@ export default function AddItemForm() {
     const file = await rotateLabelToUpright(base);
     setLabelPhoto(file);
     setLabelUrl(URL.createObjectURL(file));
+    // Kick off bg removal in the background. Don't await — the user
+    // can keep filling out fields while it runs. If they hit Save
+    // before it finishes the submit just sends the raw label, same
+    // shape as before.
+    setLabelBgRemoved(null);
+    try {
+      const out = await removeBackground(file);
+      setLabelBgRemoved(out);
+    } catch (err) {
+      console.warn("label bg removal failed", err);
+    }
   }
 
   async function submit(addAnother: boolean) {
@@ -368,6 +384,17 @@ export default function AddItemForm() {
     }
     if (labelPhoto) {
       fd.append("labelImage", labelPhoto);
+      // Send the bg-removed cutout if it finished in time. If the
+      // user hit Save while bg removal was still running we just
+      // skip — server will save the raw label, the strip falls
+      // back to it, and a future "redo bg removal" pass can fill
+      // it in.
+      if (labelBgRemoved) {
+        fd.append(
+          "labelImageBgRemoved",
+          new File([labelBgRemoved], "label-bg.png", { type: "image/png" }),
+        );
+      }
     }
     fd.append("category", category);
     if (subType) fd.append("subType", subType);
@@ -414,6 +441,7 @@ export default function AddItemForm() {
         setLabelPhoto(null);
         if (labelUrl) URL.revokeObjectURL(labelUrl);
         setLabelUrl(null);
+        setLabelBgRemoved(null);
         setBgState("idle");
         setSubType("");
         setColor(null);

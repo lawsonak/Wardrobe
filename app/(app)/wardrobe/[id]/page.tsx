@@ -119,6 +119,7 @@ export default async function ItemDetail({
       id: p.id,
       imagePath: p.imagePath,
       imageOriginalPath: p.imageOriginalPath,
+      imageBgRemovedPath: p.imageBgRemovedPath,
     }));
 
   // Default: read-only detail view.

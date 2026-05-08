@@ -75,14 +75,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     suffix,
   );
 
-  // Background-removed companion only makes sense for angles —
-  // labels are flat tag photos, no figure to cut out.
+  // Background-removed companion. Labels were originally skipped
+  // here ("flat tag photos, no figure to cut out") but a bg-removed
+  // tag photo actually reads way better in the strip — model isolates
+  // the tag itself, drops the dim closet floor / hand holding it.
+  // Both kinds are eligible now; the client decides whether to send
+  // a pre-removed variant.
   let imageBgRemovedPath: string | null = null;
-  if (kind === "angle") {
-    const bg = form.get("imageBgRemoved");
-    if (bg && bg instanceof File && bg.size > 0) {
-      imageBgRemovedPath = await saveUpload(userId, id, bg, "angle-bg");
-    }
+  const bg = form.get("imageBgRemoved");
+  if (bg && bg instanceof File && bg.size > 0) {
+    const bgSuffix = kind === "label" ? "label-bg" : "angle-bg";
+    imageBgRemovedPath = await saveUpload(userId, id, bg, bgSuffix);
   }
 
   const label = form.get("label");
