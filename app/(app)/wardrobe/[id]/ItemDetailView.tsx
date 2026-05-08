@@ -8,6 +8,7 @@ import ItemNav from "./ItemNav";
 import { type Angle } from "./ItemAngles";
 import PhotoCarouselClient, { type RawPhoto } from "./PhotoCarouselClient";
 import ItemLabels, { type Label } from "./ItemLabels";
+import TryOnButton from "./TryOnButton";
 import SetLink from "./SetLink";
 
 type DetailItem = {
@@ -267,6 +268,10 @@ export default function ItemDetailView({
         </div>
         <FavoriteToggle itemId={item.id} initial={item.isFavorite} />
       </div>
+
+      {/* One-click try-on: AI builds an outfit anchored on this item
+          and the next page renders the mannequin composite on mount. */}
+      <TryOnButton itemId={item.id} />
 
       {/* Metadata grid */}
       <section className="card p-4">
