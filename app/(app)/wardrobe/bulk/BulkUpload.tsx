@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CATEGORIES, type Category } from "@/lib/constants";
+import { CATEGORIES, SPICY_CATEGORIES } from "@/lib/constants";
 import { heicToJpeg, isHeic } from "@/lib/heic";
 import { normalizeOrientation } from "@/lib/imageOrientation";
 import ProgressBar from "@/components/ProgressBar";
@@ -13,7 +13,9 @@ import { cn } from "@/lib/cn";
 // this and stores a placeholder category until AI tagging fills the
 // real one in.
 const AUTO_CATEGORY = "__auto__" as const;
-type DefaultCategory = Category | typeof AUTO_CATEGORY;
+// Widened to plain string so the dropdown can hold either main or
+// SPICY_CATEGORIES values when allBackroom is on.
+type DefaultCategory = string;
 
 type Step = 1 | 2 | 3;
 type Phase = "idle" | "uploading" | "done";
@@ -500,10 +502,14 @@ function Step1Choose({
             <select
               className="input"
               value={defaultCategory}
-              onChange={(e) => setDefaultCategory(e.target.value as DefaultCategory)}
+              onChange={(e) => setDefaultCategory(e.target.value)}
             >
               <option value={AUTO_CATEGORY}>✨ Let AI decide</option>
-              {CATEGORIES.map((c) => (
+              {/* When the batch is being marked all-Spicy the
+                  dropdown swaps to the spicy vocabulary so the user
+                  isn't picking from a list of categories that won't
+                  appear on /wardrobe/backroom. */}
+              {(allBackroom ? SPICY_CATEGORIES : CATEGORIES).map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
@@ -583,7 +589,18 @@ function Step1Choose({
                 type="checkbox"
                 className="mt-0.5"
                 checked={allBackroom}
-                onChange={(e) => setAllBackroom(e.target.checked)}
+                onChange={(e) => {
+                  const next = e.target.checked;
+                  setAllBackroom(next);
+                  // Toggling switches the category dropdown. If the
+                  // current pick isn't in the new vocabulary, snap
+                  // back to ✨ Auto so the dropdown isn't stuck on a
+                  // value that's not selectable.
+                  const list: readonly string[] = next ? SPICY_CATEGORIES : CATEGORIES;
+                  if (defaultCategory !== AUTO_CATEGORY && !list.includes(defaultCategory)) {
+                    setDefaultCategory(AUTO_CATEGORY);
+                  }
+                }}
               />
               <span>
                 <span className="font-medium">🌶 Mark all</span>

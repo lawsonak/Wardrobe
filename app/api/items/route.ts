@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
-import { CATEGORIES, listToCsv } from "@/lib/constants";
+import { isKnownCategory, listToCsv } from "@/lib/constants";
 import { brandKey } from "@/lib/brand";
 import {
   saveUpload,
@@ -78,7 +78,11 @@ export async function POST(req: NextRequest) {
   if (!original || !(original instanceof File) || !category) {
     return NextResponse.json({ error: "Missing image or category" }, { status: 400 });
   }
-  if (!CATEGORIES.includes(category as (typeof CATEGORIES)[number])) {
+  // Accept either the main vocabulary or the SPICY_CATEGORIES — the
+  // form on /wardrobe/new?backroom=1 picks from the spicy list. The
+  // schema field is a free string so no further conversion is
+  // needed.
+  if (!isKnownCategory(category)) {
     return NextResponse.json({ error: "Invalid category" }, { status: 400 });
   }
 

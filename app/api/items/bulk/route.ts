@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
-import { CATEGORIES } from "@/lib/constants";
+import { isKnownCategory } from "@/lib/constants";
 import { saveUploadWithOriginal, computeDHash } from "@/lib/uploads";
 import { runHiResBgRemovalBatch } from "@/lib/bgRemovalServer";
 import { logActivity } from "@/lib/activity";
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
   // and force needs_review status — AI tagging will overwrite both.
   const isAuto = rawCategory === "__auto__";
   const category = isAuto ? "Tops" : rawCategory;
-  if (!isAuto && (!category || !CATEGORIES.includes(category as (typeof CATEGORIES)[number]))) {
+  if (!isAuto && (!category || !isKnownCategory(category))) {
     return NextResponse.json({ error: "Missing or invalid category" }, { status: 400 });
   }
   const statusVal = isAuto

@@ -1,8 +1,6 @@
 // Light-touch size normalization. We don't try to be too clever — just
 // fix the obvious shorthand variants so the closet displays consistently.
 
-import type { Category } from "@/lib/constants";
-
 const ALPHA_MAP: Record<string, string> = {
   xxs: "XXS",
   xs: "XS",
@@ -31,7 +29,10 @@ const JEANS = /^\s*(\d{2})\s*[x×]\s*(\d{2})\s*$/i;
 // "34dd" / "34 DDD" → "34DD"
 const BRA = /^\s*(2[8-9]|3\d|4[0-8])\s*([a-h]{1,3})\s*$/i;
 
-export function normalizeSize(input: string, category?: Category): string {
+// `category` is widened to `string` so spicy items (whose category
+// comes from SPICY_CATEGORIES, not the main 14) can pass through.
+// Unknown categories simply skip the category-specific format hints.
+export function normalizeSize(input: string, category?: string): string {
   const raw = (input ?? "").trim();
   if (!raw) return "";
 

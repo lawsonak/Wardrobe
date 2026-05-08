@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CATEGORIES,
+  SPICY_CATEGORIES,
   SEASONS,
   ACTIVITIES,
   ITEM_STATUSES,
@@ -58,7 +59,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 export default function EditItemForm({ item }: { item: Item }) {
   const router = useRouter();
-  const [category, setCategory] = useState<Category>(item.category as Category);
+  const [category, setCategory] = useState<string>(item.category);
   const [subType, setSubType] = useState(item.subType ?? "");
   const [color, setColor] = useState<string | null>(item.color);
   const [brand, setBrand] = useState(item.brand ?? "");
@@ -817,10 +818,20 @@ export default function EditItemForm({ item }: { item: Item }) {
 
       <div>
         <label className="label">Category</label>
-        <select className="input" value={category} onChange={(e) => { setCategory(e.target.value as Category); setSubType(""); }}>
-          {CATEGORIES.map((c) => (
+        <select className="input" value={category} onChange={(e) => { setCategory(e.target.value); setSubType(""); }}>
+          {/* Spicy items pick from a separate vocabulary; regular
+              items get the main 14. The current value still renders
+              even if it doesn't appear in the active list (e.g. an
+              older spicy item tagged "Bras" before SPICY_CATEGORIES
+              existed) so the dropdown never shows a blank selection. */}
+          {(isBackroom ? SPICY_CATEGORIES : CATEGORIES).map((c) => (
             <option key={c} value={c}>{c}</option>
           ))}
+          {!(isBackroom ? SPICY_CATEGORIES : CATEGORIES).includes(
+            category as never,
+          ) && category && (
+            <option value={category}>{category} (legacy)</option>
+          )}
         </select>
       </div>
       <div>
