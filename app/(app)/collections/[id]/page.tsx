@@ -82,9 +82,9 @@ export default async function CollectionDetailPage({
         <Link
           href={includeBackroom ? `/collections/${id}` : `/collections/${id}?backroom=1`}
           className={"chip text-xs " + (includeBackroom ? "chip-on" : "chip-off")}
-          title={includeBackroom ? "Hide Spicy items from the picker" : "Include Spicy items in the picker"}
+          title={includeBackroom ? "Hide 🌶 items from the picker" : "Include 🌶 items in the picker"}
         >
-          🌶 Spicy
+          🌶
         </Link>
       </div>
       <CollectionEditor collection={data} items={selectable} includeBackroom={includeBackroom} />

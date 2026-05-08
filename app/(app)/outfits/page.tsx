@@ -82,9 +82,9 @@ export default async function OutfitsPage({
           <Link
             href={includeBackroom ? "/outfits" : "/outfits?backroom=1"}
             className={"chip text-xs " + (includeBackroom ? "chip-on" : "chip-off")}
-            title={includeBackroom ? "Hide outfits with Spicy items" : "Include outfits with Spicy items"}
+            title={includeBackroom ? "Hide outfits with 🌶 items" : "Include outfits with 🌶 items"}
           >
-            🌶 Spicy
+            🌶
           </Link>
           <Link href="/outfits/builder" className="btn-primary">+ Build</Link>
         </div>

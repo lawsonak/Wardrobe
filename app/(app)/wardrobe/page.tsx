@@ -189,8 +189,8 @@ export default async function WardrobePage({
           <Link
             href="/wardrobe/backroom"
             className="grid h-9 w-9 place-items-center rounded-full bg-stone-100 text-base hover:bg-stone-200"
-            aria-label="Open Spicy"
-            title="Spicy"
+            aria-label="Open 🌶 items"
+            title="🌶"
           >
             🌶
           </Link>

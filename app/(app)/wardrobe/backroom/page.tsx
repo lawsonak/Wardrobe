@@ -5,9 +5,9 @@ import ClosetGallery from "../ClosetGallery";
 
 export const dynamic = "force-dynamic";
 
-// Spicy — the dedicated home for `isBackroom = true` items. Reached
+// 🌶 — the dedicated home for `isBackroom = true` items. Reached
 // from the 🌶 icon in the main closet header; the closet itself
-// otherwise has zero references to spicy items (no toggles, no
+// otherwise has zero references to these items (no toggles, no
 // filters). Keeping this fully separate means a passing glance at the
 // main /wardrobe URL never surfaces intimates.
 export default async function BackroomPage() {
@@ -33,7 +33,7 @@ export default async function BackroomPage() {
       <div className="flex items-end justify-between gap-3">
         <div>
           <Link href="/wardrobe" className="text-sm text-blush-600 hover:underline">← Closet</Link>
-          <h1 className="mt-1 font-display text-3xl text-blush-700">🌶 Spicy</h1>
+          <h1 className="mt-1 font-display text-3xl text-blush-700">🌶</h1>
           <p className="text-sm text-stone-500">
             {items.length} item{items.length === 1 ? "" : "s"} kept separate from the main closet, outfit builder, and AI prompts.
           </p>
@@ -44,11 +44,11 @@ export default async function BackroomPage() {
       {items.length === 0 ? (
         <div className="card p-10 text-center">
           <div className="text-4xl" aria-hidden>🌶</div>
-          <p className="mt-3 font-display text-2xl text-blush-700">Nothing spicy here yet.</p>
+          <p className="mt-3 font-display text-2xl text-blush-700">Nothing here yet.</p>
           <p className="mt-1 text-stone-600">
-            Mark any item as Spicy from its edit page to keep it out of
-            the main closet, outfit builder, collection picker, and AI
-            prompts.
+            Toggle 🌶 on any item&rsquo;s edit page to send it here — kept
+            out of the main closet, outfit builder, collection picker,
+            and AI prompts.
           </p>
         </div>
       ) : (
