@@ -1,16 +1,14 @@
 import { NextResponse } from "next/server";
-import { promises as fs } from "node:fs";
-import path from "node:path";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import { listUserFiles } from "@/lib/uploads";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const UPLOAD_ROOT = path.join(process.cwd(), "data", "uploads");
-
-// Walks data/uploads/<userId>/ for the current user, then cross-references
-// the file list against image paths referenced by Items / Wishlist.
+// Walks data/uploads/<userId>/ recursively for the current user, then
+// cross-references the file list against image paths referenced by
+// Items / Wishlist / ItemPhoto / Outfit.
 // Returns { totalBytes, totalFiles, orphans: string[], missing: string[] }.
 //
 // `orphans` are files on disk that aren't referenced by any DB row (safe
@@ -21,26 +19,12 @@ export async function GET() {
   const userId = (session?.user as { id?: string } | undefined)?.id;
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const userDir = path.join(UPLOAD_ROOT, userId);
-  let entries: string[] = [];
-  let totalBytes = 0;
-  try {
-    entries = await fs.readdir(userDir);
-  } catch {
-    entries = [];
-  }
-  const filesOnDisk = new Set<string>();
-  for (const e of entries) {
-    try {
-      const stat = await fs.stat(path.join(userDir, e));
-      if (stat.isFile()) {
-        filesOnDisk.add(path.posix.join(userId, e));
-        totalBytes += stat.size;
-      }
-    } catch {
-      /* ignore */
-    }
-  }
+  // Recursive — picks up wishlist/ subdir contents which the previous
+  // flat readdir skipped, so the storage usage report under-counted
+  // and orphan listings missed wishlist photos.
+  const fileEntries = await listUserFiles(userId);
+  const filesOnDisk = new Set<string>(fileEntries.map((f) => f.rel));
+  const totalBytes = fileEntries.reduce((sum, f) => sum + f.size, 0);
 
   const [items, wishlist, photos, outfits] = await Promise.all([
     prisma.item.findMany({

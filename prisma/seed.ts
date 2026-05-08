@@ -3,11 +3,16 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
-async function upsertUser(email?: string, name?: string, password?: string) {
-  if (!email || !name || !password) {
-    console.warn(`Skipping user (missing env): name=${name ?? "?"} email=${email ?? "?"}`);
+async function upsertUser(rawEmail?: string, name?: string, password?: string) {
+  if (!rawEmail || !name || !password) {
+    console.warn(`Skipping user (missing env): name=${name ?? "?"} email=${rawEmail ?? "?"}`);
     return;
   }
+  // auth.ts lowercases the input email on login, so the seed must
+  // store the lowercased form too. SQLite's UNIQUE index on email
+  // is case-sensitive by default, so a mixed-case env value would
+  // create a row that can't be logged into.
+  const email = rawEmail.toLowerCase().trim();
   const passwordHash = await bcrypt.hash(password, 10);
   await prisma.user.upsert({
     where: { email },

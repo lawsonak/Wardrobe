@@ -26,12 +26,28 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const title = String(body.title ?? "").trim();
   if (!title) return NextResponse.json({ error: "title required" }, { status: 400 });
+
+  // href must be a same-origin path or an https URL — without this,
+  // a `javascript:...` or `data:` URI would land on the bell-icon
+  // dropdown and execute on tap.
+  let href: string | null = null;
+  if (typeof body.href === "string" && body.href.length > 0) {
+    if (body.href.startsWith("/") && !body.href.startsWith("//")) {
+      href = body.href;
+    } else if (body.href.startsWith("https://")) {
+      href = body.href;
+    }
+    // Anything else (javascript:, data:, http:, //evil.example) is
+    // dropped silently — the notification still saves without a
+    // link rather than 400'ing the whole call.
+  }
+
   const note = await prisma.notification.create({
     data: {
       ownerId: userId,
       title,
       body: typeof body.body === "string" ? body.body.trim() || null : null,
-      href: typeof body.href === "string" ? body.href || null : null,
+      href,
     },
   });
   return NextResponse.json({ notification: note }, { status: 201 });

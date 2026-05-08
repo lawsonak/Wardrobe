@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import sharp from "sharp";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { WISHLIST_PRIORITIES } from "@/lib/constants";
@@ -9,15 +10,54 @@ import { logActivity } from "@/lib/activity";
 export const runtime = "nodejs";
 
 const UPLOAD_ROOT = path.join(process.cwd(), "data", "uploads");
+const DISPLAY_MAX_EDGE_PX = 1024;
 
-async function saveUpload(userId: string, itemId: string, file: File, suffix: string) {
+// Persist a wishlist photo. Mirrors lib/uploads.saveUpload's two
+// crucial behaviours that the previous local helper was missing:
+//   1. sharp().rotate() bakes EXIF orientation into pixels — without
+//      this iPhone landscape screenshots come out sideways in the
+//      browser.
+//   2. resize-down to DISPLAY_MAX_EDGE_PX so a 4 MB iPhone photo
+//      doesn't land at full size.
+// Stored under <userId>/wishlist/<file> — kept in a subdir so legacy
+// wishlist URLs still resolve.
+async function saveWishlistUpload(userId: string, itemId: string, file: File, suffix: string) {
   const userDir = path.join(UPLOAD_ROOT, userId, "wishlist");
   await fs.mkdir(userDir, { recursive: true });
-  const ext = (file.type.split("/")[1] || "png").replace(/[^a-z0-9]/gi, "");
-  const filename = `${itemId}-${suffix}.${ext}`;
+  const raw = Buffer.from(await file.arrayBuffer());
+
+  // Try sharp first; fall back to the raw bytes for unsupported
+  // formats (gif, svg, …) so the row still gets a usable image.
+  // Buffer typing widened so sharp.toBuffer()'s narrower return
+  // type doesn't fight reassignment.
+  let outBuf: Buffer = raw;
+  let outExt = (file.type.split("/")[1] || "png").replace(/[^a-z0-9]/gi, "");
+  try {
+    const pipeline = sharp(raw, { failOn: "none" })
+      .rotate()
+      .resize({
+        width: DISPLAY_MAX_EDGE_PX,
+        height: DISPLAY_MAX_EDGE_PX,
+        fit: "inside",
+        withoutEnlargement: true,
+      });
+    if (file.type === "image/png") {
+      outBuf = await pipeline.png({ compressionLevel: 9, effort: 6 }).toBuffer();
+      outExt = "png";
+    } else if (file.type === "image/webp") {
+      outBuf = await pipeline.webp({ quality: 85 }).toBuffer();
+      outExt = "webp";
+    } else if (file.type === "image/jpeg" || file.type === "image/jpg" || !file.type) {
+      outBuf = await pipeline.jpeg({ quality: 85, mozjpeg: true }).toBuffer();
+      outExt = "jpg";
+    }
+  } catch {
+    /* leave outBuf = raw, outExt = sniffed */
+  }
+
+  const filename = `${itemId}-${suffix}.${outExt}`;
   const fullPath = path.join(userDir, filename);
-  const buf = Buffer.from(await file.arrayBuffer());
-  await fs.writeFile(fullPath, buf);
+  await fs.writeFile(fullPath, outBuf);
   return path.posix.join(userId, "wishlist", filename);
 }
 
@@ -89,7 +129,7 @@ export async function POST(req: NextRequest) {
   });
 
   if (imageFile) {
-    const imagePath = await saveUpload(userId, created.id, imageFile, "img");
+    const imagePath = await saveWishlistUpload(userId, created.id, imageFile, "img");
     await prisma.wishlistItem.update({ where: { id: created.id }, data: { imagePath } });
     await logActivity({
       userId,

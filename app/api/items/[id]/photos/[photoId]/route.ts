@@ -104,11 +104,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const mime =
     ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
   const rotatedFile = new File([new Uint8Array(buf)], `rotated.${ext}`, { type: mime });
+  // Filename suffix follows the row's kind so `label-orig` /
+  // `label-bg` tag-photo files don't get written as `angle-orig`
+  // (which is what the previous hard-coded value did, leaving the
+  // on-disk filenames inconsistent with the DB kind).
+  const origSuffix = photo.kind === "label" ? "label-orig" : "angle-orig";
+  const bgSuffix = photo.kind === "label" ? "label-bg" : "angle-bg";
   const { displayPath: newImage, originalPath: newOriginal } = await saveUploadWithOriginal(
     userId,
     id,
     rotatedFile,
-    "angle-orig",
+    origSuffix,
     { bust: true },
   );
 
@@ -116,7 +122,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (photo.imageBgRemovedPath) {
     const { buf: bgBuf, ext: bgExt } = await rotateOnDisk(photo.imageBgRemovedPath, degrees);
     const tag = Math.random().toString(36).slice(2, 8);
-    newBg = await saveBuffer(userId, id, bgBuf, `angle-bg-${tag}`, bgExt);
+    newBg = await saveBuffer(userId, id, bgBuf, `${bgSuffix}-${tag}`, bgExt);
   }
 
   const oldImage = photo.imagePath;

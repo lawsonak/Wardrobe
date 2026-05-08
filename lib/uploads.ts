@@ -291,6 +291,40 @@ export async function unlinkUpload(relPath: string | null | undefined): Promise<
   }
 }
 
+// Recursively list every regular file under data/uploads/<userId>/.
+// Returns posix relative paths starting at <userId>/, e.g.
+// "<userId>/abc-orig.jpg" or "<userId>/wishlist/abc-img.jpg" — same
+// shape as imagePath columns. Used by the admin Storage + Cleanup
+// pages so subdirectories like wishlist/ aren't silently skipped.
+export async function listUserFiles(userId: string): Promise<{ rel: string; size: number }[]> {
+  const root = path.join(UPLOAD_ROOT, userId);
+  const out: { rel: string; size: number }[] = [];
+  async function walk(absDir: string, relDir: string) {
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = await fs.readdir(absDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const abs = path.join(absDir, e.name);
+      const rel = relDir ? `${relDir}/${e.name}` : e.name;
+      if (e.isDirectory()) {
+        await walk(abs, rel);
+      } else if (e.isFile()) {
+        try {
+          const st = await fs.stat(abs);
+          out.push({ rel: path.posix.join(userId, rel), size: st.size });
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+  await walk(root, "");
+  return out;
+}
+
 /**
  * Rotate an existing on-disk upload by 90° increments and return the
  * rotated bytes + canonical extension. Doesn't write — the caller

@@ -50,6 +50,14 @@ async function readUpload(rel: string): Promise<{ buf: Buffer; mime: string } | 
 //
 // When `itemIds` is omitted, defaults to the caller's needs_review
 // queue (legacy behavior). When provided, scopes strictly to that set.
+//
+// Per-user inflight guard mirrors the bg-remove-batch / optimize-photos
+// pattern: a background-mode kick-off holds the slot until the batch
+// completes, so a double-tap on the "Auto-tag" button doesn't fire two
+// concurrent Gemini batches over the same items (which would burn 2× the
+// API budget and produce racing pendingAiSuggestions writes).
+const inflight = new Set<string>();
+
 export async function POST(req: NextRequest) {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id;
@@ -60,6 +68,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { enabled: false, message: "AI tagging is disabled. Set AI_PROVIDER + the matching key in .env." },
       { status: 200 },
+    );
+  }
+
+  if (inflight.has(userId)) {
+    return NextResponse.json(
+      { error: "Auto-tag is already running for your account. Wait for the notification, then re-try." },
+      { status: 409 },
     );
   }
 
@@ -101,10 +116,17 @@ export async function POST(req: NextRequest) {
   // Background mode: kick off the work without awaiting it, return
   // immediately. On a long-running Node server (the user's Proxmox
   // container) the handler keeps running after the response flushes.
+  // The inflight slot is held until runBatch settles so a double-tap
+  // can't spawn two concurrent batches.
   if (background) {
-    void runBatch(userId, items, promoteAtConfidence, true).catch((err) => {
-      console.error("Background tag-bulk failed:", err);
-    });
+    inflight.add(userId);
+    runBatch(userId, items, promoteAtConfidence, true)
+      .catch((err) => {
+        console.error("Background tag-bulk failed:", err);
+      })
+      .finally(() => {
+        inflight.delete(userId);
+      });
     return NextResponse.json({
       enabled: true,
       queued: true,
@@ -114,8 +136,13 @@ export async function POST(req: NextRequest) {
 
   // Foreground also fires a notification so the bell records a permanent
   // entry — useful if the user navigates to a different page mid-run.
-  const result = await runBatch(userId, items, promoteAtConfidence, true);
-  return NextResponse.json({ enabled: true, ...result });
+  inflight.add(userId);
+  try {
+    const result = await runBatch(userId, items, promoteAtConfidence, true);
+    return NextResponse.json({ enabled: true, ...result });
+  } finally {
+    inflight.delete(userId);
+  }
 }
 
 type BatchResult = {
