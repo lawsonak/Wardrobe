@@ -3,10 +3,9 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import { listUserFiles, UPLOAD_ROOT } from "@/lib/uploads";
 
 export const runtime = "nodejs";
-
-const UPLOAD_ROOT = path.join(process.cwd(), "data", "uploads");
 
 // Deletes files that are present under data/uploads/<userId>/ but not
 // referenced by any Item, WishlistItem, ItemPhoto, or Outfit (try-on)
@@ -17,11 +16,12 @@ export async function POST() {
   const userId = (session?.user as { id?: string } | undefined)?.id;
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const userDir = path.join(UPLOAD_ROOT, userId);
-  let entries: string[] = [];
-  try {
-    entries = await fs.readdir(userDir);
-  } catch {
+  // listUserFiles walks subdirectories (wishlist/, etc.) so files
+  // under nested folders are enumerated. Previously this was a flat
+  // readdir that skipped wishlist/ entirely — orphan wishlist photos
+  // would never get cleaned up.
+  const filesOnDisk = await listUserFiles(userId);
+  if (filesOnDisk.length === 0) {
     return NextResponse.json({ deleted: 0 });
   }
 
@@ -82,16 +82,15 @@ export async function POST() {
 
   let deleted = 0;
   let bytes = 0;
-  for (const e of entries) {
-    if (mannequinFile(e)) continue;
-    const rel = path.posix.join(userId, e);
-    if (referenced.has(rel)) continue;
-    const full = path.join(userDir, e);
+  for (const f of filesOnDisk) {
+    // Match the basename for the whitelist so dated mannequin /
+    // today's-outfit assets in the user root still survive.
+    const basename = path.posix.basename(f.rel);
+    if (mannequinFile(basename)) continue;
+    if (referenced.has(f.rel)) continue;
+    bytes += f.size;
     try {
-      const stat = await fs.stat(full);
-      if (!stat.isFile()) continue;
-      bytes += stat.size;
-      await fs.unlink(full);
+      await fs.unlink(path.join(UPLOAD_ROOT, f.rel));
       deleted++;
     } catch {
       /* ignore */
