@@ -12,6 +12,7 @@ import {
   saveBuffer,
   unlinkUpload,
 } from "@/lib/uploads";
+import { runItemPhotoBgRemovalBatch } from "@/lib/bgRemovalServer";
 import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
@@ -19,24 +20,30 @@ export const runtime = "nodejs";
 // 500 at ~3 in-flight is ~30s. Generous ceiling so big closets finish.
 export const maxDuration = 600;
 
-// Settings → "Optimize old photos" cleanup. Targets the photos that
-// shipped before two-tier storage (PR #132): main hero + extra angle
-// photos that still live as full-resolution uploads at `imagePath`,
-// with a null `imageOriginalPath`. Every match gets re-saved through
-// the regular two-tier pipeline so display + original both line up
-// with the rest of the closet — fast grids on the 1024-px display,
-// real detail on tap-to-zoom.
+// Settings → "Optimize old photos" cleanup. Three passes:
 //
-// Also walks `imageBgRemovedPath` on Item + ItemPhoto: legacy
-// background-removed cutouts were saved at full source resolution
-// and can be the heaviest files in the user's data dir. Those get
-// shrunk in place to a 1024-px PNG (alpha preserved) so the closet
-// gallery loads fast. The hi-res `imageBgRemovedOriginalPath` is
-// intentionally left alone — that's the lightbox-quality cutout.
+//   1. Two-tier recovery — Item / ItemPhoto rows that shipped before
+//      two-tier storage (PR #132) have `imageOriginalPath = null`
+//      and a full-resolution display variant. Re-save through
+//      saveUploadWithOriginal so display + original line up with
+//      the rest of the closet.
+//   2. Bg-removed display-tier shrink — Item.imageBgRemovedPath +
+//      ItemPhoto.imageBgRemovedPath cutouts saved at full source
+//      resolution get shrunk in place to a 1024-px PNG (alpha
+//      preserved). The hi-res `imageBgRemovedOriginalPath` is
+//      intentionally left alone — that's the lightbox tap-to-zoom
+//      variant.
+//   3. Label cutout generation — ItemPhoto rows with `kind="label"`
+//      and `imageBgRemovedPath=null` get a brand-new cutout
+//      generated on the server via runItemPhotoBgRemovalBatch.
+//      Catches labels that were uploaded before per-photo bg
+//      removal shipped (and therefore never got a cutout) so the
+//      AI tag-reading path and the carousel both have a clean
+//      label image to work with.
 //
-// Photos already at ≤ DISPLAY_MAX_EDGE_PX are left alone (they're
-// already small enough; there's nothing to recover and re-encoding
-// would just add a generation of JPEG loss).
+// Photos already at ≤ DISPLAY_MAX_EDGE_PX are left alone for (1) +
+// (2) — already small enough; re-encoding would just add a
+// generation of JPEG loss.
 //
 // POST { background?: boolean }
 //   - background=true (default): queue the work, return immediately,
@@ -52,7 +59,40 @@ type Candidate =
   | { kind: "item-bg"; id: string; imagePath: string }
   | { kind: "photo-bg"; id: string; imagePath: string };
 
+type Work = {
+  candidates: Candidate[];
+  /** ItemPhoto.id values for label rows missing a bg-removed cutout
+   *  but with a usable source image on disk. Pass 3 of runOptimize
+   *  feeds these to runItemPhotoBgRemovalBatch. */
+  labelPhotosNeedingBg: string[];
+};
+
 const inflight = new Set<string>();
+
+async function findWork(userId: string): Promise<Work> {
+  const candidates = await findCandidates(userId);
+
+  // Label / care-tag photos that lack a bg-removed cutout. The
+  // optimize pass treats these as backfill targets for the per-photo
+  // bg-removal pipeline that ships with new uploads. Skip rows whose
+  // source file is missing on disk so we don't queue broken refs to
+  // the model.
+  const labelRows = await prisma.itemPhoto.findMany({
+    where: {
+      item: { ownerId: userId },
+      kind: "label",
+      imageBgRemovedPath: null,
+    },
+    select: { id: true, imagePath: true },
+  });
+  const labelPhotosNeedingBg: string[] = [];
+  for (const p of labelRows) {
+    const dim = await getImageDimensions(p.imagePath);
+    if (dim) labelPhotosNeedingBg.push(p.id);
+  }
+
+  return { candidates, labelPhotosNeedingBg };
+}
 
 async function findCandidates(userId: string): Promise<Candidate[]> {
   // Walk four pools in parallel:
@@ -195,14 +235,24 @@ async function recoverOne(
   await unlinkUpload(c.imagePath);
 }
 
-type RunResult = { count: number; fixed: number; errors: number };
+type RunResult = {
+  count: number;
+  fixed: number;
+  errors: number;
+  /** Subset of `fixed` representing label cutouts generated in pass
+   *  3 — surfaced separately in the notification body so the user
+   *  can tell labels were specifically backfilled. */
+  labelsBgGenerated: number;
+};
 
 async function runOptimize(
   userId: string,
-  candidates: Candidate[],
+  work: Work,
 ): Promise<RunResult> {
+  const { candidates, labelPhotosNeedingBg } = work;
   let fixed = 0;
   let errors = 0;
+  let labelsBgGenerated = 0;
 
   // Sharp is CPU-heavy; 3 in-flight matches the bg-remove-batch
   // pattern and keeps the LXC responsive while the bulk job runs.
@@ -227,31 +277,52 @@ async function runOptimize(
     });
   await Promise.all(workers);
 
-  return { count: candidates.length, fixed, errors };
+  // Pass 3: backfill bg-removed cutouts on label photos that were
+  // uploaded before the per-photo bg-removal pipeline shipped. This
+  // pass is *generative* — runs the ONNX model — so it lives after
+  // the lightweight resizes so any model-load failure doesn't lose
+  // the cheap wins.
+  if (labelPhotosNeedingBg.length > 0) {
+    const bg = await runItemPhotoBgRemovalBatch(prisma, userId, labelPhotosNeedingBg);
+    labelsBgGenerated = bg.succeeded.length;
+    fixed += bg.succeeded.length;
+    errors += bg.failed.length;
+  }
+
+  return {
+    count: candidates.length + labelPhotosNeedingBg.length,
+    fixed,
+    errors,
+    labelsBgGenerated,
+  };
 }
 
 async function runOptimizeAndNotify(
   userId: string,
-  candidates: Candidate[],
+  work: Work,
 ): Promise<void> {
   try {
-    const result = await runOptimize(userId, candidates);
-    const total = candidates.length;
+    const result = await runOptimize(userId, work);
+    const total = result.count;
+    const labelNote =
+      result.labelsBgGenerated > 0
+        ? ` Generated ${result.labelsBgGenerated} label cutout${result.labelsBgGenerated === 1 ? "" : "s"}.`
+        : "";
     const title =
       result.fixed === total
         ? "Photo optimization complete"
         : "Photo optimization finished with issues";
     const body =
       result.fixed === total
-        ? `Optimized ${result.fixed} photo${result.fixed === 1 ? "" : "s"} — closet should feel snappier now.`
-        : `Optimized ${result.fixed} of ${total}, ${result.errors} couldn't be processed (left as-is).`;
+        ? `Optimized ${result.fixed} photo${result.fixed === 1 ? "" : "s"} — closet should feel snappier now.${labelNote}`
+        : `Optimized ${result.fixed} of ${total}, ${result.errors} couldn't be processed (left as-is).${labelNote}`;
     await prisma.notification
       .create({ data: { ownerId: userId, title, body, href: "/wardrobe" } })
       .catch(() => {});
     await logActivity({
       userId,
       kind: "photos.optimize",
-      summary: `Optimized ${result.fixed} of ${total} oversized photo${total === 1 ? "" : "s"}`,
+      summary: `Optimized ${result.fixed} of ${total} photo${total === 1 ? "" : "s"}`,
       meta: { ...result },
     });
   } catch (err) {
@@ -274,24 +345,25 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const candidates = await findCandidates(userId);
-  if (candidates.length === 0) {
-    return NextResponse.json({ count: 0, fixed: 0, errors: 0, queued: false });
+  const work = await findWork(userId);
+  const totalWork = work.candidates.length + work.labelPhotosNeedingBg.length;
+  if (totalWork === 0) {
+    return NextResponse.json({ count: 0, fixed: 0, errors: 0, labelsBgGenerated: 0, queued: false });
   }
 
   if (background) {
     inflight.add(userId);
-    runOptimizeAndNotify(userId, candidates).finally(() => inflight.delete(userId));
-    return NextResponse.json({ queued: true, count: candidates.length });
+    runOptimizeAndNotify(userId, work).finally(() => inflight.delete(userId));
+    return NextResponse.json({ queued: true, count: totalWork });
   }
 
   inflight.add(userId);
   try {
-    const result = await runOptimize(userId, candidates);
+    const result = await runOptimize(userId, work);
     await logActivity({
       userId,
       kind: "photos.optimize",
-      summary: `Optimized ${result.fixed} of ${result.count} oversized photo${result.count === 1 ? "" : "s"}`,
+      summary: `Optimized ${result.fixed} of ${result.count} photo${result.count === 1 ? "" : "s"}`,
       meta: { ...result },
     });
     return NextResponse.json({ queued: false, ...result });
