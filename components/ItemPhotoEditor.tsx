@@ -7,6 +7,7 @@ import { heicToJpeg, isHeic } from "@/lib/heic";
 import { normalizeOrientation } from "@/lib/imageOrientation";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import ProgressBar from "@/components/ProgressBar";
+import BgRetryControl from "@/components/BgRetryControl";
 
 // Main-photo controls for the item-detail edit page:
 //   1. Replace the main photo (re-runs HEIC + bg removal + saves both
@@ -168,6 +169,11 @@ export default function ItemPhotoEditor({
           </button>
         )}
       </div>
+
+      {/* Re-run bg removal at a different aggressiveness level. Only
+          shown when there's already a cutout — adjusting from "no
+          cutout" needs Replace photo or Re-run bg removal first. */}
+      {hasBgRemoved && <BgRetryControl itemId={itemId} variant="inline" />}
 
       {busy && bgPhase && (
         <ProgressBar
