@@ -77,12 +77,30 @@ export async function POST(req: NextRequest) {
     ? body.items
     : [];
 
-  const cleanItems = itemsInput
+  const candidateItems = itemsInput
     .filter((x) => typeof x.itemId === "string" && SLOTS.includes(x.slot as Slot))
     .map((x) => ({ itemId: x.itemId, slot: x.slot }));
 
-  if (cleanItems.length === 0) {
+  if (candidateItems.length === 0) {
     return NextResponse.json({ error: "An outfit needs at least one piece." }, { status: 400 });
+  }
+
+  // Owner-scope guard: validate every itemId belongs to the caller
+  // before linking it into the new outfit. Without this, a user
+  // could POST itemIds that belong to the other profile and
+  // silently bind them into their own outfit. PATCH on /outfits/[id]
+  // already does this; POST forgot to.
+  const ownedItems = await prisma.item.findMany({
+    where: { ownerId: userId, id: { in: candidateItems.map((c) => c.itemId) } },
+    select: { id: true },
+  });
+  const ownedIds = new Set(ownedItems.map((it) => it.id));
+  const cleanItems = candidateItems.filter((c) => ownedIds.has(c.itemId));
+  if (cleanItems.length === 0) {
+    return NextResponse.json(
+      { error: "An outfit needs at least one piece you own." },
+      { status: 400 },
+    );
   }
 
   const outfit = await prisma.outfit.create({
