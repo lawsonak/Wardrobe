@@ -3,11 +3,13 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import sharp from "sharp";
 import {
   UPLOAD_ROOT,
   DISPLAY_MAX_EDGE_PX,
   getImageDimensions,
   saveUploadWithOriginal,
+  saveBuffer,
   unlinkUpload,
 } from "@/lib/uploads";
 import { logActivity } from "@/lib/activity";
@@ -25,6 +27,13 @@ export const maxDuration = 600;
 // with the rest of the closet — fast grids on the 1024-px display,
 // real detail on tap-to-zoom.
 //
+// Also walks `imageBgRemovedPath` on Item + ItemPhoto: legacy
+// background-removed cutouts were saved at full source resolution
+// and can be the heaviest files in the user's data dir. Those get
+// shrunk in place to a 1024-px PNG (alpha preserved) so the closet
+// gallery loads fast. The hi-res `imageBgRemovedOriginalPath` is
+// intentionally left alone — that's the lightbox-quality cutout.
+//
 // Photos already at ≤ DISPLAY_MAX_EDGE_PX are left alone (they're
 // already small enough; there's nothing to recover and re-encoding
 // would just add a generation of JPEG loss).
@@ -34,16 +43,26 @@ export const maxDuration = 600;
 //     fire a Notification when done. The user can close the tab.
 //   - background=false: blocks; returns the per-item summary.
 
-type Candidate = { kind: "item" | "photo"; id: string; imagePath: string };
+type Candidate =
+  | { kind: "item"; id: string; imagePath: string }
+  | { kind: "photo"; id: string; imagePath: string }
+  // Background-removed display tiers — shrink in place to 1024 px
+  // PNG. No two-tier write here (the high-res cutout is a separate
+  // column).
+  | { kind: "item-bg"; id: string; imagePath: string }
+  | { kind: "photo-bg"; id: string; imagePath: string };
 
 const inflight = new Set<string>();
 
 async function findCandidates(userId: string): Promise<Candidate[]> {
-  // Only walk photos with a null original — those are the ones from
-  // before two-tier shipped, plus any we somehow missed. Items
-  // already in the new shape (`imageOriginalPath` set) are healthy
-  // and don't need touching.
-  const [items, photos] = await Promise.all([
+  // Walk four pools in parallel:
+  //   1. Item rows with a null imageOriginalPath (pre two-tier).
+  //   2. ItemPhoto rows in the same shape.
+  //   3. Item rows whose imageBgRemovedPath cutout is oversized.
+  //   4. ItemPhoto rows in (3)'s shape (label + angle bg-removes).
+  // Each bucket is then dimension-checked: photos already at or
+  // under DISPLAY_MAX_EDGE_PX skip the re-encode entirely.
+  const [items, photos, itemsBg, photosBg] = await Promise.all([
     prisma.item.findMany({
       where: { ownerId: userId, imageOriginalPath: null },
       select: { id: true, imagePath: true },
@@ -51,6 +70,14 @@ async function findCandidates(userId: string): Promise<Candidate[]> {
     prisma.itemPhoto.findMany({
       where: { item: { ownerId: userId }, imageOriginalPath: null },
       select: { id: true, imagePath: true, itemId: true },
+    }),
+    prisma.item.findMany({
+      where: { ownerId: userId, imageBgRemovedPath: { not: null } },
+      select: { id: true, imageBgRemovedPath: true },
+    }),
+    prisma.itemPhoto.findMany({
+      where: { item: { ownerId: userId }, imageBgRemovedPath: { not: null } },
+      select: { id: true, imageBgRemovedPath: true },
     }),
   ]);
 
@@ -69,6 +96,22 @@ async function findCandidates(userId: string): Promise<Candidate[]> {
       candidates.push({ kind: "photo", id: p.id, imagePath: p.imagePath });
     }
   }
+  for (const it of itemsBg) {
+    if (!it.imageBgRemovedPath) continue;
+    const dim = await getImageDimensions(it.imageBgRemovedPath);
+    if (!dim) continue;
+    if (Math.max(dim.width, dim.height) > DISPLAY_MAX_EDGE_PX) {
+      candidates.push({ kind: "item-bg", id: it.id, imagePath: it.imageBgRemovedPath });
+    }
+  }
+  for (const p of photosBg) {
+    if (!p.imageBgRemovedPath) continue;
+    const dim = await getImageDimensions(p.imageBgRemovedPath);
+    if (!dim) continue;
+    if (Math.max(dim.width, dim.height) > DISPLAY_MAX_EDGE_PX) {
+      candidates.push({ kind: "photo-bg", id: p.id, imagePath: p.imageBgRemovedPath });
+    }
+  }
   return candidates;
 }
 
@@ -85,11 +128,47 @@ async function recoverOne(
 ): Promise<void> {
   const abs = path.join(UPLOAD_ROOT, c.imagePath);
   const buf = await fs.readFile(abs);
+
+  // Background-removed cutouts: re-encode in place at 1024 px PNG
+  // (alpha preserved). One-tier — the high-res cutout lives in a
+  // separate column we don't touch here.
+  if (c.kind === "item-bg" || c.kind === "photo-bg") {
+    const shrunk = await sharp(buf, { failOn: "none" })
+      .rotate()
+      .resize({
+        width: DISPLAY_MAX_EDGE_PX,
+        height: DISPLAY_MAX_EDGE_PX,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .png({ compressionLevel: 9, effort: 6 })
+      .toBuffer();
+    // Random tag prevents the new path from colliding with the old
+    // (which we're about to unlink). saveBuffer doesn't bust on its
+    // own, so we include the tag in the suffix.
+    const tag = Math.random().toString(36).slice(2, 8);
+    const suffix = `${c.kind === "item-bg" ? "bg" : "angle-bg"}-${tag}`;
+    const newPath = await saveBuffer(userId, c.id, shrunk, suffix, "png");
+    if (c.kind === "item-bg") {
+      await prisma.item.update({
+        where: { id: c.id },
+        data: { imageBgRemovedPath: newPath },
+      });
+    } else {
+      await prisma.itemPhoto.update({
+        where: { id: c.id },
+        data: { imageBgRemovedPath: newPath },
+      });
+    }
+    await unlinkUpload(c.imagePath);
+    return;
+  }
+
   const ext = path.extname(c.imagePath).toLowerCase().replace(".", "") || "jpg";
   const mime = EXT_TO_MIME[ext] ?? "image/jpeg";
   // The two-tier helper expects a `File`; build one from the buffer.
   const file = new File([new Uint8Array(buf)], `recover.${ext}`, { type: mime });
-  const idPrefix = c.kind === "item" ? c.id : c.id;
+  const idPrefix = c.id;
   const suffix = c.kind === "item" ? "orig" : "angle-orig";
   const { displayPath, originalPath } = await saveUploadWithOriginal(
     userId,
