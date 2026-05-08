@@ -27,6 +27,7 @@ type DetailItem = {
   seasons: string;
   activities: string;
   isFavorite: boolean;
+  isBackroom: boolean;
   status: string;
 };
 
@@ -220,8 +221,14 @@ export default function ItemDetailView({
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-2">
-        <Link href="/wardrobe" className="text-sm text-blush-600 hover:underline">
-          ← Back to closet
+        {/* Back-link routes to whichever closet the item belongs to,
+            so a user browsing 🌶 stays inside it instead of being
+            yanked to the main /wardrobe page. */}
+        <Link
+          href={item.isBackroom ? "/wardrobe/backroom" : "/wardrobe"}
+          className="text-sm text-blush-600 hover:underline"
+        >
+          ← Back to {item.isBackroom ? "🌶" : "closet"}
         </Link>
         <div className="flex items-center gap-2">
           <ItemNav prevId={prevId} nextId={nextId} />
