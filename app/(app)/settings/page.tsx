@@ -8,6 +8,7 @@ import { getForecast, cToF } from "@/lib/weather";
 import { getUserMannequin } from "@/lib/mannequin";
 import MannequinUpload from "@/components/MannequinUpload";
 import ShowOnboardingLink from "@/components/ShowOnboardingLink";
+import ClearActivityButton from "./ClearActivityButton";
 import PhotoOptimizerButton from "@/components/PhotoOptimizerButton";
 import HiResCutoutBackfillButton from "@/components/HiResCutoutBackfillButton";
 import { relativeTime } from "@/lib/dates";
@@ -274,6 +275,7 @@ export default async function SettingsPage() {
             ))}
           </ul>
         )}
+        <ClearActivityButton count={activity.length} />
       </section>
 
       <section className="card p-4">

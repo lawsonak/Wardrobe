@@ -58,6 +58,7 @@ export type ActivityKind =
   | "ai.bg-remove-batch"
   // Maintenance
   | "photos.optimize"
+  | "activity.cleared"
   // Auth
   | "auth.signin";
 
