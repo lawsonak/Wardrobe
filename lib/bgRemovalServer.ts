@@ -95,7 +95,7 @@ async function processOne(
   userId: string,
   itemId: string,
   sourceRelPath: string,
-  filenamePrefix: "bg" | "bg-hires" = "bg",
+  filenamePrefix: string = "bg",
 ): Promise<string> {
   const sourceAbs = path.join(UPLOAD_ROOT, sourceRelPath);
   const ext = path.extname(sourceRelPath).toLowerCase();
@@ -283,6 +283,82 @@ export async function runBgRemovalBatch(
   }
 
   const workers = Array.from({ length: Math.min(MAX_CONCURRENT, items.length) }, worker);
+  await Promise.all(workers);
+  return result;
+}
+
+// Same shape as runBgRemovalBatch but for ItemPhoto rows (extra
+// angle photos and label / care-tag close-ups). The display-tier
+// cutout lives at ItemPhoto.imageBgRemovedPath; the filename suffix
+// distinguishes labels (`label-bg`) from extra angles (`angle-bg`)
+// so the user's data dir stays browsable.
+//
+// Used by the Settings → Optimize Photos pass to backfill cutouts
+// on label / angle photos that were uploaded before the per-photo
+// bg-removal pipeline shipped (and therefore have null
+// imageBgRemovedPath even though there's a perfectly good source
+// image to cut out).
+export async function runItemPhotoBgRemovalBatch(
+  prisma: PrismaClient,
+  userId: string,
+  photoIds: string[],
+): Promise<BgRemovalResult> {
+  if (photoIds.length === 0) return { succeeded: [], failed: [] };
+
+  const photos = await prisma.itemPhoto.findMany({
+    where: { id: { in: photoIds }, item: { ownerId: userId } },
+    select: {
+      id: true,
+      kind: true,
+      imagePath: true,
+      imageBgRemovedPath: true,
+    },
+  });
+
+  let remove: RemoveBackgroundFn;
+  try {
+    remove = await getRemover();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("bg removal (ItemPhoto): model load failed:", message);
+    return {
+      succeeded: [],
+      failed: photos.map((p) => ({ id: p.id, error: `model load failed: ${message.slice(0, 160)}` })),
+    };
+  }
+
+  const result: BgRemovalResult = { succeeded: [], failed: [] };
+  let cursor = 0;
+
+  async function worker() {
+    while (true) {
+      const i = cursor++;
+      if (i >= photos.length) return;
+      const p = photos[i];
+      try {
+        const prefix = p.kind === "label" ? "label-bg" : "angle-bg";
+        const newBgPath = await processOne(remove, userId, p.id, p.imagePath, prefix);
+        if (p.imageBgRemovedPath && p.imageBgRemovedPath !== newBgPath) {
+          await unlinkUpload(p.imageBgRemovedPath);
+        }
+        await prisma.itemPhoto.update({
+          where: { id: p.id },
+          data: { imageBgRemovedPath: newBgPath },
+        });
+        result.succeeded.push(p.id);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (result.failed.length === 0 && err instanceof Error) {
+          console.error(`bg removal failed for photo ${p.id} (${p.kind}):`, err);
+        } else {
+          console.warn(`bg removal failed for photo ${p.id} (${p.kind}):`, message);
+        }
+        result.failed.push({ id: p.id, error: message.slice(0, 200) });
+      }
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(MAX_CONCURRENT, photos.length) }, worker);
   await Promise.all(workers);
   return result;
 }
