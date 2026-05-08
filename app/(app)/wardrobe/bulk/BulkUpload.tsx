@@ -407,6 +407,16 @@ export default function BulkUpload() {
           aiBanner={aiBanner}
           bgBanner={bgBanner}
           defaultStatus={defaultStatus}
+          onRetryFailed={async () => {
+            // Re-enter the full pipeline so the retried items also
+            // pick up AI tagging + bg removal dispatches and so the
+            // post-upload setPhase("done") fires (which is what the
+            // allTerminal effect waits on to bring the user back to
+            // Step 3). startPipeline's guard accepts phase="done",
+            // which is the state we're always in once Step 3 paints,
+            // so this is safe to call directly.
+            await startPipeline();
+          }}
           onUploadAnother={() => {
             // Reset state for a fresh batch. Existing items are durable
             // on the server and can be reviewed via Needs Review.
@@ -829,6 +839,7 @@ function Step3Done({
   aiBanner,
   bgBanner,
   defaultStatus,
+  onRetryFailed,
   onUploadAnother,
 }: {
   counts: { total: number; uploaded: number; error: number };
@@ -836,6 +847,7 @@ function Step3Done({
   aiBanner: string | null;
   bgBanner: string | null;
   defaultStatus: "needs_review" | "active";
+  onRetryFailed: () => void | Promise<void>;
   onUploadAnother: () => void;
 }) {
   const reviewHref = defaultStatus === "needs_review" ? "/wardrobe/needs-review" : "/wardrobe";
@@ -863,7 +875,18 @@ function Step3Done({
           having to back out and re-upload. */}
       {failedJobs.length > 0 && (
         <div className="card space-y-3 p-4">
-          <p className="text-sm font-medium text-blush-800">What failed</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-medium text-blush-800">What failed</p>
+            {/* In-card retry: re-runs only the error rows. Successful
+                uploads stay as-is on the server. */}
+            <button
+              type="button"
+              onClick={onRetryFailed}
+              className="btn-secondary text-xs"
+            >
+              ↻ Retry {failedJobs.length} failed
+            </button>
+          </div>
           <ul className="space-y-3">
             {failedJobs.map((j) => (
               <li key={j.id} className="flex items-start gap-3 text-sm">
