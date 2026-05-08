@@ -7,7 +7,6 @@ import SmartSearchBar from "./SmartSearchBar";
 import ClosetGallery from "./ClosetGallery";
 import ApplyPendingAiBar from "./ApplyPendingAiBar";
 import { inferredCategoriesFor } from "@/lib/activities";
-import { backroomItemFilter, readBackroomParam } from "@/lib/backroom";
 
 export const dynamic = "force-dynamic";
 
@@ -25,10 +24,6 @@ export default async function WardrobePage({
     /** "1" → only show items with pending AI suggestions staged from
      *  a bulk re-tag run that the user hasn't reviewed yet. */
     pending?: string;
-    /** "1" → mix Backroom items into the closet view. Default off so
-     *  intimates / costumes don't show up in casual scrolling. The
-     *  dedicated /wardrobe/backroom page sets this server-side. */
-    backroom?: string;
   }>;
 }) {
   const [sp, session] = await Promise.all([searchParams, auth()]);
@@ -48,7 +43,6 @@ export default async function WardrobePage({
   const color = sp.color?.trim() || undefined;
   const season = sp.season?.trim() || undefined;
   const activity = sp.activity?.trim() || undefined;
-  const includeBackroom = readBackroomParam(sp.backroom);
 
   // Activity filter pulls in categories that strongly imply that
   // activity — e.g. "beach" surfaces every Swimwear item even when
@@ -79,7 +73,10 @@ export default async function WardrobePage({
   };
   const buildWhere = (drop: Set<string>) => ({
     ownerId: userId,
-    ...backroomItemFilter(includeBackroom),
+    // Spicy items live in their own page (/wardrobe/backroom). The
+    // main closet hard-excludes them — there's no toggle here, the
+    // Spicy door 🌶 in the header is the only entry point.
+    isBackroom: false,
     ...(!drop.has("category") && category ? { category } : {}),
     ...(favOnly ? { isFavorite: true } : {}),
     // `pending=1` shows everything with a non-null pendingAiSuggestions
@@ -185,16 +182,17 @@ export default async function WardrobePage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* Backroom door — opens the dedicated page where intimate
-              items live. Sits next to the main actions so it's always
-              one tap away but doesn't shout. */}
+          {/* Spicy door — sole entry to the dedicated /wardrobe/backroom
+              page. The main closet has no other reference to backroom
+              items: they're hard-excluded from the gallery, the
+              filters, and any toggles here. */}
           <Link
             href="/wardrobe/backroom"
-            className="grid h-9 w-9 place-items-center rounded-full bg-stone-100 text-stone-500 hover:bg-stone-200 hover:text-stone-700"
-            aria-label="Open Backroom"
-            title="Backroom"
+            className="grid h-9 w-9 place-items-center rounded-full bg-stone-100 text-base hover:bg-stone-200"
+            aria-label="Open Spicy"
+            title="Spicy"
           >
-            🔒
+            🌶
           </Link>
           <Link href="/wardrobe/new" className="btn-primary">+ Add</Link>
           <Link href="/wardrobe/bulk" className="btn-secondary text-xs">Import</Link>
@@ -246,11 +244,7 @@ export default async function WardrobePage({
       </div>
 
       {/* Quick taxonomy filter (form, kept for keyboard-only / no-AI
-          users). The Backroom toggle lives here too — out of the
-          immediately-visible quick-filter row above, but still one tap
-          deeper if the user wants to mix private items into the
-          gallery without hopping over to /wardrobe/backroom. The lock
-          icon in the header stays as the primary entry point. */}
+          users). */}
       <details className="card p-3 text-sm">
         <summary className="cursor-pointer select-none text-stone-600">More filters</summary>
         <form className="mt-3 flex flex-wrap items-center gap-2" action="/wardrobe">
@@ -263,10 +257,6 @@ export default async function WardrobePage({
           <label className="chip chip-off cursor-pointer">
             <input type="checkbox" name="fav" value="1" defaultChecked={favOnly} className="mr-1" />
             Favorites
-          </label>
-          <label className="chip chip-off cursor-pointer">
-            <input type="checkbox" name="backroom" value="1" defaultChecked={includeBackroom} className="mr-1" />
-            🔒 Show Backroom
           </label>
           <button className="btn-secondary" type="submit">Apply</button>
         </form>
