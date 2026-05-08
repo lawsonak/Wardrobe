@@ -7,6 +7,7 @@ import EditItemForm from "./EditItemForm";
 import ItemDetailView from "./ItemDetailView";
 import ItemAngles from "./ItemAngles";
 import ItemLabels from "./ItemLabels";
+import ItemMerge from "./ItemMerge";
 import ItemPhotoEditor from "@/components/ItemPhotoEditor";
 import HeroPhotoView from "@/components/HeroPhotoView";
 
@@ -250,6 +251,13 @@ export default async function ItemDetail({
           <div className="border-t border-stone-100 pt-3">
             <p className="label mb-2">Other angles</p>
             <ItemAngles itemId={item.id} angles={angles} editing />
+          </div>
+          <div className="border-t border-stone-100 pt-3">
+            <p className="label mb-2">Merge in other items</p>
+            <p className="mb-2 text-xs text-stone-500">
+              Picked the wrong garment for a tag photo on bulk upload? Fold those orphan items in here.
+            </p>
+            <ItemMerge itemId={item.id} candidates={candidates} />
           </div>
         </div>
 
