@@ -197,6 +197,7 @@ export default async function ItemDetail({
           seasons: item.seasons,
           activities: item.activities,
           isFavorite: item.isFavorite,
+          isBackroom: item.isBackroom,
           status: item.status,
         }}
         outfits={detailOutfits}
