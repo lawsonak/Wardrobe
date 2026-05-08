@@ -888,20 +888,24 @@ function Step3Done({
             </button>
           </div>
           <ul className="space-y-3">
-            {failedJobs.map((j) => (
-              <li key={j.id} className="flex items-start gap-3 text-sm">
-                <div className="tile-bg h-12 w-12 shrink-0 overflow-hidden rounded-lg">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={j.previewUrl} alt="" className="h-full w-full object-cover" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium text-stone-800">{j.file.name}</p>
-                  <p className="break-words text-xs text-blush-700">
-                    {j.error || "Failed (no detail returned by the server)"}
-                  </p>
-                </div>
-              </li>
-            ))}
+            {failedJobs.map((j) => {
+              const reason = prettifyError(j.error);
+              return (
+                <li key={j.id} className="flex items-start gap-3 text-sm">
+                  <div className="tile-bg h-12 w-12 shrink-0 overflow-hidden rounded-lg">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={j.previewUrl} alt="" className="h-full w-full object-cover" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium text-stone-800">{j.file.name}</p>
+                    <p className="break-words text-xs text-blush-700">{reason.summary}</p>
+                    {reason.hint && (
+                      <p className="mt-0.5 break-words text-xs text-stone-500">{reason.hint}</p>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -931,6 +935,84 @@ function Step3Done({
       </div>
     </>
   );
+}
+
+// Map raw error strings (server JSON.error fields, sharp / HEIC
+// failures, fetch crashes, generic HTTP statuses) to a friendly
+// summary + optional actionable hint. Falls back to the raw message
+// on anything unrecognized so the user still sees the original
+// detail. Pattern order matters — the first match wins, so the most
+// specific patterns sit on top.
+function prettifyError(raw: string | null | undefined): { summary: string; hint?: string } {
+  const message = (raw ?? "").trim();
+  if (!message) return { summary: "Upload failed (no detail returned by the server)." };
+
+  const lower = message.toLowerCase();
+
+  if (lower.includes("heic")) {
+    return {
+      summary: "Couldn't convert this iPhone HEIC photo.",
+      hint:
+        "Tip: on iPhone, Settings → Camera → Formats → Most Compatible saves new photos as JPEG.",
+    };
+  }
+  if (
+    lower.includes("413") ||
+    lower.includes("payload too large") ||
+    lower.includes("request entity too large")
+  ) {
+    return {
+      summary: "Photo is too large for the server.",
+      hint: "Limit is around 10 MB per photo. Try shrinking it or shooting at lower resolution.",
+    };
+  }
+  if (lower.includes("missing or invalid category")) {
+    return {
+      summary: "Server rejected the upload — no usable category.",
+      hint: "Pick a real category instead of ✨ Auto, or turn on AI tagging so it can pick one.",
+    };
+  }
+  if (lower.includes("missing image") || lower.includes("no images attached")) {
+    return { summary: "The server didn't see an image attached. Try the photo again." };
+  }
+  if (lower.includes("max 50 photos")) {
+    return {
+      summary: "Too many photos in one batch.",
+      hint: "Split the upload into runs of 50 or fewer.",
+    };
+  }
+  if (lower.includes("unauthorized") || lower.includes("http 401")) {
+    return {
+      summary: "Your session timed out.",
+      hint: "Sign in again and tap ↻ Retry — the failed photos will pick up from here.",
+    };
+  }
+  if (lower.includes("vipsjpeg") || lower.includes("input file") || lower.includes("unsupported image")) {
+    return {
+      summary: "Image data is corrupt or in an unsupported format.",
+      hint: "Try a different photo or re-export the original.",
+    };
+  }
+  if (
+    lower.startsWith("http 5") ||
+    lower.includes("internal server error") ||
+    lower.includes("500")
+  ) {
+    return {
+      summary: "Server hiccup.",
+      hint: "Tap ↻ Retry — most 500s clear themselves on a second attempt.",
+    };
+  }
+  if (lower.includes("fetch") || lower.includes("network") || lower.includes("failed to fetch")) {
+    return {
+      summary: "Couldn't reach the server.",
+      hint: "Check your connection and tap ↻ Retry.",
+    };
+  }
+
+  // Unrecognized — show the raw message verbatim so the cause isn't
+  // lost. This is what we shipped before this helper existed.
+  return { summary: message };
 }
 
 function labelFor(state: Job["state"]): string {
