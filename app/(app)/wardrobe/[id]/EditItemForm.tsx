@@ -886,19 +886,20 @@ export default function EditItemForm({ item }: { item: Item }) {
             <input type="checkbox" checked={isFavorite} onChange={(e) => setIsFavorite(e.target.checked)} />
             Favorite
           </label>
-          {/* Backroom flag — hides this item from the default closet,
-              outfit builder, collection picker, and AI prompts.
-              Toggleable via the lock chip on each of those surfaces. */}
+          {/* Spicy flag — sends this item to the dedicated Spicy
+              page (🌶 in the closet header). Hard-excluded from the
+              main closet, outfit builder, collection picker, and AI
+              prompts. */}
           <label
             className="flex items-center gap-2 text-sm text-stone-700"
-            title="Hide from the default closet, outfits, collections, and AI prompts."
+            title="Move to the Spicy page; hide from the main closet, outfits, collections, and AI prompts."
           >
             <input
               type="checkbox"
               checked={isBackroom}
               onChange={(e) => setIsBackroom(e.target.checked)}
             />
-            🔒 Backroom
+            🌶 Spicy
           </label>
         </div>
 

@@ -11,7 +11,6 @@ import {
 } from "@/lib/uploads";
 import { runHiResBgRemovalBatch } from "@/lib/bgRemovalServer";
 import { describeItem, logActivity } from "@/lib/activity";
-import { backroomItemFilter, readBackroomParam } from "@/lib/backroom";
 
 // Hamming distance threshold for "looks similar." 0 = identical,
 // 64 = maximally different. ≤ 10 (about 16% bit difference) catches
@@ -32,10 +31,6 @@ export async function GET(req: NextRequest) {
   const fav = searchParams.get("fav") === "1";
   const search = searchParams.get("q")?.trim();
   const status = searchParams.get("status") || undefined;
-  const includeBackroom = readBackroomParam(searchParams.get("backroom") ?? undefined);
-  // ?backroom=only is the dedicated /wardrobe/backroom page — show
-  // ONLY backroom items, ignoring the default-hide.
-  const onlyBackroom = searchParams.get("backroom") === "only";
 
   const items = await prisma.item.findMany({
     where: {
@@ -44,7 +39,10 @@ export async function GET(req: NextRequest) {
       // authenticated caller, which broke the documented "profiles
       // are separate" model.
       ownerId: userId,
-      ...(onlyBackroom ? { isBackroom: true } : backroomItemFilter(includeBackroom)),
+      // Spicy items (isBackroom) live in their own page and are never
+      // mixed into this endpoint's responses. The dedicated
+      // /wardrobe/backroom page queries Prisma directly.
+      isBackroom: false,
       ...(category ? { category } : {}),
       ...(fav ? { isFavorite: true } : {}),
       ...(status ? { status } : {}),

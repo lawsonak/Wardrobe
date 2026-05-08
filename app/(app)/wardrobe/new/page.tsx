@@ -20,13 +20,13 @@ export default async function NewItemPage({
       <div className="space-y-3">
         <div>
           <h1 className="font-display text-3xl text-blush-700">
-            {batch ? "Quick add" : defaultBackroom ? "🔒 Add to Backroom" : "Add a piece"}
+            {batch ? "Quick add" : defaultBackroom ? "🌶 Add to Spicy" : "Add a piece"}
           </h1>
           <p className="text-sm text-stone-500">
             {batch
               ? "Snap, save, repeat — the camera reopens for the next piece."
               : defaultBackroom
-                ? "This piece will be hidden from the default closet, outfit builder, and AI prompts."
+                ? "This piece will live in the Spicy page only — hidden from the main closet, outfit builder, and AI prompts."
                 : "Snap a photo and tag it however you like."}
           </p>
         </div>
