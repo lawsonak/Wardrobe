@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
-import { CATEGORIES, ITEM_STATUSES, listToCsv } from "@/lib/constants";
+import { ITEM_STATUSES, isKnownCategory, listToCsv } from "@/lib/constants";
 import { brandKey } from "@/lib/brand";
 import { describeItem, logActivity } from "@/lib/activity";
 
@@ -75,7 +75,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (Array.isArray(body.seasons)) data.seasons = listToCsv(body.seasons.map(String));
   if (Array.isArray(body.activities)) data.activities = listToCsv(body.activities.map(String));
   if (typeof body.category === "string") {
-    if (!CATEGORIES.includes(body.category as (typeof CATEGORIES)[number])) {
+    // Accept main + spicy categories. Item.category is a free string.
+    if (!isKnownCategory(body.category)) {
       return NextResponse.json({ error: "Invalid category" }, { status: 400 });
     }
     data.category = body.category;

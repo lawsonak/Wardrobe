@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { SUBTYPES_BY_CATEGORY, type Category } from "@/lib/constants";
+import { SUBTYPES_BY_CATEGORY } from "@/lib/constants";
+
+// `category` is typed as `string` (not `Category`) so spicy items —
+// whose category comes from SPICY_CATEGORIES — can pass through too.
+// Unknown / spicy categories fall back to an empty preset list and
+// the user free-types via the "Other…" chip.
 import { cn } from "@/lib/cn";
 
 // Tap a chip to set the subType. "Other…" reveals a free-type input so the
@@ -12,11 +17,11 @@ export default function SubtypePicker({
   value,
   onChange,
 }: {
-  category: Category;
+  category: string;
   value: string;
   onChange: (next: string) => void;
 }) {
-  const presets = SUBTYPES_BY_CATEGORY[category] ?? [];
+  const presets = (SUBTYPES_BY_CATEGORY as Record<string, string[]>)[category] ?? [];
   const isPreset = !!value && presets.some((p) => p.toLowerCase() === value.toLowerCase());
   const [showCustom, setShowCustom] = useState<boolean>(!isPreset && !!value);
 

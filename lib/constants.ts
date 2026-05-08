@@ -17,6 +17,36 @@ export const CATEGORIES = [
 
 export type Category = (typeof CATEGORIES)[number];
 
+// Vocabulary for `isBackroom = true` (🌶) items. Disjoint from the
+// main 14 — these categories make sense only behind the spicy door
+// and never surface in the main closet's filters. Item.category is a
+// free-form string so the schema is unchanged; validation is the
+// union of CATEGORIES + SPICY_CATEGORIES, accepted only when the
+// item carries the isBackroom flag.
+export const SPICY_CATEGORIES = [
+  "Lingerie",
+  "Lingerie Set",
+  "Bodysuit",
+  "Teddy",
+  "Robe",
+  "Sleepwear",
+  "Costume",
+  "Stockings",
+  "Toys",
+  "Other",
+] as const;
+
+export type SpicyCategory = (typeof SPICY_CATEGORIES)[number];
+
+/** Returns true when `value` is a recognized category in either
+ *  vocabulary. Used by POST/PATCH validators that accept both. */
+export function isKnownCategory(value: string): boolean {
+  return (
+    (CATEGORIES as readonly string[]).includes(value) ||
+    (SPICY_CATEGORIES as readonly string[]).includes(value)
+  );
+}
+
 export const SUBTYPES_BY_CATEGORY: Record<Category, string[]> = {
   Tops: [
     "T-shirt",

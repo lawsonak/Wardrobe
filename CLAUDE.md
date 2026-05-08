@@ -69,6 +69,7 @@ Other conventions:
 ## Vocabulary (`lib/constants.ts`)
 
 - **14 categories**: Tops, Bottoms, Dresses, Outerwear, Shoes, Accessories, Activewear, Loungewear, Bags, Jewelry, Bras, Underwear, Swimwear, Socks & Hosiery
+- **10 spicy categories** (`isBackroom = true` only, separate vocabulary): Lingerie, Lingerie Set, Bodysuit, Teddy, Robe, Sleepwear, Costume, Stockings, Toys, Other. Live in `lib/constants.ts` as `SPICY_CATEGORIES`. POST/PATCH validators accept the union via `isKnownCategory(value)`. The `/wardrobe/backroom` page has its own search + chip filters operating on this list — the main closet page never references it.
 - **8 activities (enum)**: casual, work, date, workout, beach, formal, travel, lounge
 - **4 seasons**: spring, summer, fall, winter
 - **34-color palette** (33 named + a `multi` gradient sentinel) with hex codes, grouped by visual family. Edit in `lib/constants.ts` — `COLOR_NAMES` is derived from it and feeds the AI tagger's enum, so the two never drift.

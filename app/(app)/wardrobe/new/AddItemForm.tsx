@@ -6,6 +6,7 @@ import {
   CATEGORIES,
   SEASONS,
   ACTIVITIES,
+  SPICY_CATEGORIES,
   type Category,
 } from "@/lib/constants";
 import TagChips from "@/components/TagChips";
@@ -56,7 +57,7 @@ export default function AddItemForm({
   // unavailable, the label still uploads as-is.
   const [labelBgRemoved, setLabelBgRemoved] = useState<Blob | null>(null);
 
-  const [category, setCategory] = useState<Category>("Tops");
+  const [category, setCategory] = useState<string>(defaultBackroom ? "Lingerie" : "Tops");
   const [subType, setSubType] = useState("");
   const [color, setColor] = useState<string | null>(null);
   const [brand, setBrand] = useState("");
@@ -640,9 +641,13 @@ export default function AddItemForm({
           <select
             className="input"
             value={category}
-            onChange={(e) => { setCategory(e.target.value as Category); setSubType(""); }}
+            onChange={(e) => { setCategory(e.target.value); setSubType(""); }}
           >
-            {CATEGORIES.map((c) => (
+            {/* Spicy items pick from a separate vocabulary
+                (Lingerie / Costume / Toys / …); regular items get the
+                main 14. The schema field is the same free string so
+                the server-side validator accepts either list. */}
+            {(isBackroom ? SPICY_CATEGORIES : CATEGORIES).map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
@@ -724,7 +729,19 @@ export default function AddItemForm({
           <input
             type="checkbox"
             checked={isBackroom}
-            onChange={(e) => setIsBackroom(e.target.checked)}
+            onChange={(e) => {
+              const next = e.target.checked;
+              setIsBackroom(next);
+              // Toggling buckets switches the category vocabulary.
+              // If the current pick isn't in the new list, snap to
+              // the first option so the dropdown's selection lines
+              // up with what's actually selectable.
+              const list: readonly string[] = next ? SPICY_CATEGORIES : CATEGORIES;
+              if (!list.includes(category)) {
+                setCategory(list[0]);
+                setSubType("");
+              }
+            }}
           />
           🌶
         </label>

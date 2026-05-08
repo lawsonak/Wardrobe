@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { FIT_FIELDS } from "@/lib/fitDetails";
-import type { Category } from "@/lib/constants";
 
+// `category` is `string` (not `Category`) so spicy items can pass
+// through. Unknown categories return no fit fields and the editor
+// just shows the free-form notes textarea.
 export default function FitDetailsEditor({
   category,
   values,
@@ -12,7 +14,7 @@ export default function FitDetailsEditor({
   onNotesChange,
   defaultOpen = false,
 }: {
-  category: Category;
+  category: string;
   values: Record<string, string>;
   onChange: (next: Record<string, string>) => void;
   notes: string;
@@ -20,7 +22,7 @@ export default function FitDetailsEditor({
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  const fields = FIT_FIELDS[category] ?? [];
+  const fields = (FIT_FIELDS as Record<string, typeof FIT_FIELDS[keyof typeof FIT_FIELDS]>)[category] ?? [];
   const filledCount = Object.values(values).filter((v) => v && v.trim()).length;
 
   return (
