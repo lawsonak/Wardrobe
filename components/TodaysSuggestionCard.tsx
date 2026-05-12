@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import ProgressBar from "@/components/ProgressBar";
 import { useTimedProgress } from "@/lib/progress";
+import { CATEGORIES } from "@/lib/constants";
 import type { SavedSuggestion } from "@/lib/todaysSuggestion";
 
 // "Today's suggestion" — a single AI-picked product the user might
@@ -18,6 +19,12 @@ export default function TodaysSuggestionCard({
   const [saved, setSaved] = useState<SavedSuggestion | null>(initialSaved);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Optional constraints — both default empty so the original
+  // open-ended "Suggest a piece" tap behaves the same way it did
+  // before. When either is set, the server prompt pins the
+  // suggestion to that category / phrase.
+  const [category, setCategory] = useState<string>("");
+  const [query, setQuery] = useState<string>("");
   // Same stall-detection pattern as TodaysOutfitCard: surface a
   // Cancel option after 35s so a wedged request isn't a dead end.
   const [stillWaiting, setStillWaiting] = useState(false);
@@ -52,7 +59,13 @@ export default function TodaysSuggestionCard({
       const res = await fetch("/api/ai/style-suggestion", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ again }),
+        body: JSON.stringify({
+          again,
+          // Send only when filled so the server's "no constraints"
+          // codepath stays clean for the empty-inputs case.
+          category: category || undefined,
+          query: query.trim() || undefined,
+        }),
         signal: controller.signal,
       });
       const data = await res.json().catch(() => ({}));
@@ -109,6 +122,22 @@ export default function TodaysSuggestionCard({
           </button>
         )}
       </div>
+
+      {/* Optional constraints — visible in all states so a user can
+          tweak between "Try another" taps. Leave both blank for the
+          open-ended pick. Hidden while a request is in flight to
+          discourage editing mid-fetch. */}
+      {!busy && (
+        <div className="mt-3">
+          <ConstraintInputs
+            category={category}
+            setCategory={setCategory}
+            query={query}
+            setQuery={setQuery}
+            busy={busy}
+          />
+        </div>
+      )}
 
       {!saved && busy && (
         <div className="mt-3 space-y-2">
@@ -174,5 +203,49 @@ export default function TodaysSuggestionCard({
 
       {error && <p className="mt-3 text-xs text-blush-700">{error}</p>}
     </section>
+  );
+}
+
+// Tiny inline form for the optional category + free-text constraints.
+// Both inputs are unrequired — submitting with both empty produces
+// the same open-ended suggestion as before.
+function ConstraintInputs({
+  category,
+  setCategory,
+  query,
+  setQuery,
+  busy,
+}: {
+  category: string;
+  setCategory: (v: string) => void;
+  query: string;
+  setQuery: (v: string) => void;
+  busy: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <select
+        value={category}
+        onChange={(e) => setCategory(e.target.value)}
+        disabled={busy}
+        className="input w-auto text-xs sm:flex-shrink-0"
+        aria-label="Category (optional)"
+      >
+        <option value="">Any category</option>
+        {CATEGORIES.map((c) => (
+          <option key={c} value={c}>{c}</option>
+        ))}
+      </select>
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        disabled={busy}
+        placeholder="Looking for something specific? (optional)"
+        className="input flex-1 text-xs"
+        aria-label="What you're looking for (optional)"
+        maxLength={200}
+      />
+    </div>
   );
 }
