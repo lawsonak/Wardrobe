@@ -39,7 +39,7 @@ export type StyleSuggestionResult =
 
 export async function suggestProductForCloset(
   summary: ClosetSummary,
-  options?: { again?: boolean },
+  options?: { again?: boolean; category?: string | null; query?: string | null },
 ): Promise<StyleSuggestionResult> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) {
@@ -57,6 +57,20 @@ export async function suggestProductForCloset(
     };
   }
 
+  // Optional user constraints. The card lets the user pin a category
+  // (e.g. "Shoes") and/or type free-form ("white linen blazer") to
+  // narrow the suggestion. Both are optional — when neither is set
+  // the model picks any category that fits the closet's gaps.
+  const userCategory = options?.category?.trim() || null;
+  const userQuery = options?.query?.trim().slice(0, 200) || null;
+  const constraintLines: string[] = [];
+  if (userCategory) {
+    constraintLines.push(`The user wants something in the "${userCategory}" category — return a product in that category only.`);
+  }
+  if (userQuery) {
+    constraintLines.push(`The user is specifically looking for: "${userQuery}". The product MUST match this description.`);
+  }
+
   const prompt = [
     "You're a stylist suggesting ONE specific product for a personal closet.",
     "Closet snapshot:",
@@ -64,7 +78,10 @@ export async function suggestProductForCloset(
     options?.again
       ? "The user asked for a different option than the last suggestion — pick a clearly different product (different brand or category if reasonable)."
       : "",
-    "Search the web for a real product on a real retailer that fits this person's taste — something they'd genuinely love to add. Don't suggest something obviously redundant with what they already own.",
+    ...constraintLines,
+    constraintLines.length > 0
+      ? "Honour the user's request above first; then use the closet snapshot to inform style / colour / price tier."
+      : "Search the web for a real product on a real retailer that fits this person's taste — something they'd genuinely love to add. Don't suggest something obviously redundant with what they already own.",
     "Match the closet's apparent price tier (designer ↔ designer, mid-tier ↔ mid-tier, etc.) and color/style language.",
     "Return ONE JSON object (no prose, no markdown fences):",
     "{",
