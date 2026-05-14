@@ -386,6 +386,8 @@ export default function EditItemForm({ item }: { item: Item }) {
           seasons,
           activities,
           existingNotes: notes || undefined,
+          // Drives the cosmetic-aware describe prompt server-side.
+          isBeauty,
         }),
       );
 

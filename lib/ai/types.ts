@@ -77,6 +77,10 @@ export interface TagProvider {
       seasons: string[];
       activities: string[];
       existingNotes: string;
+      /** When true (or when `category` is a known beauty category)
+       *  the prompt swaps to a cosmetic-aware variant — texture,
+       *  finish, intended use — instead of cut / drape / pairing. */
+      isBeauty: boolean;
     }>;
   }): Promise<NotesResult>;
   /** Pick items from a closet for a free-text occasion. Returns a list of

@@ -262,6 +262,10 @@ export default function AddItemForm({
           seasons,
           activities,
           existingNotes: notes || undefined,
+          // Drives the cosmetic-aware describe prompt server-side so
+          // the model stops complaining "this isn't clothing" on a
+          // mascara / foundation / etc.
+          isBeauty,
         }),
       );
 

@@ -437,13 +437,35 @@ function makeGemini(): TagProvider {
         if (context?.seasons?.length) known.push(`seasons=${context.seasons.join(", ")}`);
         if (context?.activities?.length) known.push(`activities=${context.activities.join(", ")}`);
 
-        const prompt =
-          `Write 1-3 short, specific sentences describing this clothing item for a personal ` +
-          `wardrobe app's notes field. Cover the visual style (cut, drape, length, neckline, ` +
-          `silhouette, fabric feel) and what occasions it suits or what pieces pair well with it. ` +
-          `Be concrete and useful — not flowery. Avoid restating the obvious facts already known: ` +
-          `${known.join(", ") || "(no other tags yet)"}.` +
-          (context?.existingNotes ? ` Existing notes already say: "${context.existingNotes.slice(0, 200)}". Don't duplicate, complement.` : "");
+        // Beauty items get a cosmetic-aware prompt. Treat as beauty
+        // when the caller flags it explicitly OR the category is a
+        // known beauty category — belt-and-braces so a caller that
+        // forgot to set isBeauty still gets the right prompt as long
+        // as the category came across.
+        const isBeauty =
+          context?.isBeauty === true ||
+          (typeof context?.category === "string" &&
+            (ALLOWED_BEAUTY_CATEGORIES as readonly string[]).includes(context.category));
+
+        const prompt = isBeauty
+          ? `Write 1-3 short, specific sentences describing this beauty / cosmetic product for a ` +
+            `personal wardrobe app's notes field. Cover the texture or formula (cream, liquid, ` +
+            `powder, balm), finish (matte, satin, gloss, shimmer, metallic), intended use or who ` +
+            `it suits, and any standout feature on the packaging (volumizing, long-wear, SPF, ` +
+            `vitamin-enriched, etc.). Don't describe clothing, cut, drape, or pairings — this ` +
+            `isn't apparel. Be concrete and useful. Avoid restating the obvious facts already ` +
+            `known: ${known.join(", ") || "(no other tags yet)"}.` +
+            (context?.existingNotes
+              ? ` Existing notes already say: "${context.existingNotes.slice(0, 200)}". Don't duplicate, complement.`
+              : "")
+          : `Write 1-3 short, specific sentences describing this clothing item for a personal ` +
+            `wardrobe app's notes field. Cover the visual style (cut, drape, length, neckline, ` +
+            `silhouette, fabric feel) and what occasions it suits or what pieces pair well with it. ` +
+            `Be concrete and useful — not flowery. Avoid restating the obvious facts already known: ` +
+            `${known.join(", ") || "(no other tags yet)"}.` +
+            (context?.existingNotes
+              ? ` Existing notes already say: "${context.existingNotes.slice(0, 200)}". Don't duplicate, complement.`
+              : "");
 
         const parts: Array<Record<string, unknown>> = [
           { text: prompt },

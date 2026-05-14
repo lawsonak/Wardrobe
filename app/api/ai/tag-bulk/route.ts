@@ -239,6 +239,10 @@ async function runBatch(
               seasons: csvToList(item.seasons),
               activities: csvToList(item.activities),
               existingNotes: item.notes || undefined,
+              // Swap to the cosmetic-aware prompt for beauty items so
+              // the model writes about texture / finish / use instead
+              // of cut / drape.
+              isBeauty: item.isBeauty,
             },
           });
           if (notesRes.notes && notesRes.notes.trim()) notesContext = notesRes.notes.trim();
