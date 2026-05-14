@@ -177,6 +177,15 @@ export default function BulkUpload() {
       if (cancelRef.current) break;
       let working = original;
 
+      // Clear any leftover error string from a previous failed attempt
+      // so the mid-flight label (e.g. "Processing HEIC…") doesn't
+      // render with a stale "— Load failed" suffix while the retry
+      // runs. The error gets re-set below if this attempt also fails.
+      if (working.error) {
+        update(working.id, { error: undefined });
+        working = { ...working, error: undefined };
+      }
+
       // HEIC → JPEG, then EXIF orientation → physical pixels. Done per
       // file (rather than batch up front) so progress reflects work
       // actually completing, not a long invisible preprocessing phase.
@@ -236,7 +245,9 @@ export default function BulkUpload() {
         const data = (await res.json()) as { created: Array<{ id: string; imagePath: string }> };
         const created = data.created?.[0];
         if (!created) throw new Error("Server returned no created item");
-        update(working.id, { itemId: created.id, state: "uploaded" });
+        // Clear any leftover `error` from a previous failed attempt
+        // so a successful retry doesn't render "Saved — Load failed".
+        update(working.id, { itemId: created.id, state: "uploaded", error: undefined });
       } catch (err) {
         console.error(err);
         const message = err instanceof Error ? err.message : "Upload failed";
