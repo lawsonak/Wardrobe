@@ -16,6 +16,15 @@ export type TagSuggestion = {
   material?: string;
   careNotes?: string;
   notes?: string;
+  // Beauty-only fields (filled when the photo is a cosmetic / skincare /
+  // fragrance / tool). Coexist with category (which may be a
+  // BEAUTY_CATEGORIES string when the model detects a beauty item).
+  // All optional — the model leaves them null when it isn't a beauty
+  // item or it can't read the shade.
+  shadeName?: string;
+  shadeHex?: string;
+  finish?: string;
+  isBeauty?: boolean;
   // 0–1, optional. Lets the UI badge low-confidence picks.
   confidence?: number;
 };

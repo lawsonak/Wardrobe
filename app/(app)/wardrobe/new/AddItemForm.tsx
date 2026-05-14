@@ -9,7 +9,6 @@ import {
   SPICY_CATEGORIES,
   BEAUTY_CATEGORIES,
   BEAUTY_CATEGORY_GROUPS,
-  type Category,
 } from "@/lib/constants";
 import TagChips from "@/components/TagChips";
 import ColorSwatch from "@/components/ColorSwatch";
@@ -273,7 +272,7 @@ export default function AddItemForm({
           disabledMessage = data.message ?? "AI is disabled.";
         } else {
           const s = (data?.suggestions ?? {}) as {
-            category?: Category;
+            category?: string;
             subType?: string;
             color?: string;
             brand?: string;
@@ -283,6 +282,14 @@ export default function AddItemForm({
             material?: string;
             careNotes?: string;
             notes?: string;
+            // Beauty-only fields. Filled when the model returns
+            // isBeauty=true (or when the category is one of
+            // BEAUTY_CATEGORIES — we also infer from category for
+            // belt-and-braces).
+            shadeName?: string;
+            shadeHex?: string;
+            finish?: string;
+            isBeauty?: boolean;
           };
           const debug = data?.debug as { error?: string; rawText?: string } | undefined;
           usedLabel = data?.hasLabel === true;
@@ -290,14 +297,38 @@ export default function AddItemForm({
           tagRawText = debug?.rawText;
           suggestionKeyCount = Object.keys(s).length;
 
-          if (s.category && CATEGORIES.includes(s.category) && s.category !== category) {
-            setCategory(s.category);
+          // Treat the suggestion as a beauty item when the model said
+          // so explicitly, or when the suggested category lives in the
+          // beauty vocabulary. Belt-and-braces — older prompt versions
+          // might omit `isBeauty` even with a beauty category.
+          const looksBeauty =
+            s.isBeauty === true ||
+            (typeof s.category === "string" &&
+              (BEAUTY_CATEGORIES as readonly string[]).includes(s.category));
+
+          const validCategory =
+            s.category &&
+            ((CATEGORIES as readonly string[]).includes(s.category) ||
+              (BEAUTY_CATEGORIES as readonly string[]).includes(s.category));
+          if (validCategory && s.category !== category) {
+            setCategory(s.category!);
+            applied++;
+          }
+          if (looksBeauty && !isBeauty) {
+            setIsBeauty(true);
             applied++;
           }
           if (s.subType && !subType) { setSubType(s.subType); applied++; }
           if (s.color && !color) { setColor(s.color); applied++; }
           if (s.brand && !brand) { setBrand(s.brand); setBrandId(null); applied++; }
           if (s.size && !size) { setSize(s.size); applied++; }
+          if (s.shadeName && !shadeName) { setShadeName(s.shadeName); applied++; }
+          if (s.shadeHex && !shadeHex) {
+            const hex = s.shadeHex.startsWith("#") ? s.shadeHex : `#${s.shadeHex}`;
+            setShadeHex(hex);
+            applied++;
+          }
+          if (s.finish && !finish) { setFinish(s.finish); applied++; }
           if (s.seasons && seasons.length === 0) {
             const valid = s.seasons.filter((x) => SEASONS.includes(x as never));
             if (valid.length > 0) { setSeasons(valid); applied++; }

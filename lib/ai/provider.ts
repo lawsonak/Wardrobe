@@ -54,6 +54,34 @@ const ALLOWED_CATEGORIES = [
   "Tops","Bottoms","Dresses","Outerwear","Shoes","Accessories","Activewear",
   "Loungewear","Bags","Jewelry","Bras","Underwear","Swimwear","Socks & Hosiery",
 ] as const;
+
+// Beauty vocabulary — the structured tagger can return one of these
+// when the photo is a cosmetic / skincare / tool / fragrance. Same
+// list as BEAUTY_CATEGORIES in lib/constants.ts; duplicated as a
+// const literal here so the schema's enum is statically typed.
+const ALLOWED_BEAUTY_CATEGORIES = [
+  // Lips
+  "Lipstick","Lip Gloss","Lip Liner",
+  // Eyes
+  "Mascara","Eyeliner","Eyeshadow","Brow",
+  // Face
+  "Foundation","Concealer","Powder","Blush","Bronzer","Highlighter","Primer","Setting Spray",
+  // Skincare
+  "Cleanser","Toner","Serum","Moisturizer","SPF","Eye Cream","Mask","Treatment",
+  // Tools
+  "Brushes","Sponges","Eyelash Curler","Other Tool",
+  // Fragrance
+  "Perfume","Cologne","Body Spray",
+] as const;
+
+// Union enum the structured tagger commits to. Clothing items pick
+// from the first 14; beauty items pick from the next ~30. The model
+// also returns isBeauty=true when it lands in the beauty half so
+// the route can flip the right flag.
+const ALLOWED_TAG_CATEGORIES = [
+  ...ALLOWED_CATEGORIES,
+  ...ALLOWED_BEAUTY_CATEGORIES,
+] as const;
 // Derived from the swatch palette in lib/constants.ts so the AI's
 // enum can never drift from what the UI actually shows.
 const ALLOWED_COLORS = COLOR_NAMES;
@@ -63,10 +91,14 @@ const ALLOWED_ACTIVITIES = [
 ] as const;
 
 // Force-feed Gemini a structured response schema so it can't free-form.
+// `category` enum is the union of clothing + beauty vocabularies so a
+// single tag call can identify either kind of item from the photo;
+// the route flips Item.isBeauty based on the returned category +
+// isBeauty bool.
 const RESPONSE_SCHEMA = {
   type: "OBJECT",
   properties: {
-    category: { type: "STRING", enum: [...ALLOWED_CATEGORIES] },
+    category: { type: "STRING", enum: [...ALLOWED_TAG_CATEGORIES] },
     subType: { type: "STRING" },
     color: { type: "STRING", enum: [...ALLOWED_COLORS] },
     brand: { type: "STRING" },
@@ -76,6 +108,13 @@ const RESPONSE_SCHEMA = {
     material: { type: "STRING" },
     careNotes: { type: "STRING" },
     notes: { type: "STRING" },
+    // Beauty-only fields. Filled when the photo is a cosmetic /
+    // skincare / fragrance / tool. The model leaves them null when
+    // it's a clothing item, OR when it can't read the shade.
+    shadeName: { type: "STRING" },
+    shadeHex: { type: "STRING" },
+    finish: { type: "STRING" },
+    isBeauty: { type: "BOOLEAN" },
     confidence: { type: "NUMBER" },
   },
   // category + color must be present in the response. Without this,
@@ -182,19 +221,37 @@ function makeGemini(): TagProvider {
           ` Commit to the CLOSEST enum value whenever the photo OR the description gives clear evidence — null is reserved for truly unreadable images, not "I'm not 100% sure". ` +
           `If you find yourself debating between two enum values, pick the one a thoughtful human stylist would call it.`;
 
+        // Beauty cases. The category enum carries both clothing
+        // (14 values) and beauty (~30 values) entries, so the model
+        // can self-classify. When it picks a beauty category, also
+        // fill the beauty-only fields (shadeName / shadeHex /
+        // finish / isBeauty=true) and return seasons/activities as
+        // empty arrays — those don't apply to a lipstick. Color
+        // still snaps to the 34-swatch palette so the tile color-
+        // family filter keeps working.
+        const beautyHint =
+          ` If this is a beauty product (cosmetic, skincare, fragrance, or tool), pick a beauty category instead of a clothing one ` +
+          `(Lipstick / Mascara / Foundation / Cleanser / Brushes / Perfume / etc.) and set isBeauty=true. ` +
+          `When isBeauty=true: extract shadeName from the packaging (e.g. "Ruby Woo", "311", "Mont Blanc"); ` +
+          `extract shadeHex as a 6-character hex (#rrggbb) approximating the visible product swatch (NOT the packaging tube color); ` +
+          `read finish from packaging text ("matte", "satin", "gloss", "shimmer", "cream", etc.); ` +
+          `leave seasons / activities / material / careNotes as null/empty — they don't apply to cosmetics; ` +
+          `still snap color to the closest of the 34-swatch palette for the broad family. ` +
+          `When isBeauty=false (clothing): leave shadeName / shadeHex / finish as null.`;
+
         const prompt = labelBuf
-          ? `You are tagging a single piece of clothing or accessory in a personal wardrobe app. ` +
-            `You're given two images: the FIRST is the garment itself, the SECOND is a close-up of its brand/size/care label. ` +
-            `Read the label text carefully — extract brand, size (alpha or numeric, exactly as printed), material/composition, and care instructions. ` +
-            `Use the garment image for category, subType, color, seasons, activities. ` +
+          ? `You are tagging a single item in a personal wardrobe app. The item may be clothing/accessories OR a beauty product. ` +
+            `You're given two images: the FIRST is the item itself, the SECOND is a close-up of its brand / size / care / shade label. ` +
+            `Read the label text carefully — extract brand, size (alpha or numeric, exactly as printed), material/composition, care instructions for clothing; brand + shade name + finish for cosmetics. ` +
+            `Use the main image for category, subType, color, and visual signals. ` +
             `Use the enumerated values for category / color / seasons / activities — pick the CLOSEST match even if imperfect. ` +
             `Always return at least: category and color (snap to the nearest enum value — e.g. a dusty rose top is "mauve", a sage knit is "olive", a heather charcoal sweatshirt is "charcoal", a powder blue is "sky blue"). ` +
-            `Fill in as many other fields as you reasonably can.${commitRule}${activityHint}${brandHint}${notesLine}`
-          : `You are tagging a single piece of clothing or accessory in a personal wardrobe app. ` +
+            `Fill in as many other fields as you reasonably can.${commitRule}${activityHint}${beautyHint}${brandHint}${notesLine}`
+          : `You are tagging a single item in a personal wardrobe app. The item may be clothing/accessories OR a beauty product. ` +
             `Look at the image and fill in as many fields of the response schema as you can. ` +
             `Use the enumerated values for category / color / seasons / activities — pick the CLOSEST match even if imperfect. ` +
             `Always return at least: category and color (snap to the nearest enum value — e.g. a dusty rose top is "mauve", a sage knit is "olive", a heather charcoal sweatshirt is "charcoal", a powder blue is "sky blue"). ` +
-            `Fill in as many other fields as you reasonably can.${commitRule}${activityHint}${brandHint}${notesLine}`;
+            `Fill in as many other fields as you reasonably can.${commitRule}${activityHint}${beautyHint}${brandHint}${notesLine}`;
 
         const parts: Array<Record<string, unknown>> = [
           { text: prompt },
@@ -898,6 +955,25 @@ function sanitizeSuggestion(raw: unknown): import("./types").TagSuggestion {
   if (typeof r.material === "string" && r.material.trim()) out.material = r.material.slice(0, 120);
   if (typeof r.careNotes === "string" && r.careNotes.trim()) out.careNotes = r.careNotes.slice(0, 240);
   if (typeof r.notes === "string" && r.notes.trim()) out.notes = r.notes.slice(0, 240);
+  // Beauty fields. Hex normalized to lowercase #rrggbb to match the
+  // route validator; bogus values drop to undefined so the route
+  // doesn't store garbage. isBeauty is mirrored from the model; the
+  // route also infers it from the returned category as a fallback
+  // (some models forget the bool when the category itself is a dead
+  // giveaway).
+  if (typeof r.shadeName === "string" && r.shadeName.trim()) {
+    out.shadeName = r.shadeName.trim().slice(0, 80);
+  }
+  if (typeof r.shadeHex === "string") {
+    const hex = r.shadeHex.trim();
+    if (/^#?[0-9a-fA-F]{6}$/.test(hex)) {
+      out.shadeHex = `#${hex.replace(/^#/, "").toLowerCase()}`;
+    }
+  }
+  if (typeof r.finish === "string" && r.finish.trim()) {
+    out.finish = r.finish.trim().slice(0, 60);
+  }
+  if (typeof r.isBeauty === "boolean") out.isBeauty = r.isBeauty;
   if (typeof r.confidence === "number") out.confidence = Math.max(0, Math.min(1, r.confidence));
   return out;
 }

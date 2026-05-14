@@ -5,7 +5,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { getProvider } from "@/lib/ai/provider";
 import { brandKey } from "@/lib/brand";
-import { CATEGORIES, csvToList, listToCsv, SEASONS, ACTIVITIES, type Category } from "@/lib/constants";
+import { CATEGORIES, BEAUTY_CATEGORIES, csvToList, listToCsv, SEASONS, ACTIVITIES, type Category } from "@/lib/constants";
 import { mergePending, parse as parsePending, serialize as serializePending, type PendingAiSuggestions } from "@/lib/pendingAi";
 import { logActivity } from "@/lib/activity";
 
@@ -263,11 +263,41 @@ async function runBatch(
       // pending review (so the user opens the item and approves /
       // rejects per row from the existing edit-page panel). If the
       // AI suggestion matches what's already there → skip silently.
-      if (s.category && CATEGORIES.includes(s.category as Category) && s.category !== item.category) {
+      const categoryValid =
+        s.category &&
+        (CATEGORIES.includes(s.category as Category) ||
+          BEAUTY_CATEGORIES.includes(s.category as never));
+      if (categoryValid && s.category !== item.category) {
         // Category was previously the only field that always
         // overwrote silently. Now subject to the same review flow.
         if (item.category) pending.category = s.category as Category;
         else data.category = s.category;
+      }
+      // Beauty flag + shade/finish trio. Mirror the clothing fields:
+      // empty current value → apply directly; differing current → stage
+      // pending for user review.
+      const looksBeauty =
+        s.isBeauty === true ||
+        (typeof s.category === "string" &&
+          BEAUTY_CATEGORIES.includes(s.category as never));
+      if (looksBeauty && !item.isBeauty) {
+        data.isBeauty = true;
+      }
+      if (s.shadeName && s.shadeName.trim() !== (item.shadeName ?? "").trim()) {
+        if (item.shadeName) pending.shadeName = s.shadeName;
+        else data.shadeName = s.shadeName;
+      }
+      if (s.shadeHex) {
+        const m = s.shadeHex.trim().match(/^#?([0-9a-f]{6})$/i);
+        const normalized = m ? `#${m[1].toLowerCase()}` : null;
+        if (normalized && normalized !== (item.shadeHex ?? "").toLowerCase()) {
+          if (item.shadeHex) pending.shadeHex = normalized;
+          else data.shadeHex = normalized;
+        }
+      }
+      if (s.finish && s.finish.trim() !== (item.finish ?? "").trim()) {
+        if (item.finish) pending.finish = s.finish;
+        else data.finish = s.finish;
       }
       if (s.subType && s.subType.trim() !== (item.subType ?? "").trim()) {
         if (item.subType) pending.subType = s.subType;
