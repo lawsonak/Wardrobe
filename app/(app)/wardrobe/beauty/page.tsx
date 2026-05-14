@@ -104,9 +104,17 @@ export default async function BeautyPage({
             kept separate from the main closet, outfit builder, and AI prompts.
           </p>
         </div>
-        <Link href="/wardrobe/new?beauty=1" className="btn-primary whitespace-nowrap">
-          + Add
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Looks live one click into the beauty page (no top-level
+              nav). The cosmetic equivalent of the outfit builder —
+              bundles of products you wear together. */}
+          <Link href="/looks" className="btn-secondary whitespace-nowrap text-xs">
+            Looks
+          </Link>
+          <Link href="/wardrobe/new?beauty=1" className="btn-primary whitespace-nowrap">
+            + Add
+          </Link>
+        </div>
       </div>
 
       {/* Plain text-search form — same shape as /wardrobe/backroom.
