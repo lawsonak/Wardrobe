@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import ProgressBar from "@/components/ProgressBar";
 import { useTimedProgress } from "@/lib/progress";
-import { CATEGORIES } from "@/lib/constants";
+import { CATEGORIES, BEAUTY_CATEGORY_GROUPS } from "@/lib/constants";
 import type { SavedSuggestion } from "@/lib/todaysSuggestion";
 
 // "Today's suggestion" — a single AI-picked product the user might
@@ -232,8 +232,25 @@ function ConstraintInputs({
         aria-label="Category (optional)"
       >
         <option value="">Any category</option>
-        {CATEGORIES.map((c) => (
-          <option key={c} value={c}>{c}</option>
+        {/* Clothing first — the dominant vocabulary. Wrapped in an
+            optgroup so it visually pairs with the beauty groups
+            below. */}
+        <optgroup label="Clothing">
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </optgroup>
+        {/* Beauty groups (Lips / Eyes / Face / Skincare / Tools /
+            Fragrance) — the suggestion API accepts any beauty
+            category and the Gemini grounded-search prompt will
+            surface a real cosmetic product when one of these is
+            picked. */}
+        {BEAUTY_CATEGORY_GROUPS.map((g) => (
+          <optgroup key={g.label} label={`💄 ${g.label}`}>
+            {g.categories.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </optgroup>
         ))}
       </select>
       <input
