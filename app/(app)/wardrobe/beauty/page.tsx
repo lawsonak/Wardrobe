@@ -114,13 +114,6 @@ export default async function BeautyPage({
           <Link href="/wardrobe/new?beauty=1" className="btn-primary whitespace-nowrap">
             + Add
           </Link>
-          <Link
-            href="/wardrobe/new/split?beauty=1"
-            className="btn-secondary whitespace-nowrap text-xs"
-            title="AI splits one shelf / drawer photo into separate beauty items"
-          >
-            ✂ Split
-          </Link>
         </div>
       </div>
 

@@ -198,13 +198,6 @@ export default async function WardrobePage({
           </Link>
           <Link href="/wardrobe/new" className="btn-primary">+ Add</Link>
           <Link href="/wardrobe/bulk" className="btn-secondary text-xs">Import</Link>
-          <Link
-            href="/wardrobe/new/split"
-            className="btn-secondary text-xs"
-            title="AI splits one photo of multiple items into separate closet entries"
-          >
-            ✂ Split
-          </Link>
         </div>
       </div>
 

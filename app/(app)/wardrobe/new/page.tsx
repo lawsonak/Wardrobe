@@ -56,6 +56,23 @@ export default async function NewItemPage({
           <Link href="/wardrobe/bulk" className="btn-secondary text-sm">
             🗂 Import from library (bulk)
           </Link>
+          {/* ✂ Split — one photo with multiple items in it. AI
+              detects each piece and saves them as separate items.
+              Forward the current bucket so a user adding from
+              /wardrobe/beauty lands in beauty-mode split, etc. */}
+          <Link
+            href={
+              defaultBeauty
+                ? "/wardrobe/new/split?beauty=1"
+                : defaultBackroom
+                  ? "/wardrobe/new/split?backroom=1"
+                  : "/wardrobe/new/split"
+            }
+            className="btn-secondary text-sm"
+            title="One photo with multiple items? AI splits it into separate closet entries."
+          >
+            ✂ Split a multi-item photo
+          </Link>
         </div>
       </div>
       <Suspense>

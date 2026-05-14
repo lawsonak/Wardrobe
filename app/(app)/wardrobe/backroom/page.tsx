@@ -84,16 +84,7 @@ export default async function BackroomPage({
               : `${items.length} of ${total}`} kept separate from the main closet, outfit builder, and AI prompts.
           </p>
         </div>
-        <div className="flex items-center gap-2 whitespace-nowrap">
-          <Link href="/wardrobe/new?backroom=1" className="btn-primary">+ Add</Link>
-          <Link
-            href="/wardrobe/new/split?backroom=1"
-            className="btn-secondary text-xs"
-            title="AI splits one photo of multiple items into separate closet entries"
-          >
-            ✂ Split
-          </Link>
-        </div>
+        <Link href="/wardrobe/new?backroom=1" className="btn-primary whitespace-nowrap">+ Add</Link>
       </div>
 
       {/* Plain text-search form — no AI parsing, just the same

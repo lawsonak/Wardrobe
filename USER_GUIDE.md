@@ -155,7 +155,7 @@ There are three intake paths.
 
 ### ✂ Split a multi-item photo
 
-`/wardrobe/new/split` (reached via the **✂ Split** button on the closet, Beauty, or Spicy headers)
+`/wardrobe/new/split` (reached via the **✂ Split a multi-item photo** option on the Add page, alongside Quick add and Bulk import)
 
 For when one photo has multiple items in it — a stack of clothing on a bed, a shopping-bag dump, a makeup-drawer shot, or a vanity shelf. AI detects each piece and lets you save them all in one pass.
 
