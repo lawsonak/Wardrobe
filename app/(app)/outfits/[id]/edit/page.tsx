@@ -36,6 +36,11 @@ export default async function EditOutfitPage({
     where: {
       ownerId: userId,
       status: "active",
+      // Beauty items aren't pickable from the outfit builder — they
+      // attach via a separate Look pairing (PR D). Hard-exclude here
+      // even when an existing OutfitItem somehow points at one (it
+      // shouldn't, but the guard keeps the picker clean).
+      isBeauty: false,
       OR: [
         ...(includeBackroom ? [{}] : [{ isBackroom: false }]),
         { id: { in: existingItemIds } },

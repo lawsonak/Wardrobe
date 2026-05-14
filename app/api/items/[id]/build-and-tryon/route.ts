@@ -75,7 +75,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // anchor itself is spicy we'd want spicy items in the prompt, but
   // that's a follow-up.
   const items = await prisma.item.findMany({
-    where: { ownerId: userId, status: "active", isBackroom: false },
+    where: { ownerId: userId, status: "active", isBackroom: false, isBeauty: false },
     orderBy: { createdAt: "desc" },
     take: 250,
   });

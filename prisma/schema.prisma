@@ -23,6 +23,7 @@ model User {
   notifications Notification[]
   itemSets      ItemSet[]
   activityLogs  ActivityLog[]
+  looks         Look[]
 }
 
 model Item {
@@ -87,6 +88,26 @@ model Item {
   // hidden by the same toggle via an EXISTS join — no separate
   // column on Outfit / Collection.
   isBackroom         Boolean  @default(false)
+  // "Beauty" flag — cosmetic / skincare / fragrance / tools.
+  // Mirrors the isBackroom hide pattern: when true, the item is
+  // hard-excluded from the main closet view, outfit builder,
+  // collection picker, and AI catalog. Lives instead on the
+  // dedicated /wardrobe/beauty page reachable via a 💄 icon in
+  // the closet header. Independent of isBackroom — a beauty item
+  // can also be Spicy.
+  isBeauty           Boolean  @default(false)
+  // Cosmetic shade name + optional hex visualization. Free-text
+  // because every brand names shades differently
+  // ("Ruby Woo", "Russian Red", "MAC 311"). Hex drives a small
+  // colored dot on the gallery tile so the user can scan-match
+  // visually.
+  shadeName          String?
+  shadeHex           String?
+  // Free-text finish (matte / satin / gloss / cream / shimmer /
+  // glitter / metallic / sheer …). Datalist suggestions are baked
+  // into the form, but the column accepts anything so brand-
+  // specific terms like "soft matte" survive.
+  finish             String?
   // Optional link to a "matching set" — e.g. a swimsuit's top + bottom
   // bought together. Items in a set still belong to the closet
   // independently and can be mixed and matched in any outfit.
@@ -98,9 +119,43 @@ model Item {
   outfitItems     OutfitItem[]
   collectionItems CollectionItem[]
   photos          ItemPhoto[]
+  lookItems       LookItem[]
 
   @@index([ownerId])
   @@index([ownerId, isBackroom])
+  @@index([ownerId, isBeauty])
+}
+
+// A "Look" — bundle of beauty items that go together as a routine
+// ("Everyday face", "Date night smoky", "Wedding glam"). Parallels
+// Outfit but for cosmetics; standalone or paired one-to-one with an
+// Outfit via Outfit.lookId.
+model Look {
+  id        String     @id @default(cuid())
+  ownerId   String
+  owner     User       @relation(fields: [ownerId], references: [id])
+  name      String
+  notes     String?
+  items     LookItem[]
+  outfits   Outfit[]   @relation("OutfitLook")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@index([ownerId])
+}
+
+model LookItem {
+  id      String @id @default(cuid())
+  lookId  String
+  look    Look   @relation(fields: [lookId], references: [id], onDelete: Cascade)
+  itemId  String
+  item    Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  // One of LOOK_SLOTS in lib/constants.ts (Lipstick, Mascara, Foundation, …).
+  // Free string so the schema doesn't gate adding a slot later.
+  slot    String
+
+  @@index([lookId])
+  @@index([itemId])
 }
 
 // A "matching set" of items that came together — like a swimsuit
@@ -174,6 +229,11 @@ model Outfit {
   // Detached from a collection = standalone outfit.
   collectionId String?
   collection   Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  // Optional one-to-one pairing with a saved makeup Look. Set on the
+  // Outfit Builder via a "Pair with a Look" picker; null when the
+  // outfit isn't tied to a specific face routine.
+  lookId       String?
+  look         Look?    @relation("OutfitLook", fields: [lookId], references: [id], onDelete: SetNull)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

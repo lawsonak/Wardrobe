@@ -53,6 +53,7 @@ export async function GET(req: NextRequest) {
       // be referenced in a generic "you might already own X"
       // popup.)
       isBackroom: false,
+      isBeauty: false,
       ...(category ? { category } : {}),
       OR: ors,
     },

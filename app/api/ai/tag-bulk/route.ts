@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
         // items here so they aren't auto-tagged through generic prompts
         // — the user can explicitly request auto-tag on Backroom items
         // via the per-item button or by passing their ids.
-        { ownerId: userId, status: "needs_review", isBackroom: false },
+        { ownerId: userId, status: "needs_review", isBackroom: false, isBeauty: false },
     orderBy: { createdAt: "asc" },
     take: limit,
   });

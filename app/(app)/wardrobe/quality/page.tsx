@@ -25,7 +25,7 @@ export default async function MetadataQualityPage() {
       // the metadata-completeness counts stay focused on the user's
       // visible closet. The dedicated /wardrobe/backroom page is
       // where intimate items are managed.
-      where: { ownerId: userId, isBackroom: false },
+      where: { ownerId: userId, isBackroom: false, isBeauty: false },
       orderBy: { createdAt: "desc" },
     }),
     prisma.brand.findMany({ where: { ownerId: userId }, orderBy: { name: "asc" } }),

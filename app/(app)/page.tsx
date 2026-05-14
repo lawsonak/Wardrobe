@@ -30,7 +30,7 @@ export default async function Dashboard() {
   const [recent, outfitCount, itemCount, favoriteCount, needsReviewCount, wishlistCount] =
     await Promise.all([
       prisma.item.findMany({
-        where: { ownerId: userId, status: "active", isBackroom: false },
+        where: { ownerId: userId, status: "active", isBackroom: false, isBeauty: false },
         orderBy: { createdAt: "desc" },
         take: 8,
       }),
@@ -119,6 +119,7 @@ export default async function Dashboard() {
     WHERE ownerId = ${userId}
       AND status = 'active'
       AND isBackroom = 0
+      AND isBeauty = 0
       AND strftime('%m-%d', createdAt) = ${todayMD}
       AND CAST(strftime('%Y', createdAt) AS INTEGER) < ${currentYear}
     ORDER BY createdAt DESC

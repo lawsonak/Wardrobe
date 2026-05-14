@@ -69,6 +69,9 @@ export async function POST(req: NextRequest) {
       ownerId: userId,
       status: "active",
       ...(includeBackroom ? {} : { isBackroom: false }),
+      // Beauty items don't go into AI packing lists — they live in
+      // their own page and follow a different lifecycle.
+      isBeauty: false,
     },
     orderBy: { createdAt: "desc" },
     take: 250,

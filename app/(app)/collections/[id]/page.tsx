@@ -34,6 +34,9 @@ export default async function CollectionDetailPage({
   const items = await prisma.item.findMany({
     where: {
       ownerId: userId,
+      // Beauty items don't pack into trips. PR D will revisit if we
+      // want to surface a "Looks for this trip" companion picker.
+      isBeauty: false,
       OR: [
         ...(includeBackroom ? [{}] : [{ isBackroom: false }]),
         { id: { in: existingItemIds } },
