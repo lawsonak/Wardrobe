@@ -92,6 +92,7 @@ The closet's tagged `activities` field is restricted to the enum, but Collection
 | `buildPackingList` | `/api/ai/packing-list` | Curate a trip packing list, **honors `targets: Record<Category, number>`** |
 | `suggestActivities` | `/api/ai/suggest-activities` | Propose 4–8 trip activities from destination + dates |
 | `parseSearch` | `/api/ai/search` | Parse natural-language closet search into structured filters |
+| `detectMultipleItems` | `/api/ai/detect-items` | Take a single flat-lay photo, return one bounding-box-and-suggestion entry per detected item (clothing OR beauty — the category enum is the union). Drives the "✂ Split photo" picker on `/wardrobe/new/split`. Built on Gemini 2.5 Pro's structured-output detection — `box_2d: [ymin, xmin, ymax, xmax]` in 0–1000 normalized coords. Prompt explicitly returns `items: []` on outfit-on-body photos because per-garment crops there end up half-skin. |
 
 **Other AI-adjacent routes** (not on the provider interface):
 - `/api/ai/rotate-label` — auto-rotates label photos on upload
@@ -172,6 +173,7 @@ The route uses the inflight-lock pattern; pass 3 runs after the cheap shrinks so
 | Mannequin generator (global default) | `scripts/generate-mannequin.mjs` |
 | Upload helpers (saveUpload, saveUploadWithOriginal, saveBuffer, unlinkUpload, **listUserFiles** — recursive walker for storage / cleanup-orphans) | `lib/uploads.ts` |
 | Bulk upload wizard (3-step: Choose / Process / Done with retry + friendly errors) | `app/(app)/wardrobe/bulk/BulkUpload.tsx`, `app/api/items/bulk/route.ts` |
+| Split a multi-item photo (AI detection + per-detection crop + bulk-create) | `app/(app)/wardrobe/new/split/page.tsx`, `app/(app)/wardrobe/new/split/SplitItemForm.tsx`, `app/api/ai/detect-items/route.ts`, `app/api/items/split/route.ts`. The split route crops the source image with sharp per detected box (with a 4% padding), creates N Item rows, and fires `runHiResBgRemovalBatch` so cutouts populate in the background — same pattern as `/api/items/bulk`. |
 | Optimize Photos (two-tier recovery + bg shrink + label bg generation) | `app/api/admin/optimize-photos/route.ts` |
 | Activity log + clear from Settings | `lib/activity.ts`, `app/(app)/settings/ClearActivityButton.tsx`, `app/api/activity/route.ts` |
 | Static file serve (owner-scoped) | `app/api/uploads/[...path]/route.ts` — first path segment must equal session userId; rejects cross-user paths with 404. |

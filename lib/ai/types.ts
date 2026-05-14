@@ -148,6 +148,13 @@ export interface TagProvider {
    *  the wardrobe UI falls back to LIKE-search across notes/brand/etc.
    *  when this isn't implemented. */
   parseSearch?(input: { query: string }): Promise<SearchParseResult>;
+  /** Detect every distinct garment / cosmetic / accessory laid out in a
+   *  single flat-lay photo. Returns one entry per item with a bounding
+   *  box plus a per-item TagSuggestion. The caller crops the source
+   *  image per box, runs bg removal on each crop, and saves N Items.
+   *  Best on flat-lays — boxes overlap awkwardly on outfit-on-body
+   *  shots and the prompt explicitly tells the model to skip those. */
+  detectMultipleItems?(input: { image: Blob }): Promise<DetectMultipleItemsResult>;
 }
 
 export type NotesResult = {
@@ -190,6 +197,26 @@ export type SearchFilters = {
 
 export type SearchParseResult = {
   filters: SearchFilters;
+  debug?: TagDebug;
+};
+
+// "Split a multi-item photo" result. The model receives a single
+// flat-lay image (a stack of clothing on a bed, a cosmetics shelf, a
+// shopping-bag dump) and returns one entry per detected item with a
+// normalized bounding box plus the same TagSuggestion shape we use
+// for a single-item upload. Beauty and clothing detections coexist
+// since the category enum is the union of CATEGORIES + BEAUTY_CATEGORIES.
+export type DetectedItem = {
+  /** [ymin, xmin, ymax, xmax] in 0–1000 normalized coords (Gemini's
+   *  bounding-box convention). The split route converts these to
+   *  pixel offsets per the source image dimensions before cropping
+   *  with sharp. */
+  box: [number, number, number, number];
+  suggestion: TagSuggestion;
+};
+
+export type DetectMultipleItemsResult = {
+  items: DetectedItem[];
   debug?: TagDebug;
 };
 
