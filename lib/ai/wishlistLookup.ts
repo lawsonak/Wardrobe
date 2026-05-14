@@ -11,7 +11,7 @@
 // we ask for JSON in the prompt and parse the text. Failures are
 // non-fatal — the UI keeps whatever the user already typed.
 
-import { CATEGORIES, COLOR_NAMES } from "@/lib/constants";
+import { CATEGORIES, BEAUTY_CATEGORIES, COLOR_NAMES } from "@/lib/constants";
 import { fetchProductMeta, type ProductMeta } from "@/lib/productMeta";
 
 const TEXT_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
@@ -155,11 +155,14 @@ export async function lookupWishlistProduct(
   }
 
   const taskLine = isUrl
-    ? `Visit this exact URL: ${cleanedQuery}\nIt's a product page on a clothing or accessory retailer's site.`
+    ? `Visit this exact URL: ${cleanedQuery}\nIt's a product page on a retailer's site — could be clothing, an accessory, or a beauty / cosmetic / skincare item.`
     : `Search the web for "${cleanedQuery}" and find the manufacturer's product page (or a reliable retailer listing).`;
 
   const allowedColors = COLOR_NAMES.join(", ");
-  const allowedCategories = CATEGORIES.join(", ");
+  // Wishlist categories cover both wardrobe + beauty: a user wishing
+  // for "MAC Ruby Woo" should land on "Lipstick", not be forced into
+  // a clothing bucket.
+  const allowedCategories = [...CATEGORIES, ...BEAUTY_CATEGORIES].join(", ");
 
   const prompt = [
     taskLine,
@@ -338,7 +341,11 @@ function sanitize(raw: unknown, fallbackLink?: string): WishlistLookupSuggestion
   if (typeof r.brand === "string" && r.brand.trim()) {
     out.brand = r.brand.trim().slice(0, 80);
   }
-  if (typeof r.category === "string" && (CATEGORIES as readonly string[]).includes(r.category)) {
+  if (
+    typeof r.category === "string" &&
+    ((CATEGORIES as readonly string[]).includes(r.category) ||
+      (BEAUTY_CATEGORIES as readonly string[]).includes(r.category))
+  ) {
     out.category = r.category;
   }
   if (typeof r.color === "string") {
@@ -392,9 +399,9 @@ async function classifyFromMeta(
   if (!text) return {};
 
   const allowedColors = COLOR_NAMES.join(", ");
-  const allowedCategories = CATEGORIES.join(", ");
+  const allowedCategories = [...CATEGORIES, ...BEAUTY_CATEGORIES].join(", ");
   const prompt = [
-    "You're given product details from a clothing or accessory retailer's page:",
+    "You're given product details from a clothing, accessory, or beauty / cosmetic retailer's page:",
     text,
     "Return a SINGLE JSON object — nothing else, no prose, no markdown — with two fields:",
     `  - category: closest match from this list: ${allowedCategories}. Null if you genuinely can't tell.`,
@@ -435,7 +442,11 @@ async function classifyFromMeta(
     if (!t.trim()) return {};
     const parsed = JSON.parse(t) as { category?: string | null; color?: string | null };
     const out: { category?: string; color?: string } = {};
-    if (typeof parsed.category === "string" && (CATEGORIES as readonly string[]).includes(parsed.category)) {
+    if (
+      typeof parsed.category === "string" &&
+      ((CATEGORIES as readonly string[]).includes(parsed.category) ||
+        (BEAUTY_CATEGORIES as readonly string[]).includes(parsed.category))
+    ) {
       out.category = parsed.category;
     }
     if (typeof parsed.color === "string") {

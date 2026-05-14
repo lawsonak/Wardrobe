@@ -10,7 +10,14 @@
 //   - per-field nullability is naturally handled by JSON
 //   - a single TEXT column is cheap on SQLite
 
-import { CATEGORIES, COLOR_NAMES, SEASONS, ACTIVITIES, type Category } from "@/lib/constants";
+import {
+  CATEGORIES,
+  BEAUTY_CATEGORIES,
+  COLOR_NAMES,
+  SEASONS,
+  ACTIVITIES,
+  type Category,
+} from "@/lib/constants";
 
 export type PendingAiSuggestions = {
   category?: Category;
@@ -21,6 +28,12 @@ export type PendingAiSuggestions = {
   seasons?: string[];
   activities?: string[];
   material?: string;
+  // Beauty-only fields staged by the bulk re-tag run when the model
+  // returned isBeauty=true. Mirrors the AddItemForm path.
+  isBeauty?: boolean;
+  shadeName?: string;
+  shadeHex?: string;
+  finish?: string;
   /** When the suggestions were staged. Used so a future cleanup task
    *  can prune stale pending blobs (e.g. from rebatched runs). */
   stagedAt?: string;
@@ -60,10 +73,21 @@ function sanitize(input: unknown): PendingAiSuggestions {
   if (!input || typeof input !== "object") return {};
   const r = input as Record<string, unknown>;
   const out: PendingAiSuggestions = {};
-  if (typeof r.category === "string" && (CATEGORIES as readonly string[]).includes(r.category)) {
+  if (
+    typeof r.category === "string" &&
+    ((CATEGORIES as readonly string[]).includes(r.category) ||
+      (BEAUTY_CATEGORIES as readonly string[]).includes(r.category))
+  ) {
     out.category = r.category as Category;
   }
   if (typeof r.subType === "string" && r.subType.trim()) out.subType = r.subType.trim();
+  if (typeof r.isBeauty === "boolean") out.isBeauty = r.isBeauty;
+  if (typeof r.shadeName === "string" && r.shadeName.trim()) out.shadeName = r.shadeName.trim();
+  if (typeof r.shadeHex === "string") {
+    const m = r.shadeHex.trim().match(/^#?([0-9a-f]{6})$/i);
+    if (m) out.shadeHex = `#${m[1].toLowerCase()}`;
+  }
+  if (typeof r.finish === "string" && r.finish.trim()) out.finish = r.finish.trim();
   if (typeof r.color === "string" && (COLOR_NAMES as readonly string[]).includes(r.color)) {
     out.color = r.color;
   }
@@ -91,6 +115,10 @@ function hasAny(p: PendingAiSuggestions): boolean {
     p.size ||
     (p.seasons && p.seasons.length > 0) ||
     (p.activities && p.activities.length > 0) ||
-    p.material
+    p.material ||
+    p.isBeauty === true ||
+    p.shadeName ||
+    p.shadeHex ||
+    p.finish
   );
 }

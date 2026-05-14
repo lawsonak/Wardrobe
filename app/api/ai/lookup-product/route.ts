@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
   const subType = typeof body.subType === "string" ? body.subType.trim() : null;
   const color = typeof body.color === "string" ? body.color.trim() : null;
   const category = typeof body.category === "string" ? body.category.trim() : null;
+  const isBeauty = body.isBeauty === true;
 
   if (!url && !brand) {
     return NextResponse.json(
@@ -55,8 +56,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = url
-      ? await lookupProductFromUrl(url)
-      : await lookupProductOnline({ brand, subType, color, category });
+      ? await lookupProductFromUrl(url, { isBeauty, category })
+      : await lookupProductOnline({ brand, subType, color, category, isBeauty });
     if (!result.ok) {
       return NextResponse.json(
         { enabled: true, error: result.error, debug: result.debug },

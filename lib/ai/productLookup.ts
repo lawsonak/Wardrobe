@@ -18,6 +18,7 @@
 // existing values and shows the error.
 
 import { fetchProductMeta } from "@/lib/productMeta";
+import { BEAUTY_CATEGORIES } from "@/lib/constants";
 
 const TEXT_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
@@ -26,6 +27,10 @@ export type ProductLookupInput = {
   subType?: string | null;
   color?: string | null;
   category?: string | null;
+  // Caller hint. When true (or when `category` is a known beauty
+  // category) the prompt asks for shade name / shade hex / finish
+  // instead of material / careNotes — those don't apply to cosmetics.
+  isBeauty?: boolean;
 };
 
 export type ProductLookupSuggestion = {
@@ -34,6 +39,10 @@ export type ProductLookupSuggestion = {
   description?: string;
   retailPrice?: string;
   productUrl?: string;
+  // Beauty-only. Populated when the lookup was beauty-mode.
+  shadeName?: string;
+  shadeHex?: string;
+  finish?: string;
 };
 
 export type ProductLookupDebug = {
@@ -76,19 +85,38 @@ export async function lookupProductOnline(
     .join(" ");
   const query = descriptor ? `${brand} ${descriptor}` : brand;
 
-  const prompt = [
-    `Search the web for "${query}" and find the manufacturer's product page (or a reliable retailer listing).`,
-    "From that page, extract the following and return them as a SINGLE JSON object — nothing else, no prose, no markdown fences:",
-    "  - material: fabric composition (e.g. \"100% cotton\", \"95% modal, 5% spandex\"). Null if not on the page.",
-    "  - careNotes: care instructions in one short line (e.g. \"Machine wash cold, tumble dry low\"). Null if not on the page.",
-    "  - description: 1-2 sentences describing the cut, fit, or notable features. Null if you can't find a real description.",
-    "  - retailPrice: original retail price as a string with currency (e.g. \"$98 USD\"). Null if you can't find it.",
-    "  - productUrl: canonical product page URL. Null if you can't pin one down.",
-    "Hard rules:",
-    "- Use null (not empty string) for any field you don't have confident evidence for. Never invent details.",
-    "- Output ONLY the JSON object. No commentary before or after.",
-    "- The product is a clothing or accessory item in someone's personal closet, not a generic catalog item.",
-  ].join(" ");
+  const isBeauty =
+    input.isBeauty === true ||
+    (typeof input.category === "string" &&
+      BEAUTY_CATEGORIES.includes(input.category as never));
+
+  const prompt = isBeauty
+    ? [
+        `Search the web for "${query}" and find the manufacturer's product page (or a reliable retailer listing) for this cosmetic / beauty product.`,
+        "From that page, extract the following and return them as a SINGLE JSON object — nothing else, no prose, no markdown fences:",
+        "  - shadeName: the printed shade name or number on the packaging (e.g. \"Ruby Woo\", \"311 Adobe\"). Null if it's a non-shaded product (tools, skincare) or you can't pin a real one down.",
+        "  - shadeHex: a 6-character #rrggbb hex approximating the visible product swatch (NOT the packaging tube color). Null if it's not a colored cosmetic.",
+        "  - finish: matte / satin / gloss / cream / shimmer / metallic / sheer / dewy / natural — pick the closest one printed on the page. Null if not stated and not obvious.",
+        "  - description: 1-2 sentences describing what the product does or notable features (e.g. \"long-wear matte lipstick with a creamy finish\"). Null if you can't find a real description.",
+        "  - retailPrice: original retail price as a string with currency (e.g. \"$24 USD\"). Null if you can't find it.",
+        "  - productUrl: canonical product page URL. Null if you can't pin one down.",
+        "Hard rules:",
+        "- Use null (not empty string) for any field you don't have confident evidence for. Never invent details.",
+        "- Output ONLY the JSON object. No commentary before or after.",
+      ].join(" ")
+    : [
+        `Search the web for "${query}" and find the manufacturer's product page (or a reliable retailer listing).`,
+        "From that page, extract the following and return them as a SINGLE JSON object — nothing else, no prose, no markdown fences:",
+        "  - material: fabric composition (e.g. \"100% cotton\", \"95% modal, 5% spandex\"). Null if not on the page.",
+        "  - careNotes: care instructions in one short line (e.g. \"Machine wash cold, tumble dry low\"). Null if not on the page.",
+        "  - description: 1-2 sentences describing the cut, fit, or notable features. Null if you can't find a real description.",
+        "  - retailPrice: original retail price as a string with currency (e.g. \"$98 USD\"). Null if you can't find it.",
+        "  - productUrl: canonical product page URL. Null if you can't pin one down.",
+        "Hard rules:",
+        "- Use null (not empty string) for any field you don't have confident evidence for. Never invent details.",
+        "- Output ONLY the JSON object. No commentary before or after.",
+        "- The product is a clothing or accessory item in someone's personal closet, not a generic catalog item.",
+      ].join(" ");
 
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -232,7 +260,12 @@ const BARE_DOMAIN_RE = /^[a-z0-9-]+(\.[a-z0-9-]+)+(\/|$)/i;
 
 export async function lookupProductFromUrl(
   rawUrl: string,
+  opts: { isBeauty?: boolean; category?: string | null } = {},
 ): Promise<ProductLookupResult> {
+  const isBeauty =
+    opts.isBeauty === true ||
+    (typeof opts.category === "string" &&
+      BEAUTY_CATEGORIES.includes(opts.category as never));
   const key = process.env.GEMINI_API_KEY;
   if (!key) {
     return {
@@ -282,21 +315,38 @@ export async function lookupProductFromUrl(
   // pull material + careNotes (which OG/JSON-LD usually omit) and a
   // tighter description if the OG one was thin. retailPrice from the
   // metadata wins; ask the model only if we don't have one.
-  const detailsPrompt = [
-    "You're given an excerpt of an apparel/accessory product page. Read it and return a SINGLE JSON object — nothing else, no prose, no markdown:",
-    "  - material: fabric composition exactly as printed (e.g. \"100% cotton\", \"95% modal, 5% spandex\"). Null if not mentioned.",
-    "  - careNotes: care instructions in one short line (e.g. \"Machine wash cold, tumble dry low\"). Null if not mentioned.",
-    "  - description: a 1-2 sentence factual description of the cut/fit/notable features. Null if you can't pull a real one.",
-    "  - retailPrice: original retail price as a string with currency (e.g. \"$98 USD\"). Null if not stated.",
-    "Hard rules: use null (not empty string) for any field you don't have evidence for. Don't invent.",
-    "",
-    `Product name: ${meta.name ?? "(unknown)"}`,
-    `Brand: ${meta.brand ?? "(unknown)"}`,
-    `Source: ${meta.source ?? "(unknown)"}`,
-    "",
-    "Page excerpt:",
-    meta.pageText ?? meta.description ?? "",
-  ].join("\n");
+  const detailsPrompt = isBeauty
+    ? [
+        "You're given an excerpt of a cosmetic / beauty product page. Read it and return a SINGLE JSON object — nothing else, no prose, no markdown:",
+        "  - shadeName: the printed shade name or number (e.g. \"Ruby Woo\", \"311 Adobe\"). Null if the product isn't shaded.",
+        "  - shadeHex: a 6-character #rrggbb hex approximating the product swatch (NOT the packaging tube color). Null if it's not a colored cosmetic.",
+        "  - finish: matte / satin / gloss / cream / shimmer / metallic / sheer / dewy / natural — pick the closest one printed on the page. Null if not stated.",
+        "  - description: 1-2 sentence factual description (e.g. \"long-wear matte lipstick\"). Null if you can't pull a real one.",
+        "  - retailPrice: original retail price as a string with currency (e.g. \"$24 USD\"). Null if not stated.",
+        "Hard rules: use null (not empty string) for any field you don't have evidence for. Don't invent.",
+        "",
+        `Product name: ${meta.name ?? "(unknown)"}`,
+        `Brand: ${meta.brand ?? "(unknown)"}`,
+        `Source: ${meta.source ?? "(unknown)"}`,
+        "",
+        "Page excerpt:",
+        meta.pageText ?? meta.description ?? "",
+      ].join("\n")
+    : [
+        "You're given an excerpt of an apparel/accessory product page. Read it and return a SINGLE JSON object — nothing else, no prose, no markdown:",
+        "  - material: fabric composition exactly as printed (e.g. \"100% cotton\", \"95% modal, 5% spandex\"). Null if not mentioned.",
+        "  - careNotes: care instructions in one short line (e.g. \"Machine wash cold, tumble dry low\"). Null if not mentioned.",
+        "  - description: a 1-2 sentence factual description of the cut/fit/notable features. Null if you can't pull a real one.",
+        "  - retailPrice: original retail price as a string with currency (e.g. \"$98 USD\"). Null if not stated.",
+        "Hard rules: use null (not empty string) for any field you don't have evidence for. Don't invent.",
+        "",
+        `Product name: ${meta.name ?? "(unknown)"}`,
+        `Brand: ${meta.brand ?? "(unknown)"}`,
+        `Source: ${meta.source ?? "(unknown)"}`,
+        "",
+        "Page excerpt:",
+        meta.pageText ?? meta.description ?? "",
+      ].join("\n");
 
   const body = {
     contents: [{ role: "user", parts: [{ text: detailsPrompt }] }],
@@ -304,12 +354,20 @@ export async function lookupProductFromUrl(
       responseMimeType: "application/json",
       responseSchema: {
         type: "OBJECT",
-        properties: {
-          material: { type: "STRING", nullable: true },
-          careNotes: { type: "STRING", nullable: true },
-          description: { type: "STRING", nullable: true },
-          retailPrice: { type: "STRING", nullable: true },
-        },
+        properties: isBeauty
+          ? {
+              shadeName: { type: "STRING", nullable: true },
+              shadeHex: { type: "STRING", nullable: true },
+              finish: { type: "STRING", nullable: true },
+              description: { type: "STRING", nullable: true },
+              retailPrice: { type: "STRING", nullable: true },
+            }
+          : {
+              material: { type: "STRING", nullable: true },
+              careNotes: { type: "STRING", nullable: true },
+              description: { type: "STRING", nullable: true },
+              retailPrice: { type: "STRING", nullable: true },
+            },
       },
       temperature: 0.1,
     },
@@ -319,7 +377,15 @@ export async function lookupProductFromUrl(
     TEXT_MODEL,
   )}:generateContent?key=${encodeURIComponent(key)}`;
 
-  let aiOut: { material?: string; careNotes?: string; description?: string; retailPrice?: string } = {};
+  let aiOut: {
+    material?: string;
+    careNotes?: string;
+    description?: string;
+    retailPrice?: string;
+    shadeName?: string;
+    shadeHex?: string;
+    finish?: string;
+  } = {};
   try {
     const res = await fetch(apiUrl, {
       method: "POST",
@@ -341,8 +407,9 @@ export async function lookupProductFromUrl(
     /* AI failure is non-fatal — return what we have from OG/JSON-LD */
   }
 
-  // Merge: prefer the AI's material/careNotes (they aren't in OG),
-  // prefer OG/JSON-LD's price + description when we have them.
+  // Merge: prefer the AI's domain-specific fields (material/care for
+  // clothing, shade/finish for beauty) since OG/JSON-LD usually omit
+  // them. Prefer OG/JSON-LD's price + description when we have them.
   const merged: ProductLookupSuggestion = {
     material: typeof aiOut.material === "string" && aiOut.material.trim()
       ? aiOut.material.trim().slice(0, 240)
@@ -359,6 +426,17 @@ export async function lookupProductFromUrl(
         ? aiOut.retailPrice.trim().slice(0, 60)
         : undefined),
     productUrl: meta.productUrl ?? url,
+    shadeName: typeof aiOut.shadeName === "string" && aiOut.shadeName.trim()
+      ? aiOut.shadeName.trim().slice(0, 80)
+      : undefined,
+    shadeHex: (() => {
+      if (typeof aiOut.shadeHex !== "string") return undefined;
+      const m = aiOut.shadeHex.trim().match(/^#?([0-9a-f]{6})$/i);
+      return m ? `#${m[1].toLowerCase()}` : undefined;
+    })(),
+    finish: typeof aiOut.finish === "string" && aiOut.finish.trim()
+      ? aiOut.finish.trim().slice(0, 40)
+      : undefined,
   };
 
   // Drop empty fields so the form's "only fill empties" merge doesn't
@@ -397,6 +475,16 @@ function sanitize(raw: unknown): ProductLookupSuggestion {
   }
   if (typeof r.productUrl === "string" && /^https?:\/\//i.test(r.productUrl)) {
     out.productUrl = r.productUrl.slice(0, 500);
+  }
+  if (typeof r.shadeName === "string" && r.shadeName.trim()) {
+    out.shadeName = r.shadeName.trim().slice(0, 80);
+  }
+  if (typeof r.shadeHex === "string") {
+    const m = r.shadeHex.trim().match(/^#?([0-9a-f]{6})$/i);
+    if (m) out.shadeHex = `#${m[1].toLowerCase()}`;
+  }
+  if (typeof r.finish === "string" && r.finish.trim()) {
+    out.finish = r.finish.trim().slice(0, 40);
   }
   return out;
 }

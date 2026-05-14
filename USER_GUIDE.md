@@ -13,19 +13,20 @@ A complete walkthrough of every feature in your Wardrobe app, what it does, and 
 5. [Photos: hero, labels, angles, cutouts](#photos-hero-labels-angles-cutouts)
 6. [Merging items](#merging-items)
 7. [🌶 Spicy — the separate private closet](#-spicy--the-separate-private-closet)
-8. [Outfits + AI try-on](#outfits--ai-try-on)
-9. [Collections — trips and themed sets](#collections--trips-and-themed-sets)
-10. [Wishlist](#wishlist)
-11. [Brands](#brands)
-12. [Dashboard cards](#dashboard-cards)
-13. [AI features at a glance](#ai-features-at-a-glance)
-14. [Settings](#settings)
-15. [Maintenance: Optimize Photos](#maintenance-optimize-photos)
-16. [Activity log + clearing it](#activity-log--clearing-it)
-17. [Notifications](#notifications)
-18. [Mobile bottom nav + desktop nav](#mobile-bottom-nav--desktop-nav)
-19. [Keyboard, gestures, accessibility](#keyboard-gestures-accessibility)
-20. [Troubleshooting](#troubleshooting)
+8. [💄 Beauty + Looks](#-beauty--looks)
+9. [Outfits + AI try-on](#outfits--ai-try-on)
+10. [Collections — trips and themed sets](#collections--trips-and-themed-sets)
+11. [Wishlist](#wishlist)
+12. [Brands](#brands)
+13. [Dashboard cards](#dashboard-cards)
+14. [AI features at a glance](#ai-features-at-a-glance)
+15. [Settings](#settings)
+16. [Maintenance: Optimize Photos](#maintenance-optimize-photos)
+17. [Activity log + clearing it](#activity-log--clearing-it)
+18. [Notifications](#notifications)
+19. [Mobile bottom nav + desktop nav](#mobile-bottom-nav--desktop-nav)
+20. [Keyboard, gestures, accessibility](#keyboard-gestures-accessibility)
+21. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -334,6 +335,85 @@ Tapping a tile takes you to the item detail page. The "← Back" link returns yo
 
 ---
 
+## 💄 Beauty + Looks
+
+`/wardrobe/beauty` (reached via the 💄 icon in the closet header)
+
+Beauty is a parallel mini-closet for cosmetics, skincare, tools, and fragrance. Mirrors the Spicy pattern: hidden from the main `/wardrobe` view, hard-excluded from the closet-summary AI helpers, and only reachable via the 💄 icon. The main closet shows zero beauty items.
+
+### What surfaces hide Beauty items
+
+- The main closet (`/wardrobe`).
+- The dashboard's recent items + "On this day".
+- The outfit builder's piece picker (beauty isn't a "piece" — see below).
+- The collection picker.
+- Today's outfit AI pick (composes clothing only).
+- Today's product suggestion.
+- The bulk auto-tag legacy queue.
+- The wishlist "you might already own this" warning, **except** when the wish itself is in a beauty category — then it flips and searches your beauty stash.
+
+### Categories
+
+A separate vocabulary, grouped on the Beauty page:
+
+- **Lips** — Lipstick, Lip Liner, Lip Gloss, Lip Balm
+- **Eyes** — Mascara, Eyeliner, Eyeshadow, Eyebrow
+- **Face** — Foundation, Concealer, Powder, Blush, Bronzer, Highlighter
+- **Skin** — Cleanser, Moisturizer, Serum, Mask, Sunscreen, Toner
+- **Tools** — Brushes, Sponges, Curlers, Tweezers
+- **Fragrance** — Perfume, Body Spray, Body Oil
+- **Other**
+
+### Per-product fields
+
+Beauty items reuse the regular Item table, but the form swaps a few fields:
+
+- **Shade name** — free text, e.g. "Ruby Woo", "311 Adobe". Optional.
+- **Shade swatch (hex)** — `#rrggbb` color approximating the visible product, NOT the packaging tube. Drives the small color dot on each tile.
+- **Finish** — datalist of matte / satin / gloss / cream / shimmer / metallic / sheer / dewy / natural — but accepts free text.
+- **No size, no fit notes, no seasons/activities** — those don't apply.
+
+### Adding a beauty item
+
+- From the Beauty page → **+ Add** preselects the 💄 flag.
+- From the new-item form → check 💄 Beauty (swaps the category dropdown and reveals the shade row).
+- From bulk upload → check **💄 Mark all** to send every item in the batch to Beauty.
+- **Barcode scan** — only surfaced in beauty mode. Camera-based scanner (with manual UPC fallback if the BarcodeDetector API is unavailable). Pipeline: Open Beauty Facts → Gemini grounded search fallback. Pre-fills name, brand, shade name/hex when available.
+
+### ✨ AI for beauty items
+
+The same Auto-tag button you already know works on cosmetic photos. The tagger now:
+
+- Picks a beauty category instead of forcing a clothing one when the photo is clearly a cosmetic.
+- Sets the 💄 flag.
+- Extracts the **shade name** from the packaging (numbers count: "311 Adobe").
+- Estimates the **shade swatch** as a hex from the visible product, not the tube.
+- Reads the **finish** from packaging text ("matte" / "satin" / "gloss" / etc.).
+- Leaves clothing-only fields (seasons, activities, material) blank.
+
+Same review-and-accept UI on the edit page: empty fields are pre-checked, conflicts default to unchecked, you opt-in per row.
+
+The "Look up online" panel (brand search + paste-a-URL) also flips to a beauty-aware prompt when the current item is in beauty mode, asking for shadeName / shadeHex / finish / description / price instead of material / care.
+
+### Looks
+
+`/looks`
+
+Saved makeup combinations, e.g. "Sunday brunch face" — a Look bundles 1–15 beauty items into named slots (Foundation, Concealer, Blush, Eyeshadow, Liner, Mascara, Lip, etc.). Looks are reachable only from the 💄 Beauty page header.
+
+- **Builder** — `/looks/new` and `/looks/[id]`. 15-slot grid with a picker sheet per slot. Tap a slot → pick from your beauty inventory → save.
+- **List page** — 2×2 collage card per Look, showing up to 4 of its items. Each card has a shade dot for at-a-glance color sense.
+- **Pairing a Look to an outfit** — in the Outfit Builder, a 💄 chip lets you attach a saved Look to an outfit. The card on the Outfits page shows the 💄 chip on outfits that carry a paired routine. The pairing is a soft link; deleting the Look unlinks the outfits without deleting them.
+
+### Looks vs. Outfits — interaction rules
+
+- An outfit can be paired with at most one Look.
+- A Look can be paired with many outfits (one-to-many).
+- An outfit paired with a Look is **not** itself "beauty content" — it still surfaces in the main closet AI flows. Only the items table's `isBeauty` flag decides hiding.
+- Deleting a beauty item silently removes it from any Look slots that reference it.
+
+---
+
 ## Outfits + AI try-on
 
 `/outfits`
@@ -513,8 +593,8 @@ Every AI feature has a ✨ sparkle in the UI. When AI is disabled, the feature r
 
 | Feature | Where | What |
 |---|---|---|
-| Auto-tag a single item | Item add / edit | Fills empty fields from photo + label |
-| Auto-tag in bulk | Bulk upload, closet Select Multiple | Background batch over many items |
+| Auto-tag a single item | Item add / edit | Fills empty fields from photo + label. Beauty-aware: extracts shade name, swatch hex, and finish when the photo is a cosmetic. |
+| Auto-tag in bulk | Bulk upload, closet Select Multiple | Background batch over many items. Beauty fields ride the same review flow as the clothing ones. |
 | Build outfit from prompt | Outfit Builder | "Sunday brunch" → AI picks items |
 | Today's outfit | Dashboard | Daily AI pick + try-on |
 | Today's suggestion | Dashboard | Daily product to consider, optionally constrained |
@@ -524,7 +604,8 @@ Every AI feature has a ✨ sparkle in the UI. When AI is disabled, the feature r
 | Suggest trip activities | Collection editor | 4–8 things to do at the destination |
 | Shop for this trip | Collection editor | Two-stage AI → curated retailer searches |
 | Natural-language search | Closet search bar | "summer dresses I haven't worn" → filters |
-| Look up product online | Item edit, Wishlist | Pull material / care / price / image |
+| Look up product online | Item edit, Wishlist | Pull material / care / price / image. On a beauty item, swaps to shade name / hex / finish / price. Wishlist categories cover both vocabularies. |
+| Barcode lookup | Beauty add-item | Camera scan or manual UPC → Open Beauty Facts → Gemini fallback. Pre-fills name, brand, shade. |
 | Use product link | Item edit, Wishlist | Paste a URL → metadata extraction |
 | Style canvas auto-fit | Style canvas | AI places each piece on your mannequin landmarks |
 | Mannequin generation | Settings | Photo of you → stylized fashion-illustration |

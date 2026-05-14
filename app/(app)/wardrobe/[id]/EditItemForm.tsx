@@ -104,7 +104,7 @@ export default function EditItemForm({ item }: { item: Item }) {
   type AutoTagChange =
     | {
         kind: "new" | "change";
-        field: "category" | "subType" | "color" | "brand" | "size";
+        field: "category" | "subType" | "color" | "brand" | "size" | "shadeName" | "shadeHex" | "finish";
         label: string;
         currentDisplay: string;
         suggestedDisplay: string;
@@ -125,6 +125,14 @@ export default function EditItemForm({ item }: { item: Item }) {
         currentDisplay: string;
         suggestedDisplay: string;
         suggestedValue: string;
+      }
+    | {
+        kind: "new" | "change";
+        field: "isBeauty";
+        label: string;
+        currentDisplay: string;
+        suggestedDisplay: string;
+        suggestedValue: boolean;
       };
   const [autoTagChanges, setAutoTagChanges] = useState<AutoTagChange[] | null>(null);
   const [autoTagAccept, setAutoTagAccept] = useState<Record<string, boolean>>({});
@@ -139,14 +147,28 @@ export default function EditItemForm({ item }: { item: Item }) {
     const pending = parsePendingAi(item.pendingAiSuggestions);
     if (!pending) return;
     const changes: AutoTagChange[] = [];
-    if (pending.category && CATEGORIES.includes(pending.category) && pending.category !== category) {
+    const pendingCategoryValid =
+      pending.category &&
+      (CATEGORIES.includes(pending.category) ||
+        BEAUTY_CATEGORIES.includes(pending.category as never));
+    if (pendingCategoryValid && pending.category !== category) {
       changes.push({
         kind: category ? "change" : "new",
         field: "category",
         label: "Category",
         currentDisplay: category || "(not set)",
-        suggestedDisplay: pending.category,
-        suggestedValue: pending.category,
+        suggestedDisplay: pending.category!,
+        suggestedValue: pending.category!,
+      });
+    }
+    if (pending.isBeauty === true && !isBeauty) {
+      changes.push({
+        kind: "new",
+        field: "isBeauty",
+        label: "Beauty item",
+        currentDisplay: "(not marked)",
+        suggestedDisplay: "Mark as 💄 Beauty",
+        suggestedValue: true,
       });
     }
     if (pending.subType && pending.subType.trim() !== subType.trim()) {
@@ -231,6 +253,36 @@ export default function EditItemForm({ item }: { item: Item }) {
         });
       }
     }
+    if (pending.shadeName && pending.shadeName.trim() !== shadeName.trim()) {
+      changes.push({
+        kind: shadeName ? "change" : "new",
+        field: "shadeName",
+        label: "Shade name",
+        currentDisplay: shadeName || "(not set)",
+        suggestedDisplay: pending.shadeName,
+        suggestedValue: pending.shadeName,
+      });
+    }
+    if (pending.shadeHex && pending.shadeHex.toLowerCase() !== shadeHex.toLowerCase()) {
+      changes.push({
+        kind: shadeHex ? "change" : "new",
+        field: "shadeHex",
+        label: "Shade swatch",
+        currentDisplay: shadeHex || "(not set)",
+        suggestedDisplay: pending.shadeHex,
+        suggestedValue: pending.shadeHex,
+      });
+    }
+    if (pending.finish && pending.finish.trim() !== finish.trim()) {
+      changes.push({
+        kind: finish ? "change" : "new",
+        field: "finish",
+        label: "Finish",
+        currentDisplay: finish || "(not set)",
+        suggestedDisplay: pending.finish,
+        suggestedValue: pending.finish,
+      });
+    }
     if (changes.length === 0) {
       // Pending blob exists but every suggestion is already applied
       // (user matched it manually since the bulk run). Clear the
@@ -269,6 +321,9 @@ export default function EditItemForm({ item }: { item: Item }) {
     description?: string;
     retailPrice?: string;
     productUrl?: string;
+    shadeName?: string;
+    shadeHex?: string;
+    finish?: string;
   } | null>(null);
   // URL the user pastes for the direct-fetch path. Independent from
   // brand search above — both share the lookupCandidate review state.
@@ -381,6 +436,12 @@ export default function EditItemForm({ item }: { item: Item }) {
             material?: string;
             careNotes?: string;
             notes?: string;
+            // Beauty-only fields. Backed by lib/ai/provider.ts's
+            // extended schema; older runs may not include them.
+            shadeName?: string;
+            shadeHex?: string;
+            finish?: string;
+            isBeauty?: boolean;
           };
           const debug = data?.debug as { error?: string; rawText?: string } | undefined;
           usedLabel = data?.hasLabel === true;
@@ -394,14 +455,34 @@ export default function EditItemForm({ item }: { item: Item }) {
           // accept state: ON for "new" rows, OFF for "change" rows so
           // the user has to opt in to overwrite anything they typed.
           const changes: AutoTagChange[] = [];
-          if (s.category && CATEGORIES.includes(s.category) && s.category !== category) {
+          const validCategory =
+            s.category &&
+            (CATEGORIES.includes(s.category) || BEAUTY_CATEGORIES.includes(s.category as never));
+          if (validCategory && s.category !== category) {
             changes.push({
               kind: category ? "change" : "new",
               field: "category",
               label: "Category",
               currentDisplay: category || "(not set)",
-              suggestedDisplay: s.category,
-              suggestedValue: s.category,
+              suggestedDisplay: s.category!,
+              suggestedValue: s.category!,
+            });
+          }
+          // Belt-and-braces: treat the suggestion as beauty when the
+          // model said so explicitly OR when the proposed category is
+          // in the beauty vocabulary. Mirrors AddItemForm's check.
+          const looksBeauty =
+            s.isBeauty === true ||
+            (typeof s.category === "string" &&
+              BEAUTY_CATEGORIES.includes(s.category as never));
+          if (looksBeauty && !isBeauty) {
+            changes.push({
+              kind: "new",
+              field: "isBeauty",
+              label: "Beauty item",
+              currentDisplay: "(not marked)",
+              suggestedDisplay: "Mark as 💄 Beauty",
+              suggestedValue: true,
             });
           }
           if (s.subType && s.subType.trim() && s.subType.trim() !== subType.trim()) {
@@ -442,6 +523,40 @@ export default function EditItemForm({ item }: { item: Item }) {
               currentDisplay: size || "(not set)",
               suggestedDisplay: s.size,
               suggestedValue: s.size,
+            });
+          }
+          if (s.shadeName && s.shadeName.trim() !== shadeName.trim()) {
+            changes.push({
+              kind: shadeName ? "change" : "new",
+              field: "shadeName",
+              label: "Shade name",
+              currentDisplay: shadeName || "(not set)",
+              suggestedDisplay: s.shadeName,
+              suggestedValue: s.shadeName,
+            });
+          }
+          if (s.shadeHex) {
+            const m = s.shadeHex.trim().match(/^#?([0-9a-f]{6})$/i);
+            const normalized = m ? `#${m[1].toLowerCase()}` : null;
+            if (normalized && normalized !== shadeHex.toLowerCase()) {
+              changes.push({
+                kind: shadeHex ? "change" : "new",
+                field: "shadeHex",
+                label: "Shade swatch",
+                currentDisplay: shadeHex || "(not set)",
+                suggestedDisplay: normalized,
+                suggestedValue: normalized,
+              });
+            }
+          }
+          if (s.finish && s.finish.trim() !== finish.trim()) {
+            changes.push({
+              kind: finish ? "change" : "new",
+              field: "finish",
+              label: "Finish",
+              currentDisplay: finish || "(not set)",
+              suggestedDisplay: s.finish,
+              suggestedValue: s.finish,
             });
           }
           if (s.seasons) {
@@ -604,6 +719,18 @@ export default function EditItemForm({ item }: { item: Item }) {
           });
           break;
         }
+        case "isBeauty":
+          setIsBeauty(c.suggestedValue as boolean);
+          break;
+        case "shadeName":
+          setShadeName(c.suggestedValue as string);
+          break;
+        case "shadeHex":
+          setShadeHex(c.suggestedValue as string);
+          break;
+        case "finish":
+          setFinish(c.suggestedValue as string);
+          break;
       }
       appliedCount++;
     }
@@ -676,11 +803,23 @@ export default function EditItemForm({ item }: { item: Item }) {
         description?: string;
         retailPrice?: string;
         productUrl?: string;
+        shadeName?: string;
+        shadeHex?: string;
+        finish?: string;
       };
       const sources = Array.isArray(data?.sources) ? (data.sources as string[]).slice(0, 5) : [];
       setLookupSources(sources);
 
-      const hasAnything = !!(s.material || s.careNotes || s.description || s.retailPrice || s.productUrl);
+      const hasAnything = !!(
+        s.material ||
+        s.careNotes ||
+        s.description ||
+        s.retailPrice ||
+        s.productUrl ||
+        s.shadeName ||
+        s.shadeHex ||
+        s.finish
+      );
       if (!hasAnything) {
         setLookupState("error");
         setLookupMessage(missingMessage);
@@ -704,7 +843,7 @@ export default function EditItemForm({ item }: { item: Item }) {
       return;
     }
     return runLookup(
-      { brand: brand.trim(), subType: subType || null, color: color || null, category },
+      { brand: brand.trim(), subType: subType || null, color: color || null, category, isBeauty },
       "Couldn't find this product online — try a more specific subType or color.",
     );
   }
@@ -716,7 +855,7 @@ export default function EditItemForm({ item }: { item: Item }) {
       return;
     }
     return runLookup(
-      { url: lookupUrl.trim() },
+      { url: lookupUrl.trim(), isBeauty, category },
       "Couldn't read that page — try the brand search instead.",
     );
   }
@@ -739,6 +878,9 @@ export default function EditItemForm({ item }: { item: Item }) {
         applied++;
       }
     }
+    if (s.shadeName && !shadeName) { setShadeName(s.shadeName); applied++; }
+    if (s.shadeHex && !shadeHex) { setShadeHex(s.shadeHex); applied++; }
+    if (s.finish && !finish) { setFinish(s.finish); applied++; }
     const noteLines: string[] = [];
     if (s.description) noteLines.push(s.description);
     if (s.retailPrice) noteLines.push(`Retail: ${s.retailPrice}`);

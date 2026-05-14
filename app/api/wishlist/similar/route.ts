@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import { BEAUTY_CATEGORIES } from "@/lib/constants";
 
 export const runtime = "nodejs";
 
@@ -44,6 +45,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ matches: [] });
   }
 
+  // Flip the beauty filter based on the wish's category: a wish for
+  // "Lipstick" should search owned beauty items, a wish for "Tops"
+  // searches the regular closet. Wishes without a category fall back
+  // to the regular closet (no signal to switch).
+  const isBeautyWish =
+    !!category && BEAUTY_CATEGORIES.includes(category as never);
+
   const matches = await prisma.item.findMany({
     where: {
       ownerId: userId,
@@ -53,7 +61,7 @@ export async function GET(req: NextRequest) {
       // be referenced in a generic "you might already own X"
       // popup.)
       isBackroom: false,
-      isBeauty: false,
+      isBeauty: isBeautyWish,
       ...(category ? { category } : {}),
       OR: ors,
     },
