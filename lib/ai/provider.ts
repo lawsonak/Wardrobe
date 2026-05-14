@@ -952,6 +952,157 @@ function makeGemini(): TagProvider {
         return { filters: {}, debug: { error: err instanceof Error ? err.message : String(err) } };
       }
     },
+
+    async detectMultipleItems({ image }) {
+      if (!key) return { items: [], debug: { error: "GEMINI_API_KEY not set" } };
+      try {
+        const imgBuf = Buffer.from(await image.arrayBuffer());
+        const imgMime = image.type || "image/jpeg";
+
+        // Per-detection schema matches the single-item RESPONSE_SCHEMA's
+        // properties (minus seasons/activities/material/careNotes/notes
+        // which we don't expose on the split flow — they can be filled
+        // from the regular per-item edit later). Plus a `box_2d` field
+        // for the bounding box, which is Gemini's standard detection
+        // output convention.
+        const detectionSchema = {
+          type: "OBJECT",
+          properties: {
+            box_2d: {
+              type: "ARRAY",
+              items: { type: "NUMBER" },
+            },
+            category: { type: "STRING", enum: [...ALLOWED_TAG_CATEGORIES] },
+            subType: { type: "STRING" },
+            color: { type: "STRING", enum: [...ALLOWED_COLORS] },
+            brand: { type: "STRING" },
+            isBeauty: { type: "BOOLEAN" },
+            shadeName: { type: "STRING" },
+            shadeHex: { type: "STRING" },
+            finish: { type: "STRING" },
+            confidence: { type: "NUMBER" },
+          },
+          required: ["box_2d", "category"],
+        };
+        const schema = {
+          type: "OBJECT",
+          properties: {
+            items: { type: "ARRAY", items: detectionSchema },
+          },
+          required: ["items"],
+        };
+
+        const prompt = [
+          "Detect every distinct clothing item, accessory, and beauty / cosmetic product in this photo.",
+          "Return one entry per item with a tight bounding box and the same tag fields you'd produce for a single-item upload.",
+          "",
+          "Bounding box format: `box_2d: [ymin, xmin, ymax, xmax]` in 0–1000 normalized coordinates, ymin/xmin in the top-left corner.",
+          "",
+          "Per-item fields:",
+          "- category: closest match from the allowed enum. Clothing items get a clothing category; cosmetics / skincare / fragrance / tools get a beauty category.",
+          "- subType: short noun phrase (e.g. \"linen blazer\", \"matte lipstick\", \"bottle of cleanser\"). Null if you can't tell.",
+          "- color: closest swatch from the allowed palette.",
+          "- brand: visible brand text. Null if not legible.",
+          "- isBeauty: true when the item is a cosmetic / skincare / fragrance / tool. false for clothing / accessories.",
+          "- shadeName / shadeHex / finish: ONLY for beauty items. shadeName is the printed shade name or number (e.g. \"Ruby Woo\", \"311\"); shadeHex is a 6-character #rrggbb approximating the visible product swatch (NOT the packaging tube color); finish is the printed finish word (matte, satin, gloss, etc.). Null for clothing.",
+          "- confidence: 0–1, your overall confidence in this detection.",
+          "",
+          "Hard rules:",
+          "- Tight boxes — don't include surrounding background.",
+          "- One entry per distinct item. Don't lump multiple lipsticks into one box.",
+          "- If the photo is a single full-body outfit on a person (not a flat-lay), return an empty `items` array — splitting body shots into per-garment boxes produces hero photos that are mostly skin.",
+          "- Output ONLY the JSON object.",
+        ].join("\n");
+
+        const body = {
+          contents: [
+            {
+              role: "user",
+              parts: [
+                { text: prompt },
+                { inlineData: { mimeType: imgMime, data: imgBuf.toString("base64") } },
+              ],
+            },
+          ],
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: schema,
+            temperature: 0.1,
+          },
+        };
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+          GEMINI_TAG_MODEL,
+        )}:generateContent?key=${encodeURIComponent(key)}`;
+        const res = await fetchWithTimeout(
+          url,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          },
+          GEMINI_TIMEOUT_MS,
+        );
+        const responseText = await res.text();
+        if (!res.ok) {
+          let detail = `HTTP ${res.status}`;
+          try {
+            const e = JSON.parse(responseText) as { error?: { message?: string } };
+            if (e.error?.message) detail = `HTTP ${res.status}: ${e.error.message}`;
+          } catch {
+            detail = `HTTP ${res.status}: ${responseText.slice(0, 200)}`;
+          }
+          return { items: [], debug: { status: res.status, error: detail, rawText: responseText.slice(0, 400) } };
+        }
+
+        const data = JSON.parse(responseText) as {
+          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+          usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+        };
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+        if (!text) return { items: [], debug: { status: 200, error: "Empty response", rawText: responseText.slice(0, 400) } };
+        const cleaned = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(cleaned);
+        } catch {
+          return { items: [], debug: { status: 200, error: "Model response wasn't valid JSON", rawText: cleaned.slice(0, 400) } };
+        }
+
+        const root = parsed as { items?: unknown };
+        if (!Array.isArray(root.items)) {
+          return { items: [], debug: { status: 200, error: "Model response had no items array", rawText: cleaned.slice(0, 400) } };
+        }
+
+        const out: import("./types").DetectedItem[] = [];
+        for (const raw of root.items) {
+          if (!raw || typeof raw !== "object") continue;
+          const r = raw as Record<string, unknown>;
+          const box = r.box_2d;
+          if (!Array.isArray(box) || box.length !== 4) continue;
+          const nums = box.map((x) => (typeof x === "number" ? x : NaN));
+          if (nums.some((n) => !Number.isFinite(n))) continue;
+          const [ymin, xmin, ymax, xmax] = nums;
+          if (ymax <= ymin || xmax <= xmin) continue;
+          out.push({
+            box: [ymin, xmin, ymax, xmax],
+            suggestion: sanitizeSuggestion(r),
+          });
+        }
+
+        return {
+          items: out,
+          debug: {
+            status: 200,
+            rawText: cleaned.slice(0, 400),
+            promptTokens: data.usageMetadata?.promptTokenCount,
+            responseTokens: data.usageMetadata?.candidatesTokenCount,
+          },
+        };
+      } catch (err) {
+        return { items: [], debug: { error: err instanceof Error ? err.message : String(err) } };
+      }
+    },
   };
 }
 

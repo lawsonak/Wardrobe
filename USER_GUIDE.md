@@ -153,6 +153,28 @@ There are three intake paths.
 - **↻ Retry N failed** button re-runs the upload phase only on the failed rows. Successful uploads stay on the server. Click as many times as you need.
 - **Open Closet** / **Upload another batch** buttons round it out.
 
+### ✂ Split a multi-item photo
+
+`/wardrobe/new/split` (reached via the **✂ Split** button on the closet, Beauty, or Spicy headers)
+
+For when one photo has multiple items in it — a stack of clothing on a bed, a shopping-bag dump, a makeup-drawer shot, or a vanity shelf. AI detects each piece and lets you save them all in one pass.
+
+**Flow:**
+
+1. Tap **📷 Take photo** or **🖼️ Choose from library**. One photo, multiple items in frame.
+2. AI runs detection (~5-15 seconds depending on photo size). You'll see a per-item card for each detection with a cropped thumbnail.
+3. Each card shows category, subtype, color, brand, plus 💄 Beauty / 🌶 Spicy toggles. Beauty cards also expose the shade name, swatch hex, and finish. Confidence percentage shows in the corner — low-confidence detections are usually false positives you'll want to deselect.
+4. Untick any false positives. Edit any field that came back wrong.
+5. **Save N items to closet** crops the original per box, creates each Item, and kicks off background bg-removal cutouts.
+
+**Works best on:**
+- Flat-lays — pieces laid out side-by-side on a bed or table
+- Cosmetic shelf / drawer photos
+- Shopping-bag dumps after returning home
+
+**Works poorly on:**
+- Outfit-on-body shots — the model is explicitly told to skip these because per-garment crops on a body end up mostly skin. Use the regular **+ Add** page for individual on-body shots.
+
 ---
 
 ## Item detail + editing
@@ -606,6 +628,7 @@ Every AI feature has a ✨ sparkle in the UI. When AI is disabled, the feature r
 |---|---|---|
 | Auto-tag a single item | Item add / edit | Fills empty fields from photo + label. Beauty-aware: extracts shade name, swatch hex, and finish when the photo is a cosmetic. |
 | Auto-tag in bulk | Bulk upload, closet Select Multiple | Background batch over many items. Beauty fields ride the same review flow as the clothing ones. |
+| ✂ Split multi-item photo | Closet / Beauty / Spicy headers → ✂ Split | One flat-lay photo → AI detects each item, crops, tags, creates N closet entries in one pass. Beauty-aware (shelves, drawers, lipstick lineups). |
 | Build outfit from prompt | Outfit Builder | "Sunday brunch" → AI picks items |
 | Today's outfit | Dashboard | Daily AI pick + try-on |
 | Today's suggestion | Dashboard | Daily product to consider, optionally constrained |
