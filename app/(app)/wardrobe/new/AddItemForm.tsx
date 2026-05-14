@@ -796,23 +796,27 @@ export default function AddItemForm({
           />
         </div>
 
-        <label className="flex items-center gap-2 text-sm text-stone-700">
-          <input type="checkbox" checked={isFavorite} onChange={(e) => setIsFavorite(e.target.checked)} />
-          Mark as favorite
-        </label>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setIsFavorite((v) => !v)}
+            aria-pressed={isFavorite}
+            title={isFavorite ? "Remove from favorites" : "Mark as favorite"}
+            className={"chip " + (isFavorite ? "chip-on" : "chip-off")}
+          >
+            <span aria-hidden className="mr-1">{isFavorite ? "♥" : "♡"}</span>
+            Favorite
+          </button>
 
-        {/* 🌶 flag — sends this item to the dedicated 🌶 page and
-            excludes it from the main closet, outfit builder,
-            collection picker, and AI prompts. */}
-        <label
-          className="flex items-center gap-2 text-sm text-stone-700"
-          title="Move to the 🌶 page; hide from the main closet, outfits, collections, and AI prompts."
-        >
-          <input
-            type="checkbox"
-            checked={isBackroom}
-            onChange={(e) => {
-              const next = e.target.checked;
+          {/* 🌶 flag — sends this item to the dedicated 🌶 page and
+              excludes it from the main closet, outfit builder,
+              collection picker, and AI prompts. */}
+          <button
+            type="button"
+            aria-pressed={isBackroom}
+            title="Move to the 🌶 page; hide from the main closet, outfits, collections, and AI prompts."
+            onClick={() => {
+              const next = !isBackroom;
               setIsBackroom(next);
               // Toggling buckets switches the category vocabulary.
               // If the current pick isn't in the new list, snap to
@@ -824,22 +828,21 @@ export default function AddItemForm({
                 setSubType("");
               }
             }}
-          />
-          🌶
-        </label>
+            className={"chip " + (isBackroom ? "chip-on" : "chip-off")}
+          >
+            <span aria-hidden className="mr-1">🌶</span>
+            Spicy
+          </button>
 
-        {/* 💄 flag — sends this item to /wardrobe/beauty and swaps
-            the form into beauty mode (BEAUTY_CATEGORIES dropdown,
-            shade + finish fields below, barcode scan shortcut). */}
-        <label
-          className="flex items-center gap-2 text-sm text-stone-700"
-          title="Move to the 💄 page; swap to beauty categories with shade fields."
-        >
-          <input
-            type="checkbox"
-            checked={isBeauty}
-            onChange={(e) => {
-              const next = e.target.checked;
+          {/* 💄 flag — sends this item to /wardrobe/beauty and swaps
+              the form into beauty mode (BEAUTY_CATEGORIES dropdown,
+              shade + finish fields below, barcode scan shortcut). */}
+          <button
+            type="button"
+            aria-pressed={isBeauty}
+            title="Move to the 💄 page; swap to beauty categories with shade fields."
+            onClick={() => {
+              const next = !isBeauty;
               setIsBeauty(next);
               // Snap category to a value that's selectable in the
               // new vocabulary so the dropdown doesn't sit on a
@@ -858,9 +861,12 @@ export default function AddItemForm({
                 }
               }
             }}
-          />
-          💄
-        </label>
+            className={"chip " + (isBeauty ? "chip-on" : "chip-off")}
+          >
+            <span aria-hidden className="mr-1">💄</span>
+            Beauty
+          </button>
+        </div>
 
         {/* Beauty-only fields. Shade name + hex picker live in a
             single row; the hex input doubles as a swatch preview

@@ -1140,40 +1140,44 @@ export default function EditItemForm({ item }: { item: Item }) {
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-4">
-          <label className="flex items-center gap-2 text-sm text-stone-700">
-            <input type="checkbox" checked={isFavorite} onChange={(e) => setIsFavorite(e.target.checked)} />
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsFavorite((v) => !v)}
+            aria-pressed={isFavorite}
+            title={isFavorite ? "Remove from favorites" : "Mark as favorite"}
+            className={"chip " + (isFavorite ? "chip-on" : "chip-off")}
+          >
+            <span aria-hidden className="mr-1">{isFavorite ? "♥" : "♡"}</span>
             Favorite
-          </label>
+          </button>
           {/* 🌶 flag — sends this item to the dedicated /wardrobe/backroom
               page (the 🌶 in the closet header). Hard-excluded from
               the main closet, outfit builder, collection picker, and
               AI prompts. */}
-          <label
-            className="flex items-center gap-2 text-sm text-stone-700"
+          <button
+            type="button"
+            aria-pressed={isBackroom}
             title="Move to the 🌶 page; hide from the main closet, outfits, collections, and AI prompts."
+            onClick={() => setIsBackroom(!isBackroom)}
+            className={"chip " + (isBackroom ? "chip-on" : "chip-off")}
           >
-            <input
-              type="checkbox"
-              checked={isBackroom}
-              onChange={(e) => setIsBackroom(e.target.checked)}
-            />
-            🌶
-          </label>
+            <span aria-hidden className="mr-1">🌶</span>
+            Spicy
+          </button>
           {/* 💄 flag — sends this item to /wardrobe/beauty and swaps
               the form's category dropdown to BEAUTY_CATEGORIES.
               Independent of 🌶 (a beauty item can also be Spicy). */}
-          <label
-            className="flex items-center gap-2 text-sm text-stone-700"
+          <button
+            type="button"
+            aria-pressed={isBeauty}
             title="Move to the 💄 page; swap to beauty categories with shade fields."
+            onClick={() => setIsBeauty(!isBeauty)}
+            className={"chip " + (isBeauty ? "chip-on" : "chip-off")}
           >
-            <input
-              type="checkbox"
-              checked={isBeauty}
-              onChange={(e) => setIsBeauty(e.target.checked)}
-            />
-            💄
-          </label>
+            <span aria-hidden className="mr-1">💄</span>
+            Beauty
+          </button>
         </div>
 
         <div>
