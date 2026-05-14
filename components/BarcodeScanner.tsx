@@ -53,6 +53,17 @@ export default function BarcodeScanner({ open, onDetect, onCancel }: Props) {
   const firedRef = useRef(false);
 
   const [supported, setSupported] = useState<boolean | null>(null);
+  // Specific reason the scanner fell back to manual entry. Lets the
+  // hint render targeted copy instead of a generic "not supported"
+  // — most failures are fixable (open over HTTPS, update iOS, switch
+  // browser) and the user has no way to know which one applies.
+  type Diagnosis =
+    | "insecure-context"
+    | "no-getusermedia"
+    | "no-barcodedetector"
+    | "unknown";
+  const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null);
+  const [isIos, setIsIos] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [manualCode, setManualCode] = useState("");
 
@@ -60,11 +71,36 @@ export default function BarcodeScanner({ open, onDetect, onCancel }: Props) {
   // so it never blocks SSR.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!window.BarcodeDetector || !navigator.mediaDevices?.getUserMedia) {
+    // Best-effort iOS sniff — used only to tailor the failure hint
+    // copy (e.g. tell iPhone users which iOS version added the API,
+    // or how to re-enable camera permission in Settings).
+    const ua = navigator.userAgent || "";
+    setIsIos(/iPad|iPhone|iPod/.test(ua) || (ua.includes("Mac") && "ontouchend" in document));
+
+    const secure = window.isSecureContext;
+    const hasGUM = !!navigator.mediaDevices?.getUserMedia;
+    const hasDetector = !!window.BarcodeDetector;
+
+    if (!secure) {
+      // Most common cause on a LAN deploy — Safari refuses to expose
+      // the camera over plain HTTP. The fact that BarcodeDetector is
+      // also gated behind a secure context is the cherry on top.
       setSupported(false);
+      setDiagnosis("insecure-context");
+      return;
+    }
+    if (!hasGUM) {
+      setSupported(false);
+      setDiagnosis("no-getusermedia");
+      return;
+    }
+    if (!hasDetector) {
+      setSupported(false);
+      setDiagnosis("no-barcodedetector");
       return;
     }
     setSupported(true);
+    setDiagnosis(null);
   }, []);
 
   // Start / stop the camera based on `open`. Cleans up the stream +
@@ -126,10 +162,15 @@ export default function BarcodeScanner({ open, onDetect, onCancel }: Props) {
         rafRef.current = requestAnimationFrame(tick);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Camera unavailable";
-        // Common case: user denied permission. Surface a clear hint
-        // rather than the raw DOM exception.
+        // Common case: user denied permission. iOS users often hit
+        // this once and then can't figure out where to flip the
+        // toggle back on — so spell out the path for them.
         if (/denied|notallowed/i.test(message)) {
-          setCameraError("Camera permission denied. Type the barcode by hand instead.");
+          setCameraError(
+            isIos
+              ? "Camera permission denied. Re-enable it in iOS Settings → Safari → Camera (or this site under Settings → Apps → Safari → Websites → Camera), then reload the page. Or type the barcode by hand below."
+              : "Camera permission denied. Re-enable it in your browser's site settings, then reload. Or type the barcode by hand below.",
+          );
         } else {
           setCameraError(message);
         }
@@ -211,10 +252,7 @@ export default function BarcodeScanner({ open, onDetect, onCancel }: Props) {
         )}
 
         {supported === false && (
-          <p className="text-xs text-stone-500">
-            Camera scanning isn&rsquo;t supported on this browser. Type the
-            barcode below.
-          </p>
+          <UnsupportedHint diagnosis={diagnosis} isIos={isIos} />
         )}
 
         {/* Manual entry — always visible so the user can type even when
@@ -250,6 +288,62 @@ export default function BarcodeScanner({ open, onDetect, onCancel }: Props) {
           </p>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Renders a specific, actionable explanation for why the camera path
+// isn't available. Picks the copy based on the diagnosis flag the
+// support-detection effect set on mount.
+function UnsupportedHint({
+  diagnosis,
+  isIos,
+}: {
+  diagnosis:
+    | "insecure-context"
+    | "no-getusermedia"
+    | "no-barcodedetector"
+    | "unknown"
+    | null;
+  isIos: boolean;
+}) {
+  let title: string;
+  let body: string;
+  let hint: string | null = null;
+
+  switch (diagnosis) {
+    case "insecure-context":
+      title = "Camera scanning needs HTTPS.";
+      body = isIos
+        ? "iOS Safari refuses to open the camera on plain http:// pages. The app is currently loaded over HTTP, so the scanner can't start."
+        : "Your browser refuses to open the camera on plain http:// pages. The app is currently loaded over HTTP, so the scanner can't start.";
+      hint = "Type the barcode below for now. To enable scanning, the app needs to be served over HTTPS (e.g. via Tailscale or a Caddy reverse proxy with a Let's Encrypt cert).";
+      break;
+    case "no-getusermedia":
+      title = "Camera access isn't available.";
+      body = isIos
+        ? "This browser doesn't expose camera access. On iPhone, this usually means you're using an in-app browser (like the one inside Instagram or Slack) — those don't allow camera. Open the page in Safari directly."
+        : "This browser doesn't expose camera access. Try Chrome, Edge, or Safari (iOS 17+).";
+      hint = "Type the barcode below to look up the product manually.";
+      break;
+    case "no-barcodedetector":
+      title = "Browser is missing the barcode reader.";
+      body = isIos
+        ? "iOS Safari added the built-in barcode reader in iOS 17. If you're on an older iOS, the camera can't decode barcodes here. Update iOS or scan the barcode with the Camera app and read the digits."
+        : "Safari on macOS and Firefox don't ship the barcode reader API. On desktop, Chrome or Edge will scan. On phones, iOS 17+ Safari or Android Chrome works.";
+      hint = "Type the barcode below as a quick workaround — the lookup is the same once we have the digits.";
+      break;
+    default:
+      title = "Camera scanning isn't supported on this browser.";
+      body = "Type the barcode below to look it up manually.";
+      break;
+  }
+
+  return (
+    <div className="space-y-1 rounded-lg bg-amber-50 px-3 py-2 ring-1 ring-amber-200">
+      <p className="text-xs font-medium text-amber-900">{title}</p>
+      <p className="text-xs text-amber-800">{body}</p>
+      {hint && <p className="text-[11px] text-amber-700">{hint}</p>}
     </div>
   );
 }
