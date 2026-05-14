@@ -220,6 +220,8 @@ export default async function ItemDetail({
           shadeHex: item.shadeHex ?? null,
           finish: item.finish ?? null,
           status: item.status,
+          createdAt: item.createdAt.toISOString(),
+          updatedAt: item.updatedAt.toISOString(),
         }}
         outfits={detailOutfits}
         angles={angles}

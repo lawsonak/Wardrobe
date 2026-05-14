@@ -34,6 +34,11 @@ type DetailItem = {
   shadeHex: string | null;
   finish: string | null;
   status: string;
+  /** ISO-formatted timestamps from Prisma. Serialized as strings
+   *  because Server Component → Client Component prop bridges can't
+   *  carry Date instances. */
+  createdAt: string;
+  updatedAt: string;
 };
 
 type DetailOutfit = {
@@ -46,6 +51,20 @@ const STATUS_LABELS: Record<string, string> = {
   active: "Active",
   draft: "Draft",
 };
+
+// Render an ISO timestamp as "May 14, 2026" for the Details card.
+// Server-side render so the user sees the same value as the page
+// owner — no client-locale flicker.
+const DATE_FORMAT = new Intl.DateTimeFormat("en-US", {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+});
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return DATE_FORMAT.format(d);
+}
 
 const OUTFITS_VISIBLE_BY_DEFAULT = 10;
 
@@ -271,6 +290,16 @@ export default function ItemDetailView({
                 {STATUS_LABELS[item.status] ?? item.status}
               </span>
             )}
+            {item.isBeauty && (
+              <span className="rounded-full bg-stone-100 px-2 py-0.5 text-stone-700">
+                💄 Beauty
+              </span>
+            )}
+            {item.isBackroom && (
+              <span className="rounded-full bg-stone-100 px-2 py-0.5 text-stone-700">
+                🌶 Spicy
+              </span>
+            )}
             {item.color && (
               <span className="rounded-full bg-cream-100 px-2 py-0.5 capitalize text-stone-600">
                 {item.color}
@@ -308,10 +337,22 @@ export default function ItemDetailView({
           companion concept.) */}
       {!item.isBeauty && <TryOnButton itemId={item.id} />}
 
-      {/* Metadata grid */}
+      {/* Metadata grid — every field the edit form exposes, rendered
+          read-only here so the user can see the full picture without
+          leaving the page. Empty fields are omitted to keep the list
+          terse; the "tap Edit to fill them in" hint surfaces only
+          when the whole block is empty. */}
       <section className="card p-4">
         <p className="label mb-2">Details</p>
         <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm">
+          <dt className="text-stone-500">Category</dt>
+          <dd className="font-medium text-stone-800">{item.category}</dd>
+          {item.subType && (
+            <>
+              <dt className="text-stone-500">Type</dt>
+              <dd className="font-medium text-stone-800">{item.subType}</dd>
+            </>
+          )}
           {item.brand && (
             <>
               <dt className="text-stone-500">Brand</dt>
@@ -330,6 +371,49 @@ export default function ItemDetailView({
               <dd className="font-medium capitalize text-stone-800">{item.color}</dd>
             </>
           )}
+          {/* Beauty trio. Shade name + swatch are the most useful at
+              a glance (already in the title pills) but repeated here
+              so the Details card stands on its own as a complete
+              read-only record of the row. */}
+          {item.isBeauty && item.shadeName && (
+            <>
+              <dt className="text-stone-500">Shade</dt>
+              <dd className="inline-flex items-center gap-2 font-medium text-stone-800">
+                {item.shadeHex && (
+                  <span
+                    className="h-3 w-3 rounded-full ring-1 ring-stone-300"
+                    style={{ backgroundColor: item.shadeHex }}
+                    aria-hidden
+                  />
+                )}
+                {item.shadeName}
+                {item.shadeHex && (
+                  <span className="text-xs font-normal uppercase text-stone-400">
+                    {item.shadeHex}
+                  </span>
+                )}
+              </dd>
+            </>
+          )}
+          {item.isBeauty && !item.shadeName && item.shadeHex && (
+            <>
+              <dt className="text-stone-500">Shade</dt>
+              <dd className="inline-flex items-center gap-2 font-medium text-stone-800">
+                <span
+                  className="h-3 w-3 rounded-full ring-1 ring-stone-300"
+                  style={{ backgroundColor: item.shadeHex }}
+                  aria-hidden
+                />
+                <span className="text-xs uppercase text-stone-500">{item.shadeHex}</span>
+              </dd>
+            </>
+          )}
+          {item.isBeauty && item.finish && (
+            <>
+              <dt className="text-stone-500">Finish</dt>
+              <dd className="font-medium capitalize text-stone-800">{item.finish}</dd>
+            </>
+          )}
           {visibleFitDetails.map((f) => (
             <Fragment key={f.key}>
               <dt className="text-stone-500">{f.label}</dt>
@@ -344,10 +428,15 @@ export default function ItemDetailView({
               <dd className="font-medium text-stone-800">{item.fitNotes}</dd>
             </>
           )}
+          <dt className="text-stone-500">Added</dt>
+          <dd className="text-stone-700">{formatDate(item.createdAt)}</dd>
+          {item.updatedAt !== item.createdAt && (
+            <>
+              <dt className="text-stone-500">Updated</dt>
+              <dd className="text-stone-700">{formatDate(item.updatedAt)}</dd>
+            </>
+          )}
         </dl>
-        {!item.brand && !item.size && !item.color && visibleFitDetails.length === 0 && !item.fitNotes && (
-          <p className="text-sm text-stone-500">No details yet — tap Edit to fill them in.</p>
-        )}
       </section>
 
       {/* Tag chips */}
