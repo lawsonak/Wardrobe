@@ -656,11 +656,11 @@ function Step1Choose({
                 }}
               />
               <span>
-                <span className="font-medium">🌶 Mark all</span>
+                <span className="font-medium">🌶 Mark all as Spicy</span>
                 <span className="block text-xs text-stone-500">
                   {allBackroom
-                    ? "Every item lands on the 🌶 page only — hidden from the main closet, outfit builder, and AI prompts."
-                    : "Tag everything in this batch with 🌶 — only visible in the dedicated 🌶 page."}
+                    ? "Every item lands on the Spicy page only — hidden from the main closet, outfit builder, and AI prompts."
+                    : "Send every item in this batch to the Spicy page."}
                 </span>
               </span>
             </label>
@@ -690,11 +690,11 @@ function Step1Choose({
                 }}
               />
               <span>
-                <span className="font-medium">💄 Mark all</span>
+                <span className="font-medium">💄 Mark all as Beauty</span>
                 <span className="block text-xs text-stone-500">
                   {allBeauty
-                    ? "Every item lands on the 💄 page only — separate from the main closet and AI outfit prompts."
-                    : "Tag everything in this batch with 💄 — only visible in the dedicated 💄 page."}
+                    ? "Every item lands on the Beauty page only — separate from the main closet and AI outfit prompts."
+                    : "Send every item in this batch to the Beauty page."}
                 </span>
               </span>
             </label>
