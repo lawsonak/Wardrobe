@@ -22,7 +22,7 @@ export default async function LookDetailPage({
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
 
-  const [look, items] = await Promise.all([
+  const [look, items, pairedOutfits] = await Promise.all([
     prisma.look.findFirst({
       where: { id, ownerId: userId },
       include: { items: { select: { itemId: true, slot: true } } },
@@ -40,6 +40,14 @@ export default async function LookDetailPage({
         shadeName: true,
         shadeHex: true,
       },
+    }),
+    // Outfits paired with this Look via Outfit.lookId. Surfaces the
+    // back-reference on the detail page so the user knows which
+    // outfits will lose their pairing if they delete the Look.
+    prisma.outfit.findMany({
+      where: { ownerId: userId, lookId: id },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, name: true },
     }),
   ]);
   if (!look) notFound();
@@ -60,6 +68,32 @@ export default async function LookDetailPage({
         <p className="text-sm text-stone-500">Edit slots inline. Save commits the change.</p>
       </div>
       <LookBuilder items={picks} initial={initial} />
+
+      {/* "Used in N outfits" back-reference. Surfaces the Look ↔
+          Outfit relationship from this side so a user deleting a
+          look knows which outfits will lose the pairing (the
+          delete won't kill the outfits — Outfit.lookId is set to
+          null via ON DELETE SET NULL — but the routine is gone). */}
+      {pairedOutfits.length > 0 && (
+        <section className="card space-y-2 p-4">
+          <p className="text-xs uppercase tracking-wide text-stone-500">
+            Paired with {pairedOutfits.length} outfit
+            {pairedOutfits.length === 1 ? "" : "s"}
+          </p>
+          <ul className="flex flex-wrap gap-2 text-sm">
+            {pairedOutfits.map((o) => (
+              <li key={o.id}>
+                <Link
+                  href={`/outfits/${o.id}/style`}
+                  className="chip chip-off"
+                >
+                  {o.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

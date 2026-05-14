@@ -22,10 +22,48 @@ export default async function BuilderPage({
 
   // Owner-scope guard: without ownerId, the builder picker leaked
   // every other user's active items into the slot grid.
-  const items = await prisma.item.findMany({
-    where: { ownerId: userId, status: "active", isBeauty: false, ...backroomItemFilter(includeBackroom) },
-    orderBy: { createdAt: "desc" },
-  });
+  const [items, looks] = await Promise.all([
+    prisma.item.findMany({
+      where: { ownerId: userId, status: "active", isBeauty: false, ...backroomItemFilter(includeBackroom) },
+      orderBy: { createdAt: "desc" },
+    }),
+    // Looks for the optional "Pair with a Look" picker. Card-shaped
+    // projection — only the bits the sheet renders.
+    prisma.look.findMany({
+      where: { ownerId: userId },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        items: {
+          take: 4,
+          select: {
+            item: {
+              select: {
+                id: true,
+                imagePath: true,
+                imageBgRemovedPath: true,
+                shadeHex: true,
+              },
+            },
+          },
+        },
+        _count: { select: { items: true } },
+      },
+    }),
+  ]);
+  const availableLooks = looks.map((l) => ({
+    id: l.id,
+    name: l.name,
+    itemCount: l._count.items,
+    thumbs: l.items.map(({ item }) => ({
+      id: item.id,
+      src: item.imageBgRemovedPath
+        ? `/api/uploads/${item.imageBgRemovedPath}`
+        : `/api/uploads/${item.imagePath}`,
+      shadeHex: item.shadeHex,
+    })),
+  }));
   return (
     <div className="space-y-5">
       <div className="flex items-end justify-between gap-3">
@@ -55,6 +93,7 @@ export default async function BuilderPage({
             activities: i.activities,
           }))}
           includeBackroom={includeBackroom}
+          availableLooks={availableLooks}
         />
       </Suspense>
     </div>

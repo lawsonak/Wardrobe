@@ -32,22 +32,58 @@ export default async function EditOutfitPage({
   // pieces would silently drop them from the picker. The toggle only
   // controls whether *other* Backroom items are pickable.
   const existingItemIds = outfit.items.map((i) => i.itemId);
-  const items = await prisma.item.findMany({
-    where: {
-      ownerId: userId,
-      status: "active",
-      // Beauty items aren't pickable from the outfit builder — they
-      // attach via a separate Look pairing (PR D). Hard-exclude here
-      // even when an existing OutfitItem somehow points at one (it
-      // shouldn't, but the guard keeps the picker clean).
-      isBeauty: false,
-      OR: [
-        ...(includeBackroom ? [{}] : [{ isBackroom: false }]),
-        { id: { in: existingItemIds } },
-      ],
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  const [items, looks] = await Promise.all([
+    prisma.item.findMany({
+      where: {
+        ownerId: userId,
+        status: "active",
+        // Beauty items aren't pickable from the outfit builder — they
+        // attach via a separate Look pairing (PR D). Hard-exclude here
+        // even when an existing OutfitItem somehow points at one (it
+        // shouldn't, but the guard keeps the picker clean).
+        isBeauty: false,
+        OR: [
+          ...(includeBackroom ? [{}] : [{ isBackroom: false }]),
+          { id: { in: existingItemIds } },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.look.findMany({
+      where: { ownerId: userId },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        items: {
+          take: 4,
+          select: {
+            item: {
+              select: {
+                id: true,
+                imagePath: true,
+                imageBgRemovedPath: true,
+                shadeHex: true,
+              },
+            },
+          },
+        },
+        _count: { select: { items: true } },
+      },
+    }),
+  ]);
+  const availableLooks = looks.map((l) => ({
+    id: l.id,
+    name: l.name,
+    itemCount: l._count.items,
+    thumbs: l.items.map(({ item }) => ({
+      id: item.id,
+      src: item.imageBgRemovedPath
+        ? `/api/uploads/${item.imageBgRemovedPath}`
+        : `/api/uploads/${item.imagePath}`,
+      shadeHex: item.shadeHex,
+    })),
+  }));
 
   const initial: InitialOutfit = {
     id: outfit.id,
@@ -56,6 +92,7 @@ export default async function EditOutfitPage({
     season: outfit.season,
     isFavorite: outfit.isFavorite,
     items: outfit.items.map((i) => ({ itemId: i.itemId, slot: i.slot })),
+    lookId: outfit.lookId,
   };
 
   return (
@@ -88,6 +125,7 @@ export default async function EditOutfitPage({
             activities: i.activities,
           }))}
           initial={initial}
+          availableLooks={availableLooks}
         />
       </Suspense>
     </div>
