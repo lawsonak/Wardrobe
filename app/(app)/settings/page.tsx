@@ -282,6 +282,12 @@ export default async function SettingsPage() {
         <h2 className="font-display text-lg text-stone-800">Maintenance</h2>
         <ul className="mt-2 space-y-2 text-sm">
           <li>
+            <Link href="/settings/about" className="text-blush-600 hover:underline">
+              About this app
+            </Link>
+            <span className="text-stone-500"> — full user guide for every feature.</span>
+          </li>
+          <li>
             <Link href="/wardrobe/needs-review" className="text-blush-600 hover:underline">
               Needs Review inbox
             </Link>
