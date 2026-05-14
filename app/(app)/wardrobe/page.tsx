@@ -6,7 +6,9 @@ import { firstNameFromUser } from "@/lib/userName";
 import SmartSearchBar from "./SmartSearchBar";
 import ClosetGallery from "./ClosetGallery";
 import ApplyPendingAiBar from "./ApplyPendingAiBar";
+import SortSelect from "./SortSelect";
 import { inferredCategoriesFor } from "@/lib/activities";
+import { isSortKey, orderByFor, type SortKey } from "@/lib/closetSort";
 
 export const dynamic = "force-dynamic";
 
@@ -17,13 +19,14 @@ export default async function WardrobePage({
     category?: string;
     fav?: string;
     q?: string;
-    status?: string;
     color?: string;
     season?: string;
     activity?: string;
     /** "1" → only show items with pending AI suggestions staged from
      *  a bulk re-tag run that the user hasn't reviewed yet. */
     pending?: string;
+    /** Sort key. Defaults to "newest". See lib/closetSort.ts. */
+    sort?: string;
   }>;
 }) {
   const [sp, session] = await Promise.all([searchParams, auth()]);
@@ -37,6 +40,8 @@ export default async function WardrobePage({
   const color = sp.color?.trim() || undefined;
   const season = sp.season?.trim() || undefined;
   const activity = sp.activity?.trim() || undefined;
+  const sort: SortKey = isSortKey(sp.sort) ? sp.sort : "newest";
+  const orderBy = orderByFor(sort);
 
   // Activity filter pulls in categories that strongly imply that
   // activity — e.g. "beach" surfaces every Swimwear item even when
@@ -111,16 +116,16 @@ export default async function WardrobePage({
     prisma.item.findMany({
       where: buildWhere(new Set()),
       select,
-      orderBy: { createdAt: "desc" },
+      orderBy,
     }),
   ]);
 
   // Loose-match fallback: when the strict query returns nothing AND a
   // narrowing filter is set, drop one filter at a time until results
-  // appear or only the user's most-likely intent (category, favorites,
-  // unlabeled) remains. Drop order is "most variable" first — color
-  // and activity rarely match exactly, free text and category are
-  // closer to user intent. Drop is never to less than ownerId+status.
+  // appear or only the user's most-likely intent (category, favorites)
+  // remains. Drop order is "most variable" first — color and activity
+  // rarely match exactly, free text and category are closer to user
+  // intent. Drop is never to less than ownerId+status.
   let items = strictItems;
   let droppedFilter: string | null = null;
   if (items.length === 0) {
@@ -132,7 +137,7 @@ export default async function WardrobePage({
       const next = await prisma.item.findMany({
         where: buildWhere(dropped),
         select,
-        orderBy: { createdAt: "desc" },
+        orderBy,
       });
       if (next.length > 0) {
         items = next;
@@ -198,9 +203,9 @@ export default async function WardrobePage({
 
       <SmartSearchBar initialQuery={q ?? ""} hasItems={items.length > 0} />
 
-      {/* One-tap quick filters. Sit right under the search bar so they
-          double as visible affordances for "what kinds of slices does
-          this view support". */}
+      {/* One-tap quick filters + sort. Sit right under the search bar
+          so they double as visible affordances for "what kinds of
+          slices does this view support". */}
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <Link
           href={favOnly ? dropParam(sp, "fav") : `/wardrobe?${withParam(sp, "fav", "1")}`}
@@ -226,6 +231,9 @@ export default async function WardrobePage({
             )}
           </Link>
         )}
+        <div className="ml-auto">
+          <SortSelect value={sort} />
+        </div>
       </div>
 
       {/* Quick taxonomy filter (form, kept for keyboard-only / no-AI

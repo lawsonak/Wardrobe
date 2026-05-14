@@ -76,8 +76,8 @@ The search bar at the top is **AI-driven**. Type natural language ("white linen 
 Sit right under the search bar:
 
 - **★ Favorites** — only items you've starred.
-- **Unlabeled** — items waiting for AI tags or manual cleanup. Badge shows the count.
 - **✨ Pending AI** — items with AI tag suggestions staged from a bulk re-tag run that you haven't reviewed yet. Hidden when there are none.
+- **Sort** — Newest first (default), Oldest first, Category, Color, Brand, or Favorites first. Picking anything other than Newest keeps the choice in the URL so it survives navigation.
 
 ### "More filters" expander
 
