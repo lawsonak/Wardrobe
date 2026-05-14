@@ -33,6 +33,10 @@ export type ActivityKind =
   | "outfit.create"
   | "outfit.update"
   | "outfit.delete"
+  // Looks (makeup-only outfit equivalent)
+  | "look.create"
+  | "look.update"
+  | "look.delete"
   // Collections
   | "collection.create"
   | "collection.update"
