@@ -48,8 +48,10 @@ async function readUpload(rel: string): Promise<{ buf: Buffer; mime: string } | 
 // promotes the item to "active" status when the model's reported
 // confidence is >= promoteAtConfidence (default 0.85).
 //
-// When `itemIds` is omitted, defaults to the caller's needs_review
-// queue (legacy behavior). When provided, scopes strictly to that set.
+// `itemIds` is required in practice — every caller (closet bulk-
+// select, bulk-upload follow-up) passes one. Omitting it matches no
+// rows so a stray no-arg call returns 0 processed instead of randomly
+// re-tagging the user's whole closet.
 //
 // Per-user inflight guard mirrors the bg-remove-batch / optimize-photos
 // pattern: a background-mode kick-off holds the slot until the batch
@@ -94,11 +96,12 @@ export async function POST(req: NextRequest) {
         // it includes Backroom items. The user owns those rows and is
         // asking for them by id.
         { ownerId: userId, id: { in: requestedIds } }
-      : // Legacy fallback: walk the needs_review queue. Skip Backroom
-        // items here so they aren't auto-tagged through generic prompts
-        // — the user can explicitly request auto-tag on Backroom items
-        // via the per-item button or by passing their ids.
-        { ownerId: userId, status: "needs_review", isBackroom: false, isBeauty: false },
+      : // No itemIds passed. With the "Needs Review" queue removed,
+        // there's no implicit batch to fall back to — every real
+        // caller (closet bulk-select, bulk-upload) supplies item ids.
+        // Match nothing so a stray no-arg call returns cleanly instead
+        // of randomly re-tagging the user's whole closet.
+        { ownerId: userId, id: { in: [] } },
     orderBy: { createdAt: "asc" },
     take: limit,
   });
@@ -423,13 +426,9 @@ async function runBatch(
       parts.push(`${pendingCount} item${pendingCount === 1 ? "" : "s"} need${pendingCount === 1 ? "s" : ""} review`);
     }
     if (errors > 0) parts.push(`${errors} error${errors === 1 ? "" : "s"}`);
-    // Pending review takes precedence — that's where the user has
-    // pending decisions to make.
-    const href = pendingCount > 0
-      ? "/wardrobe?pending=1"
-      : promoted < items.length
-        ? "/wardrobe/needs-review"
-        : "/wardrobe";
+    // Pending AI review takes precedence — that's where the user has
+    // per-row decisions to make. Otherwise land on the closet.
+    const href = pendingCount > 0 ? "/wardrobe?pending=1" : "/wardrobe";
     await prisma.notification
       .create({
         data: {

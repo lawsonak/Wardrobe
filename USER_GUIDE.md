@@ -132,8 +132,8 @@ There are three intake paths.
 **Step 1: Choose**
 - Pick photos (multiple).
 - Default category — pick one, or leave at **✨ Auto** to let AI assign per-photo.
-- Status — typically **Needs Review** so you can confirm each tag.
-- Toggles: **AI auto-tag** (with a confidence threshold for auto-promotion to active), **Remove backgrounds** (server-side, runs after upload), **🌶 Mark all** (sends every item in the batch to Spicy; the category dropdown swaps to spicy categories).
+- Items always land as **Active** — no review queue.
+- Toggles: **AI auto-tag** (with a confidence threshold), **Remove backgrounds** (server-side, runs after upload), **🌶 Mark all as Spicy**, **💄 Mark all as Beauty**.
 
 **Step 2: Process**
 - Uploads run sequentially (one POST per file) so a single bad photo doesn't break the batch.
@@ -151,7 +151,7 @@ There are three intake paths.
   - Sharp / VipsJpeg → "Image data is corrupt or in an unsupported format."
   - 500 / network → "Server hiccup — tap retry."
 - **↻ Retry N failed** button re-runs the upload phase only on the failed rows. Successful uploads stay on the server. Click as many times as you need.
-- **Open Needs Review** / **Back to Closet** / **Upload another batch** buttons round it out.
+- **Open Closet** / **Upload another batch** buttons round it out.
 
 ---
 
@@ -184,7 +184,7 @@ One tap. The server asks Gemini to build a complete outfit anchored on this item
 
 Toggle by tapping **✎ Edit** or appending `?edit=1`.
 
-You get the full edit form: category, sub-type (with a chip picker), color (with the 34-color swatches), brand (autocomplete from your existing brands), size, fit details, seasons, activities, notes, plus the **Favorite** + **🌶 Spicy** checkboxes and a status dropdown (Active / Needs Review / Draft).
+You get the full edit form: category, sub-type (with a chip picker), color (with the 34-color swatches), brand (autocomplete from your existing brands), size, fit details, seasons, activities, notes, plus the **Favorite** / **🌶 Spicy** / **💄 Beauty** chip toggles and a status dropdown (Active / Draft).
 
 ✨ AI assists in edit mode:
 - **Auto-tag** — re-runs the tagger on the existing photos.
@@ -296,7 +296,7 @@ Spicy is a fully separate closet for items you want kept off the main view: ling
 - Today's product suggestion.
 - The bulk auto-tag legacy queue.
 - Wishlist "you might already own this" warnings.
-- Quality + Needs Review pages.
+- Quality page.
 
 ### Where you can opt-in to see Spicy items
 
@@ -655,7 +655,6 @@ Last 50 entries from your activity log (sign-ins, AI calls, writes). Older event
 ### Maintenance
 
 Quick links to:
-- **Needs Review** — items waiting for AI tags or manual cleanup.
 - **Closet quality** — items missing details, duplicate brands.
 - **Quick add** — burst-capture mode.
 - **Import from library** — bulk upload.

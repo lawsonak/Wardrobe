@@ -16,10 +16,10 @@ export type MergeCandidate = {
 
 // Merge other closet items into this one. Originally built for the
 // bulk-tag-photo flow: the user dumps a stack of clothing-tag close-ups
-// into bulk upload, each one lands as a standalone "needs_review" item,
-// and from the actual garment's edit page they pick which of those
-// orphan items belong on it. Server folds them in as kind="label"
-// ItemPhoto rows and deletes the source items.
+// into bulk upload, each one lands as a standalone item, and from
+// the actual garment's edit page they pick which of those orphan
+// items belong on it. Server folds them in as kind="label" ItemPhoto
+// rows and deletes the source items.
 //
 // The default kind is "label" because that's the dominant flow, but
 // we expose "Other angle" too for the rare case where someone

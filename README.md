@@ -36,8 +36,6 @@ cd /opt/wardrobe && npm run deploy:update
   ("haven't worn lately"), with removable filter chips.
 - **Closet quality** screen for finding items missing details and
   duplicate brands.
-- **Needs Review inbox** for items that came in via bulk upload and
-  haven't been confirmed yet.
 
 ### Item detail page (`/wardrobe/[id]`)
 - Read-first layout: hero photo, title pills (subType / category /
@@ -137,8 +135,7 @@ cd /opt/wardrobe && npm run deploy:update
 - **Natural-language closet search** — "summer dresses I haven't
   worn" → parsed into structured filters.
 - **AI bulk-tag on import** — auto-fires after a bulk upload,
-  promotes high-confidence items to active and leaves the rest in
-  Needs Review with a notification.
+  reading photos, filling tags, and notifying you when it's done.
 - **AI item fit** — Gemini vision returns per-item placement
   coordinates against the mannequin's landmarks. Mannequin pixels
   are never touched; only the overlay positions change.
@@ -155,12 +152,12 @@ yet).
   AI outfit prompt. Open-Meteo, no API key required.
 - **Backup** — one-click JSON export of items, outfits, wishlist,
   brands, collections.
-- Quick links to Needs Review, Closet quality, Quick add, Import
-  from library, Collections, and Admin.
+- Quick links to Closet quality, Quick add, Import from library,
+  Collections, and Admin.
 
 ### Admin / Maintenance (`/admin`)
 - **Counts** — items, outfits, wishlist, brands, collections,
-  drafts, needs-review.
+  drafts.
 - **Photo storage** — total files, total bytes, orphan cleanup
   (delete photos no item references).
 - **Clean up photos** — walks every item that's still using its raw

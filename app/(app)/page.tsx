@@ -27,7 +27,7 @@ export default async function Dashboard() {
   const firstName = firstNameFromUser(session?.user);
   const now = new Date();
 
-  const [recent, outfitCount, itemCount, favoriteCount, needsReviewCount, wishlistCount] =
+  const [recent, outfitCount, itemCount, favoriteCount, wishlistCount] =
     await Promise.all([
       prisma.item.findMany({
         where: { ownerId: userId, status: "active", isBackroom: false, isBeauty: false },
@@ -37,7 +37,6 @@ export default async function Dashboard() {
       prisma.outfit.count({ where: { ownerId: userId } }),
       prisma.item.count({ where: { ownerId: userId } }),
       prisma.item.count({ where: { ownerId: userId, isFavorite: true } }),
-      prisma.item.count({ where: { ownerId: userId, status: "needs_review" } }),
       prisma.wishlistItem.count({ where: { ownerId: userId, purchased: false } }),
     ]);
 
@@ -173,23 +172,6 @@ export default async function Dashboard() {
 
       {/* Alert cards */}
       <div className="grid gap-3 sm:grid-cols-2">
-        {needsReviewCount > 0 && (
-          <Link href="/wardrobe/needs-review" className="card flex items-center gap-3 p-4 transition-shadow hover:shadow-md">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
-              </svg>
-            </div>
-            <div className="min-w-0">
-              <p className="font-semibold text-stone-800">{needsReviewCount} item{needsReviewCount === 1 ? "" : "s"} need review</p>
-              <p className="text-xs text-stone-500">Tap to fill in missing details</p>
-            </div>
-            <svg className="ml-auto h-4 w-4 shrink-0 text-stone-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-            </svg>
-          </Link>
-        )}
-
         {wishlistCount > 0 && (
           <Link href="/wishlist" className="card flex items-center gap-3 p-4 transition-shadow hover:shadow-md">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blush-100 text-blush-600">

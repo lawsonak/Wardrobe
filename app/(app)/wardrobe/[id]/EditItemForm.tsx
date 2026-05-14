@@ -66,7 +66,6 @@ type Item = {
 
 const STATUS_LABELS: Record<string, string> = {
   active: "Active",
-  needs_review: "Needs review",
   draft: "Draft",
 };
 
@@ -975,12 +974,6 @@ export default function EditItemForm({ item }: { item: Item }) {
 
   return (
     <div className="card space-y-4 p-4">
-      {item.status === "needs_review" && (
-        <div className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-700 ring-1 ring-amber-200">
-          This item needs review — fill in missing details and mark as active when ready.
-        </div>
-      )}
-
       <div>
         <label className="label">Category</label>
         <select className="input" value={category} onChange={(e) => { setCategory(e.target.value); setSubType(""); }}>

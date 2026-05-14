@@ -14,14 +14,13 @@ export default async function AdminPage() {
   const userId = (session?.user as { id?: string } | undefined)?.id ?? "";
   const firstName = firstNameFromUser(session?.user);
 
-  const [items, outfits, wishlist, brands, collections, drafts, needsReview] = await Promise.all([
+  const [items, outfits, wishlist, brands, collections, drafts] = await Promise.all([
     prisma.item.count({ where: { ownerId: userId } }),
     prisma.outfit.count({ where: { ownerId: userId } }),
     prisma.wishlistItem.count({ where: { ownerId: userId } }),
     prisma.brand.count({ where: { ownerId: userId } }),
     prisma.collection.count({ where: { ownerId: userId } }),
     prisma.item.count({ where: { ownerId: userId, status: "draft" } }),
-    prisma.item.count({ where: { ownerId: userId, status: "needs_review" } }),
   ]);
 
   const provider = getProvider();
@@ -46,7 +45,6 @@ export default async function AdminPage() {
           <Stat label="Brands" value={brands} />
           <Stat label="Collections" value={collections} />
           <Stat label="Drafts" value={drafts} />
-          <Stat label="Needs review" value={needsReview} />
         </dl>
       </section>
 
@@ -98,7 +96,6 @@ export default async function AdminPage() {
       <section className="card p-4">
         <h2 className="font-display text-lg text-stone-800">Shortcuts</h2>
         <ul className="mt-2 space-y-1 text-sm">
-          <li><Link href="/wardrobe/needs-review" className="text-blush-600 hover:underline">Needs Review inbox</Link></li>
           <li><Link href="/wardrobe/quality" className="text-blush-600 hover:underline">Closet quality</Link></li>
           <li><Link href="/settings" className="text-blush-600 hover:underline">Settings (backup / export)</Link></li>
           <li><Link href="/api/export" className="text-blush-600 hover:underline">Direct export download</Link></li>

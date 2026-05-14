@@ -62,7 +62,11 @@ export default function BulkUpload() {
   const router = useRouter();
   const [step, setStep] = useState<Step>(1);
   const [defaultCategory, setDefaultCategory] = useState<DefaultCategory>(AUTO_CATEGORY);
-  const [defaultStatus, setDefaultStatus] = useState<"needs_review" | "active">("needs_review");
+  // Every upload is active immediately now — the "Needs Review" queue
+  // was removed. Kept as a const for the FormData append below so the
+  // server-side validator gets an explicit value (matches the single-
+  // add form's default).
+  const defaultStatus = "active" as const;
   // "Mark all as Backroom" — applied to every item in this batch. The
   // edit page lets the user toggle individual rows back if they
   // accidentally lumped a non-Backroom photo in.
@@ -269,8 +273,8 @@ export default function BulkUpload() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             title: "Import complete",
-            body: `${uploadedIds.length} item${uploadedIds.length === 1 ? "" : "s"} saved${defaultStatus === "needs_review" ? " — waiting for review" : ""}.`,
-            href: defaultStatus === "needs_review" ? "/wardrobe/needs-review" : "/wardrobe",
+            body: `${uploadedIds.length} item${uploadedIds.length === 1 ? "" : "s"} saved.`,
+            href: "/wardrobe",
           }),
         });
       } catch {
@@ -391,8 +395,6 @@ export default function BulkUpload() {
         <Step1Choose
           defaultCategory={defaultCategory}
           setDefaultCategory={setDefaultCategory}
-          defaultStatus={defaultStatus}
-          setDefaultStatus={setDefaultStatus}
           aiTag={aiTag}
           setAiTag={setAiTag}
           promoteAtConfidence={promoteAtConfidence}
@@ -436,7 +438,6 @@ export default function BulkUpload() {
           failedJobs={jobs.filter((j) => j.state === "error")}
           aiBanner={aiBanner}
           bgBanner={bgBanner}
-          defaultStatus={defaultStatus}
           onRetryFailed={async () => {
             // Re-enter the full pipeline so the retried items also
             // pick up AI tagging + bg removal dispatches and so the
@@ -448,8 +449,8 @@ export default function BulkUpload() {
             await startPipeline();
           }}
           onUploadAnother={() => {
-            // Reset state for a fresh batch. Existing items are durable
-            // on the server and can be reviewed via Needs Review.
+            // Reset state for a fresh batch. Existing items stay
+            // saved on the server.
             for (const j of jobs) {
               if (j.previewUrl) URL.revokeObjectURL(j.previewUrl);
             }
@@ -498,8 +499,6 @@ function Stepper({ step }: { step: Step }) {
 function Step1Choose({
   defaultCategory,
   setDefaultCategory,
-  defaultStatus,
-  setDefaultStatus,
   aiTag,
   setAiTag,
   promoteAtConfidence,
@@ -518,8 +517,6 @@ function Step1Choose({
 }: {
   defaultCategory: DefaultCategory;
   setDefaultCategory: (v: DefaultCategory) => void;
-  defaultStatus: "needs_review" | "active";
-  setDefaultStatus: (v: "needs_review" | "active") => void;
   aiTag: boolean;
   setAiTag: (v: boolean) => void;
   promoteAtConfidence: number;
@@ -571,18 +568,6 @@ function Step1Choose({
                 ? "AI reads each photo and assigns the right category."
                 : `Every photo becomes a ${defaultCategory} — edit individuals later.`}
             </p>
-          </div>
-
-          <div>
-            <label className="label">After upload</label>
-            <select
-              className="input"
-              value={defaultStatus}
-              onChange={(e) => setDefaultStatus(e.target.value as "needs_review" | "active")}
-            >
-              <option value="needs_review">Send to Needs Review</option>
-              <option value="active">Mark active immediately</option>
-            </select>
           </div>
 
           <div className="space-y-2 border-t border-stone-100 pt-3">
@@ -915,7 +900,6 @@ function Step3Done({
   failedJobs,
   aiBanner,
   bgBanner,
-  defaultStatus,
   onRetryFailed,
   onUploadAnother,
 }: {
@@ -923,11 +907,9 @@ function Step3Done({
   failedJobs: Job[];
   aiBanner: string | null;
   bgBanner: string | null;
-  defaultStatus: "needs_review" | "active";
   onRetryFailed: () => void | Promise<void>;
   onUploadAnother: () => void;
 }) {
-  const reviewHref = defaultStatus === "needs_review" ? "/wardrobe/needs-review" : "/wardrobe";
   return (
     <>
       <div className="card space-y-2 p-6">
@@ -1000,11 +982,8 @@ function Step3Done({
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <Link href={reviewHref} className="btn-primary">
-          {defaultStatus === "needs_review" ? "Open Needs Review" : "Open Closet"}
-        </Link>
-        <Link href="/wardrobe" className="btn-secondary">
-          Back to Closet
+        <Link href="/wardrobe" className="btn-primary">
+          Open Closet
         </Link>
         <button type="button" onClick={onUploadAnother} className="btn-ghost text-stone-500">
           Upload another batch
