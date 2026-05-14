@@ -18,7 +18,7 @@ export default async function NewCollectionPage({
   const includeBackroom = readBackroomParam(sp.backroom);
 
   const items = await prisma.item.findMany({
-    where: { ownerId: userId, status: "active", ...backroomItemFilter(includeBackroom) },
+    where: { ownerId: userId, status: "active", isBeauty: false, ...backroomItemFilter(includeBackroom) },
     orderBy: { createdAt: "desc" },
   });
 

@@ -47,6 +47,10 @@ export async function POST(req: NextRequest) {
       ownerId: userId,
       status: "active",
       ...(includeBackroom ? {} : { isBackroom: false }),
+      // Beauty items never appear in the outfit catalog — Looks are
+      // a separate concept (PR C). PR D adds an `includeBeauty`
+      // body param if we want to soften this.
+      isBeauty: false,
     },
     orderBy: { createdAt: "desc" },
     take: 250,

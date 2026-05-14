@@ -77,6 +77,8 @@ export default async function WardrobePage({
     // main closet hard-excludes them — there's no toggle here, the
     // Spicy door 🌶 in the header is the only entry point.
     isBackroom: false,
+    // Beauty items live in /wardrobe/beauty — never surface here.
+    isBeauty: false,
     ...(!drop.has("category") && category ? { category } : {}),
     ...(favOnly ? { isFavorite: true } : {}),
     // `pending=1` shows everything with a non-null pendingAiSuggestions

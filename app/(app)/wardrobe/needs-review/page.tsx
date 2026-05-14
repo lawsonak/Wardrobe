@@ -22,6 +22,7 @@ export default async function NeedsReviewPage() {
       ownerId: userId,
       status: "needs_review",
       isBackroom: false,
+      isBeauty: false,
     },
     orderBy: { createdAt: "asc" },
   });

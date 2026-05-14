@@ -38,13 +38,103 @@ export const SPICY_CATEGORIES = [
 
 export type SpicyCategory = (typeof SPICY_CATEGORIES)[number];
 
-/** Returns true when `value` is a recognized category in either
- *  vocabulary. Used by POST/PATCH validators that accept both. */
+// Vocabulary for `isBeauty = true` (💄) items. Six logical groups
+// rendered as <optgroup> sections in the category dropdown so the
+// ~30-item list stays scannable. Disjoint from clothing categories
+// (validated together via isKnownCategory).
+export const BEAUTY_LIPS = ["Lipstick", "Lip Gloss", "Lip Liner"] as const;
+export const BEAUTY_EYES = ["Mascara", "Eyeliner", "Eyeshadow", "Brow"] as const;
+export const BEAUTY_FACE = [
+  "Foundation",
+  "Concealer",
+  "Powder",
+  "Blush",
+  "Bronzer",
+  "Highlighter",
+  "Primer",
+  "Setting Spray",
+] as const;
+export const BEAUTY_SKIN = [
+  "Cleanser",
+  "Toner",
+  "Serum",
+  "Moisturizer",
+  "SPF",
+  "Eye Cream",
+  "Mask",
+  "Treatment",
+] as const;
+export const BEAUTY_TOOLS = ["Brushes", "Sponges", "Eyelash Curler", "Other Tool"] as const;
+export const BEAUTY_FRAGRANCE = ["Perfume", "Cologne", "Body Spray"] as const;
+
+export const BEAUTY_CATEGORIES = [
+  ...BEAUTY_LIPS,
+  ...BEAUTY_EYES,
+  ...BEAUTY_FACE,
+  ...BEAUTY_SKIN,
+  ...BEAUTY_TOOLS,
+  ...BEAUTY_FRAGRANCE,
+] as const;
+
+export type BeautyCategory = (typeof BEAUTY_CATEGORIES)[number];
+
+// Sectioned shape for rendering optgroups in the category select.
+// Order is the order they render in the dropdown.
+export const BEAUTY_CATEGORY_GROUPS: ReadonlyArray<{
+  label: string;
+  categories: readonly string[];
+}> = [
+  { label: "Lips", categories: BEAUTY_LIPS },
+  { label: "Eyes", categories: BEAUTY_EYES },
+  { label: "Face", categories: BEAUTY_FACE },
+  { label: "Skincare", categories: BEAUTY_SKIN },
+  { label: "Tools", categories: BEAUTY_TOOLS },
+  { label: "Fragrance", categories: BEAUTY_FRAGRANCE },
+];
+
+// "Look" slots — the makeup-only outfit equivalent's pickable
+// positions. Mirror the color-cosmetics categories (Lips + Eyes +
+// Face) since skincare / tools / fragrance aren't "worn together"
+// in the same way. Order matches the natural application sequence
+// users tend to apply (primer first, then complexion, then color,
+// then setting spray) so the builder's slot list reads left-to-right
+// like a routine.
+export const LOOK_SLOTS = [
+  "Primer",
+  "Foundation",
+  "Concealer",
+  "Powder",
+  "Bronzer",
+  "Blush",
+  "Highlighter",
+  "Brow",
+  "Eyeshadow",
+  "Eyeliner",
+  "Mascara",
+  "Lip Liner",
+  "Lipstick",
+  "Lip Gloss",
+  "Setting Spray",
+] as const;
+
+export type LookSlot = (typeof LOOK_SLOTS)[number];
+
+/** Returns true when `value` is a recognized category in any of the
+ *  three vocabularies (clothing, spicy, beauty). Used by POST/PATCH
+ *  validators that accept all three on a free `Item.category`
+ *  string. */
 export function isKnownCategory(value: string): boolean {
   return (
     (CATEGORIES as readonly string[]).includes(value) ||
-    (SPICY_CATEGORIES as readonly string[]).includes(value)
+    (SPICY_CATEGORIES as readonly string[]).includes(value) ||
+    (BEAUTY_CATEGORIES as readonly string[]).includes(value)
   );
+}
+
+/** True when the category belongs to the beauty vocabulary. Drives
+ *  the form's "swap to beauty fields" UX in PR B. */
+export function isBeautyCategory(value: string): boolean {
+  return (BEAUTY_CATEGORIES as readonly string[]).includes(value);
 }
 
 export const SUBTYPES_BY_CATEGORY: Record<Category, string[]> = {

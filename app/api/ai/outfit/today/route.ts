@@ -136,7 +136,7 @@ export async function POST(req: NextRequest) {
   // opt-in here. Romantic / private picks live in the explicit
   // build-outfit form.
   const items = await prisma.item.findMany({
-    where: { ownerId: userId, status: "active", isBackroom: false },
+    where: { ownerId: userId, status: "active", isBackroom: false, isBeauty: false },
     orderBy: { createdAt: "desc" },
     take: 250,
   });

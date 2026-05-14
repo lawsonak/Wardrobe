@@ -23,7 +23,7 @@ export default async function BuilderPage({
   // Owner-scope guard: without ownerId, the builder picker leaked
   // every other user's active items into the slot grid.
   const items = await prisma.item.findMany({
-    where: { ownerId: userId, status: "active", ...backroomItemFilter(includeBackroom) },
+    where: { ownerId: userId, status: "active", isBeauty: false, ...backroomItemFilter(includeBackroom) },
     orderBy: { createdAt: "desc" },
   });
   return (

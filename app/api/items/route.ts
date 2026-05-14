@@ -39,10 +39,13 @@ export async function GET(req: NextRequest) {
       // authenticated caller, which broke the documented "profiles
       // are separate" model.
       ownerId: userId,
-      // Spicy items (isBackroom) live in their own page and are never
-      // mixed into this endpoint's responses. The dedicated
-      // /wardrobe/backroom page queries Prisma directly.
+      // Spicy items (isBackroom) and beauty items (isBeauty) each
+      // live in their own page and are never mixed into this
+      // endpoint's responses. /wardrobe/backroom and
+      // /wardrobe/beauty query Prisma directly with the matching
+      // flag flipped on.
       isBackroom: false,
+      isBeauty: false,
       ...(category ? { category } : {}),
       ...(fav ? { isFavorite: true } : {}),
       ...(status ? { status } : {}),
@@ -98,6 +101,17 @@ export async function POST(req: NextRequest) {
   const activities = listToCsv(form.getAll("activities").map(String));
   const isFavorite = form.get("isFavorite") === "1";
   const isBackroom = form.get("isBackroom") === "1";
+  // Beauty flag + cosmetic-specific fields. All optional — clothing
+  // uploads leave them unset. PR B's beauty add form populates them.
+  const isBeauty = form.get("isBeauty") === "1";
+  const shadeName = (form.get("shadeName") as string | null)?.trim() || null;
+  const shadeHexRaw = (form.get("shadeHex") as string | null)?.trim() || null;
+  // Normalize hex: accept "#ff0033" or "ff0033", store as lowercased
+  // "#ff0033". Anything else (rgba, named, malformed) drops to null.
+  const shadeHex = shadeHexRaw && /^#?[0-9a-fA-F]{6}$/.test(shadeHexRaw)
+    ? `#${shadeHexRaw.replace(/^#/, "").toLowerCase()}`
+    : null;
+  const finish = (form.get("finish") as string | null)?.trim().slice(0, 60) || null;
   const statusVal = (form.get("status") as string | null) || "active";
 
   // Resolve brand: use brandId if it's the current user's, else upsert by key.
@@ -140,6 +154,10 @@ export async function POST(req: NextRequest) {
       notes,
       isFavorite,
       isBackroom,
+      isBeauty,
+      shadeName,
+      shadeHex,
+      finish,
       status: statusVal,
     },
   });
@@ -231,12 +249,14 @@ export async function POST(req: NextRequest) {
         ownerId: userId,
         phash: { not: null },
         id: { not: updated.id },
-        // Backroom items don't surface in the "you might already own
-        // this" picker for non-Backroom uploads, and vice versa —
-        // matching the closet's default-hide behaviour. (If the user
-        // is uploading a Backroom item, we still match against other
-        // Backroom items below.)
+        // Backroom + beauty items only surface duplicate warnings
+        // against their own bucket — a Backroom upload only matches
+        // Backroom items, a beauty upload only matches beauty items,
+        // and a regular closet upload only matches regular items.
+        // Mirrors the closet's default-hide behaviour so we don't
+        // surprise the user with a cross-bucket "did you mean…?".
         isBackroom: updated.isBackroom,
+        isBeauty: updated.isBeauty,
       },
       select: {
         id: true,

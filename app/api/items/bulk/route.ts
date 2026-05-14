@@ -39,6 +39,10 @@ export async function POST(req: NextRequest) {
   // is importing intimate items in one shot. Per-item override happens
   // via the edit page after upload.
   const isBackroom = form.get("isBackroom") === "1";
+  // Optional batch-wide beauty flag. PR B's bulk-upload form will
+  // expose a "Mark all as 💄 Beauty" checkbox the same way 🌶 does;
+  // the route accepts it now so the migration window is clean.
+  const isBeauty = form.get("isBeauty") === "1";
 
   const files = form.getAll("images").filter((x): x is File => x instanceof File && x.size > 0);
   if (files.length === 0) {
@@ -57,6 +61,7 @@ export async function POST(req: NextRequest) {
         category,
         status: statusVal,
         isBackroom,
+        isBeauty,
       },
     });
     const { displayPath, originalPath } = await saveUploadWithOriginal(

@@ -29,7 +29,7 @@ export async function buildClosetSummary(userId: string): Promise<ClosetSummary>
   // never opt-in to private items, so the simplest correct behaviour
   // is to never include them in the snapshot.
   const items = await prisma.item.findMany({
-    where: { ownerId: userId, status: "active", isBackroom: false },
+    where: { ownerId: userId, status: "active", isBackroom: false, isBeauty: false },
     select: {
       brand: true,
       color: true,

@@ -39,6 +39,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const data: Record<string, unknown> = {};
   if (typeof body.isFavorite === "boolean") data.isFavorite = body.isFavorite;
   if (typeof body.isBackroom === "boolean") data.isBackroom = body.isBackroom;
+  // Beauty flag + cosmetic-specific fields. Each handled
+  // independently so a clothing item update never accidentally
+  // touches the cosmetic columns.
+  if (typeof body.isBeauty === "boolean") data.isBeauty = body.isBeauty;
+  if (body.shadeName === null || typeof body.shadeName === "string") {
+    data.shadeName = body.shadeName ? String(body.shadeName).trim().slice(0, 80) || null : null;
+  }
+  if (body.shadeHex === null || typeof body.shadeHex === "string") {
+    const raw = typeof body.shadeHex === "string" ? body.shadeHex.trim() : "";
+    data.shadeHex = raw && /^#?[0-9a-fA-F]{6}$/.test(raw)
+      ? `#${raw.replace(/^#/, "").toLowerCase()}`
+      : null;
+  }
+  if (body.finish === null || typeof body.finish === "string") {
+    data.finish = body.finish ? String(body.finish).trim().slice(0, 60) || null : null;
+  }
   if (typeof body.subType === "string") data.subType = body.subType || null;
   if (typeof body.color === "string") data.color = body.color || null;
   if (typeof body.size === "string") data.size = body.size || null;
