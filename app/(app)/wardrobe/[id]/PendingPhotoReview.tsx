@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
+import PhotoActionsSheet from "./PhotoActionsSheet";
 
 // Pending-photo review panel — shown above the labels / angles
 // strips on the item-edit page when the merge endpoint has folded
@@ -28,8 +29,11 @@ export default function PendingPhotoReview({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
+  const [activePhotoId, setActivePhotoId] = useState<string | null>(null);
 
   if (photos.length === 0) return null;
+
+  const activePhoto = photos.find((p) => p.id === activePhotoId);
 
   async function setKind(photoId: string, kind: "label" | "angle") {
     setBusy(photoId);
@@ -116,6 +120,14 @@ export default function PendingPhotoReview({
                 </button>
                 <button
                   type="button"
+                  onClick={() => setActivePhotoId(p.id)}
+                  disabled={isBusy}
+                  className="btn-ghost text-xs text-stone-600"
+                >
+                  More…
+                </button>
+                <button
+                  type="button"
                   onClick={() => remove(p.id)}
                   disabled={isBusy}
                   className="btn-ghost text-xs text-stone-500"
@@ -127,6 +139,18 @@ export default function PendingPhotoReview({
           );
         })}
       </ul>
+      {activePhoto && (
+        <PhotoActionsSheet
+          itemId={itemId}
+          photo={{
+            id: activePhoto.id,
+            imagePath: activePhoto.imagePath,
+            imageBgRemovedPath: activePhoto.imageBgRemovedPath,
+            kind: "pending",
+          }}
+          onClose={() => setActivePhotoId(null)}
+        />
+      )}
     </div>
   );
 }

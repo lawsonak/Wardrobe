@@ -28,6 +28,7 @@ export type ActivityKind =
   | "item.bulk-approve"
   | "item.bulk-apply-pending"
   | "item.photo.update"
+  | "item.photo.set-main"
   | "item.merge"
   // Outfits
   | "outfit.create"
