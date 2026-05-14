@@ -81,6 +81,14 @@ export default function BulkUpload() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [aiBanner, setAiBanner] = useState<string | null>(null);
   const [bgBanner, setBgBanner] = useState<string | null>(null);
+  // When the user taps "Retry failed", the pipeline picks up
+  // previously-errored jobs but the Step 2 grid would otherwise still
+  // show every job in history — including the dozens that already
+  // succeeded — making it hard to track what's actually happening on
+  // the retry. Snapshot the retried ids here and filter the grid
+  // while the walk is in flight; cleared once allTerminal flips phase
+  // back to "done" so subsequent runs go back to the full view.
+  const [retryingIds, setRetryingIds] = useState<string[] | null>(null);
   // Set when the user taps Cancel on step 2. The pipeline checks this
   // between each photo and stops cleanly without aborting whatever's
   // currently in flight (we don't want to leave half-written files).
@@ -106,6 +114,10 @@ export default function BulkUpload() {
     if (allTerminal && phase !== "uploading") {
       setStep(3);
       setPhase("done");
+      // Walk's done — reset the retry filter so a future retry from
+      // Step 3 (or a fresh batch via "Upload another") gets a clean
+      // slate rather than carrying over a stale list.
+      setRetryingIds(null);
     }
   }, [jobs, step, phase]);
 
@@ -354,6 +366,13 @@ export default function BulkUpload() {
     // guard for the same reason.
     if (phase === "uploading") return;
     cancelRef.current = false;
+    // Snapshot the failed ids so Step 2's grid can narrow to just
+    // these rows during the retry. Cleared by the allTerminal effect
+    // once the walk finishes.
+    const ids = (jobsRef.current ?? [])
+      .filter((j) => j.state === "error")
+      .map((j) => j.id);
+    if (ids.length > 0) setRetryingIds(ids);
     await runUploadPhase();
   }
 
@@ -415,7 +434,15 @@ export default function BulkUpload() {
 
       {step === 2 && (
         <Step2Processing
-          jobs={jobs}
+          jobs={
+            // During a retry walk, narrow the grid to just the photos
+            // being retried — the user doesn't need to scroll past
+            // every prior success to see what's happening now.
+            retryingIds
+              ? jobs.filter((j) => retryingIds.includes(j.id))
+              : jobs
+          }
+          isRetry={retryingIds !== null}
           phase={phase}
           progressLabel={progressLabel}
           progressFraction={progressFraction}
@@ -446,6 +473,15 @@ export default function BulkUpload() {
             // Step 3). startPipeline's guard accepts phase="done",
             // which is the state we're always in once Step 3 paints,
             // so this is safe to call directly.
+            //
+            // Snapshot the failed ids before the walk so Step 2's
+            // grid filters to just the retried photos — otherwise
+            // the user gets bounced back to a wall of every job
+            // they ever uploaded in this session.
+            const ids = (jobsRef.current ?? [])
+              .filter((j) => j.state === "error")
+              .map((j) => j.id);
+            if (ids.length > 0) setRetryingIds(ids);
             await startPipeline();
           }}
           onUploadAnother={() => {
@@ -776,6 +812,7 @@ function Step1Choose({
 
 function Step2Processing({
   jobs,
+  isRetry,
   phase,
   progressLabel,
   progressFraction,
@@ -788,6 +825,10 @@ function Step2Processing({
   onFinishEarly,
 }: {
   jobs: Job[];
+  /** True when this view is showing the filtered subset of a retry
+   *  walk. Drives the banner + the "Finish" button label so the user
+   *  knows they're not looking at every job, just the retried ones. */
+  isRetry: boolean;
   phase: Phase;
   progressLabel: string;
   progressFraction: number;
@@ -804,6 +845,12 @@ function Step2Processing({
   const stillRunning = phase === "uploading";
   return (
     <>
+      {isRetry && (
+        <div className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 ring-1 ring-amber-200">
+          ↻ Retrying {jobs.length} photo{jobs.length === 1 ? "" : "s"}. Your previously-saved
+          photos are safe — they aren&apos;t shown here while the retry runs.
+        </div>
+      )}
       {progressTotal > 0 && (
         <ProgressBar
           value={progressFraction}
