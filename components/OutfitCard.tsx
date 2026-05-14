@@ -15,6 +15,10 @@ type Outfit = {
   season: string | null;
   isFavorite: boolean;
   tryOnImagePath: string | null;
+  /** Optional makeup-Look pairing. Set when the user attached a
+   *  Look in the builder; drives a small 💄 chip on the card so the
+   *  user can tell at a glance which outfits carry a routine. */
+  lookId?: string | null;
   items: Array<{
     slot: string;
     item: {
@@ -110,7 +114,18 @@ export default function OutfitCard({
       </Link>
       <div className="flex items-center justify-between gap-2 px-4 py-3">
         <div className="min-w-0">
-          <p className="truncate font-display text-lg text-stone-800">{outfit.name}</p>
+          <p className="flex items-center gap-1 truncate font-display text-lg text-stone-800">
+            <span className="truncate">{outfit.name}</span>
+            {outfit.lookId && (
+              <span
+                className="text-xs"
+                title="Paired with a makeup Look"
+                aria-label="Paired with a Look"
+              >
+                💄
+              </span>
+            )}
+          </p>
           <p className="truncate text-xs text-stone-500">
             {[outfit.activity, outfit.season].filter(Boolean).join(" • ") || "—"}
           </p>

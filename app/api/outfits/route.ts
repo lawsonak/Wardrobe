@@ -73,6 +73,11 @@ export async function POST(req: NextRequest) {
   const activity = typeof body.activity === "string" && body.activity ? body.activity : null;
   const season = typeof body.season === "string" && body.season ? body.season : null;
   const isFavorite = !!body.isFavorite;
+  // Optional Look pairing. Verified owner-scoped below alongside
+  // items — null when unset, the literal string id when valid,
+  // dropped (with the outfit still saved) when the caller passed
+  // an id they don't own.
+  const lookIdInput = typeof body.lookId === "string" && body.lookId ? body.lookId : null;
   const itemsInput: Array<{ itemId: string; slot: string }> = Array.isArray(body.items)
     ? body.items
     : [];
@@ -103,6 +108,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Owner-scope the Look pairing the same way. A cross-user lookId
+  // silently drops to null instead of 400'ing the whole save —
+  // failing here would surprise users mid-build.
+  let lookId: string | null = null;
+  if (lookIdInput) {
+    const look = await prisma.look.findFirst({
+      where: { id: lookIdInput, ownerId: userId },
+      select: { id: true },
+    });
+    lookId = look?.id ?? null;
+  }
+
   const outfit = await prisma.outfit.create({
     data: {
       ownerId: userId,
@@ -110,9 +127,10 @@ export async function POST(req: NextRequest) {
       activity,
       season,
       isFavorite,
+      lookId,
       items: { create: cleanItems },
     },
-    include: { items: { include: { item: true } } },
+    include: { items: { include: { item: true } }, look: { include: { items: { include: { item: true } } } } },
   });
 
   await logActivity({

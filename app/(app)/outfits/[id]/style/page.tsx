@@ -22,6 +22,27 @@ export default async function StyleCanvasPage({
       items: {
         include: { item: true },
       },
+      // Pull the paired Look (if any) with enough product detail to
+      // render a thumbnail strip below the try-on.
+      look: {
+        include: {
+          items: {
+            include: {
+              item: {
+                select: {
+                  id: true,
+                  imagePath: true,
+                  imageBgRemovedPath: true,
+                  category: true,
+                  subType: true,
+                  shadeName: true,
+                  shadeHex: true,
+                },
+              },
+            },
+          },
+        },
+      },
     },
   });
   if (!outfit) notFound();
@@ -56,6 +77,61 @@ export default async function StyleCanvasPage({
           initialTryOnImagePath={outfit.tryOnImagePath}
           initialTryOnGeneratedAt={outfit.tryOnGeneratedAt ? outfit.tryOnGeneratedAt.toISOString() : null}
         />
+      )}
+
+      {/* Paired Look — render the product strip below the try-on so
+          the user sees "wearing this outfit + this face" as a single
+          glance. Click the heading or any thumb to open the look in
+          edit mode. */}
+      {outfit.look && (
+        <section className="card space-y-3 p-4">
+          <div className="flex items-baseline justify-between gap-2">
+            <Link
+              href={`/looks/${outfit.look.id}`}
+              className="font-display text-lg text-stone-800 hover:text-blush-700"
+            >
+              💄 {outfit.look.name}
+            </Link>
+            <span className="text-xs text-stone-500">
+              Paired look — {outfit.look.items.length} product
+              {outfit.look.items.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          <ul className="flex flex-wrap gap-3">
+            {outfit.look.items.map((li) => {
+              const src = li.item.imageBgRemovedPath
+                ? `/api/uploads/${li.item.imageBgRemovedPath}`
+                : `/api/uploads/${li.item.imagePath}`;
+              return (
+                <li key={li.id} className="w-20 space-y-1 text-xs">
+                  <Link
+                    href={`/wardrobe/${li.item.id}`}
+                    className="tile-bg flex aspect-square w-20 items-center justify-center overflow-hidden rounded-xl ring-1 ring-stone-100 hover:ring-blush-300"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={src}
+                      alt={li.item.subType ?? li.item.category}
+                      className="h-full w-full object-contain p-1"
+                    />
+                  </Link>
+                  <p className="truncate text-stone-700">{li.slot}</p>
+                  {li.item.shadeName && (
+                    <p className="flex items-center gap-1 truncate text-[10px] text-stone-500">
+                      {li.item.shadeHex && (
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full ring-1 ring-white"
+                          style={{ backgroundColor: li.item.shadeHex }}
+                        />
+                      )}
+                      {li.item.shadeName}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       )}
     </div>
   );

@@ -44,6 +44,10 @@ export default async function OutfitsPage({
       season: true,
       isFavorite: true,
       tryOnImagePath: true,
+      // Surfaces a small 💄 chip on the outfit card when set —
+      // tells the user at a glance which outfits carry their
+      // makeup routine alongside the clothes.
+      lookId: true,
       items: {
         select: {
           slot: true,
@@ -147,6 +151,7 @@ export default async function OutfitsPage({
                 season: o.season,
                 isFavorite: o.isFavorite,
                 tryOnImagePath: o.tryOnImagePath,
+                lookId: o.lookId,
                 items: o.items.map((oi) => ({
                   slot: oi.slot,
                   item: {

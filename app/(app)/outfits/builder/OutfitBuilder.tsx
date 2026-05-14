@@ -65,18 +65,34 @@ export type InitialOutfit = {
   season: string | null;
   isFavorite: boolean;
   items: { itemId: string; slot: string }[];
+  lookId?: string | null;
+};
+
+// Lightweight Look card payload for the "Pair with a Look" picker
+// inside the builder. The server-component page wrapper fetches the
+// caller's looks and hands them in.
+export type LookOption = {
+  id: string;
+  name: string;
+  itemCount: number;
+  thumbs: Array<{ id: string; src: string; shadeHex: string | null }>;
 };
 
 export default function OutfitBuilder({
   items,
   initial,
   includeBackroom = false,
+  availableLooks = [],
 }: {
   items: BuilderItem[];
   initial?: InitialOutfit;
   /** Mirrors the URL state on the page wrapper. When true, the AI
    *  Surprise call is allowed to consider Backroom items. */
   includeBackroom?: boolean;
+  /** User's saved looks, fetched server-side. Empty when the user
+   *  has no looks — the "Pair with a Look" button still renders
+   *  but links to /looks/new in the sheet's empty state. */
+  availableLooks?: LookOption[];
 }) {
   const router = useRouter();
   const search = useSearchParams();
@@ -113,8 +129,17 @@ export default function OutfitBuilder({
   });
   const [name, setName] = useState(initial?.name ?? initialName);
   const [isFavorite, setIsFavorite] = useState(initial?.isFavorite ?? false);
+  // Optional Look pairing. null = no pairing; a string id = paired
+  // with that Look. Lives alongside `picks` so save fires both in
+  // the same outfit-create call.
+  const [pairedLookId, setPairedLookId] = useState<string | null>(initial?.lookId ?? null);
+  const [lookPickerOpen, setLookPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const pairedLook = pairedLookId
+    ? availableLooks.find((l) => l.id === pairedLookId) ?? null
+    : null;
 
   const filtered = useMemo(() => {
     return items.filter((it) => {
@@ -307,6 +332,11 @@ export default function OutfitBuilder({
         activity: activity || null,
         season: season || null,
         isFavorite,
+        // null clears a previously-paired look; a real id sets it;
+        // omitting the field entirely would NOT update — but
+        // sending null on PATCH always works for the "remove
+        // pairing" case.
+        lookId: pairedLookId,
         items: chosen,
       }),
     });
@@ -449,11 +479,133 @@ export default function OutfitBuilder({
             Favorite
           </label>
         </div>
+
+        {/* Pair with a Look — optional one-to-one association with a
+            saved makeup routine. When set, the outfit detail page
+            shows the Look's product strip below the items so a
+            user can see "wearing this outfit + this face." */}
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          {pairedLook ? (
+            <>
+              <span className="text-stone-500">💄 Paired with</span>
+              <button
+                type="button"
+                onClick={() => setLookPickerOpen(true)}
+                className="chip chip-on"
+                title="Change paired look"
+              >
+                {pairedLook.name}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPairedLookId(null)}
+                className="text-xs text-stone-400 hover:text-blush-600"
+              >
+                Unpair
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setLookPickerOpen(true)}
+              className="chip chip-off"
+            >
+              💄 Pair with a Look (optional)
+            </button>
+          )}
+        </div>
+
         {error && <p className="text-sm text-blush-700">{error}</p>}
         <button type="button" onClick={save} className="btn-primary w-full" disabled={saving}>
           {saving ? "Saving…" : initial ? "Save changes" : "Save outfit"}
         </button>
       </div>
+
+      {/* Look picker sheet — same shape as the slot pickers above. */}
+      {lookPickerOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setLookPickerOpen(false)}
+          className="fixed inset-0 z-50 flex items-end justify-center bg-stone-900/40 p-4 sm:items-center"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="card max-h-[80vh] w-full max-w-md space-y-3 overflow-y-auto p-4"
+          >
+            <div className="flex items-baseline justify-between">
+              <h2 className="font-display text-lg text-stone-800">Pair with a Look</h2>
+              <button
+                type="button"
+                onClick={() => setLookPickerOpen(false)}
+                className="text-xs text-stone-500 hover:text-blush-600"
+              >
+                Cancel
+              </button>
+            </div>
+            {availableLooks.length === 0 ? (
+              <div className="space-y-2 py-4 text-center text-sm text-stone-500">
+                <p>You haven&rsquo;t saved any Looks yet.</p>
+                <a
+                  href="/looks/new"
+                  className="btn-secondary inline-flex text-xs"
+                >
+                  + Build a Look
+                </a>
+              </div>
+            ) : (
+              <ul className="grid grid-cols-2 gap-2">
+                {availableLooks.map((l) => {
+                  const isPicked = pairedLookId === l.id;
+                  return (
+                    <li key={l.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPairedLookId(l.id);
+                          setLookPickerOpen(false);
+                        }}
+                        className={
+                          "group block w-full overflow-hidden rounded-xl ring-1 " +
+                          (isPicked ? "ring-2 ring-blush-500" : "ring-stone-200 hover:ring-blush-200")
+                        }
+                      >
+                        {/* 2×2 mini-collage. Pads with empty tiles
+                            so a look with one product still reads
+                            as a card. */}
+                        <div className="grid aspect-square grid-cols-2 grid-rows-2 gap-px bg-stone-100">
+                          {l.thumbs.slice(0, 4).map((t) => (
+                            <div key={t.id} className="tile-bg relative flex items-center justify-center p-1">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={t.src} alt="" className="h-full w-full object-contain" />
+                              {t.shadeHex && (
+                                <span
+                                  className="absolute bottom-0.5 right-0.5 h-2 w-2 rounded-full ring-1 ring-white"
+                                  style={{ backgroundColor: t.shadeHex }}
+                                  aria-hidden
+                                />
+                              )}
+                            </div>
+                          ))}
+                          {Array.from({ length: Math.max(0, 4 - l.thumbs.length) }).map((_, i) => (
+                            <div key={`pad-${i}`} className="tile-bg" />
+                          ))}
+                        </div>
+                        <div className="space-y-0.5 px-2 py-1 text-left">
+                          <p className="truncate text-xs font-medium text-stone-700">{l.name}</p>
+                          <p className="text-[10px] text-stone-500">
+                            {l.itemCount} product{l.itemCount === 1 ? "" : "s"}
+                          </p>
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

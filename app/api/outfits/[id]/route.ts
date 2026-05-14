@@ -33,6 +33,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const existing = await prisma.outfit.findFirst({ where: { id, ownerId: userId }, select: { id: true } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  // Optional Look (re-)pairing. `null` clears the pairing, an
+  // empty-string / undefined leaves it untouched, and a real id is
+  // verified owner-scoped before stick.
+  if (body.lookId === null) {
+    data.lookId = null;
+  } else if (typeof body.lookId === "string" && body.lookId) {
+    const look = await prisma.look.findFirst({
+      where: { id: body.lookId, ownerId: userId },
+      select: { id: true },
+    });
+    if (!look) {
+      return NextResponse.json(
+        { error: "That look isn't in your account." },
+        { status: 400 },
+      );
+    }
+    data.lookId = look.id;
+  }
+
   // If the client sends `items`, replace the OutfitItem set in one
   // transaction. Validates that all referenced items belong to this user.
   let pendingItems: Array<{ slot: Slot; itemId: string }> | null = null;
