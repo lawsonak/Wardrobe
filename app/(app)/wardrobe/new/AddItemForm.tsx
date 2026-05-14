@@ -59,6 +59,8 @@ export default function AddItemForm({
   const cameraRef = useRef<HTMLInputElement>(null);
   const labelFileRef = useRef<HTMLInputElement>(null);
   const labelCameraRef = useRef<HTMLInputElement>(null);
+  const angleFileRef = useRef<HTMLInputElement>(null);
+  const angleCameraRef = useRef<HTMLInputElement>(null);
 
   const [original, setOriginal] = useState<File | null>(null);
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
@@ -70,13 +72,16 @@ export default function AddItemForm({
   const [bgError, setBgError] = useState<string | null>(null);
   const [useOriginal, setUseOriginal] = useState(false);
 
-  const [labelPhoto, setLabelPhoto] = useState<File | null>(null);
-  const [labelUrl, setLabelUrl] = useState<string | null>(null);
-  // Label bg removal mirrors the main-photo flow — labels read way
-  // better in the strip with the closet-floor / hand-holding-it
-  // background dropped. Best-effort: if the model fails or is
-  // unavailable, the label still uploads as-is.
-  const [labelBgRemoved, setLabelBgRemoved] = useState<Blob | null>(null);
+  // Extra label + angle photos. Users can stack multiple of each on
+  // creation now — first label is what auto-tag reads and what the
+  // POST /api/items single-shot path stores; the rest land as
+  // separate ItemPhoto rows after the item id is known. Each row
+  // tracks its bg-removed companion (null until removal finishes —
+  // it runs in the background and the row is rendered as soon as
+  // the original is queued).
+  type ExtraPhoto = { id: string; file: File; bg: Blob | null; url: string };
+  const [labelPhotos, setLabelPhotos] = useState<ExtraPhoto[]>([]);
+  const [anglePhotos, setAnglePhotos] = useState<ExtraPhoto[]>([]);
 
   const [category, setCategory] = useState<string>(
     defaultBeauty ? "Lipstick" : defaultBackroom ? "Lingerie" : "Tops",
@@ -136,9 +141,11 @@ export default function AddItemForm({
     return () => {
       if (originalUrl) URL.revokeObjectURL(originalUrl);
       if (bgUrl) URL.revokeObjectURL(bgUrl);
-      if (labelUrl) URL.revokeObjectURL(labelUrl);
+      for (const p of labelPhotos) URL.revokeObjectURL(p.url);
+      for (const p of anglePhotos) URL.revokeObjectURL(p.url);
     };
-  }, [originalUrl, bgUrl, labelUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // After a successful batch save, reopen the camera once the form has
   // finished resetting (any preview elements unmounted, refs cleared).
@@ -231,13 +238,19 @@ export default function AddItemForm({
     setAutoTagState("running");
     setAutoTagMessage(null);
     try {
+      // AI auto-tag uses the first label only (mirrors the bulk
+      // re-tag's "oldest label by createdAt" pick). Extra labels are
+      // for the human reference strip — sending all of them would
+      // dilute the prompt and rarely improve enum commits.
+      const primaryLabel = labelPhotos[0]?.file ?? null;
+
       const tagFd = new FormData();
       tagFd.append("image", original);
-      if (labelPhoto) tagFd.append("labelImage", labelPhoto);
+      if (primaryLabel) tagFd.append("labelImage", primaryLabel);
 
       const notesFd = new FormData();
       notesFd.append("image", original);
-      if (labelPhoto) notesFd.append("labelImage", labelPhoto);
+      if (primaryLabel) notesFd.append("labelImage", primaryLabel);
       notesFd.append(
         "context",
         JSON.stringify({
@@ -417,29 +430,71 @@ export default function AddItemForm({
     await runBgRemoval(file);
   }
 
-  async function onPickLabelPhoto(e: React.ChangeEvent<HTMLInputElement>) {
-    const picked = e.target.files?.[0];
-    if (!picked) return;
+  function mkExtraId(): string {
+    if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+    return Math.random().toString(36).slice(2);
+  }
 
-    if (labelUrl) URL.revokeObjectURL(labelUrl);
-    const base = await processFile(picked);
-    if (!base) return;
-    // AI right-side-up pass — text on tags often gets shot at any
-    // angle. EXIF rotation only fixes camera tilt, not the tag itself.
-    const file = await rotateLabelToUpright(base);
-    setLabelPhoto(file);
-    setLabelUrl(URL.createObjectURL(file));
-    // Kick off bg removal in the background. Don't await — the user
-    // can keep filling out fields while it runs. If they hit Save
-    // before it finishes the submit just sends the raw label, same
-    // shape as before.
-    setLabelBgRemoved(null);
-    try {
-      const out = await removeBackground(file);
-      setLabelBgRemoved(out);
-    } catch (err) {
-      console.warn("label bg removal failed", err);
+  async function onPickLabelPhotos(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(e.target.files ?? []);
+    if (e.target) e.target.value = "";
+    if (picked.length === 0) return;
+    for (const raw of picked) {
+      const base = await processFile(raw);
+      if (!base) continue;
+      // AI right-side-up pass — text on tags often gets shot at any
+      // angle. EXIF rotation only fixes camera tilt, not the tag itself.
+      const file = await rotateLabelToUpright(base);
+      const id = mkExtraId();
+      const url = URL.createObjectURL(file);
+      setLabelPhotos((prev) => [...prev, { id, file, bg: null, url }]);
+      // Fire-and-forget bg removal so the user can keep working.
+      void (async () => {
+        try {
+          const out = await removeBackground(file);
+          setLabelPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, bg: out } : p)));
+        } catch (err) {
+          console.warn("label bg removal failed", err);
+        }
+      })();
     }
+  }
+
+  async function onPickAnglePhotos(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(e.target.files ?? []);
+    if (e.target) e.target.value = "";
+    if (picked.length === 0) return;
+    for (const raw of picked) {
+      const file = await processFile(raw);
+      if (!file) continue;
+      const id = mkExtraId();
+      const url = URL.createObjectURL(file);
+      setAnglePhotos((prev) => [...prev, { id, file, bg: null, url }]);
+      void (async () => {
+        try {
+          const out = await removeBackground(file);
+          setAnglePhotos((prev) => prev.map((p) => (p.id === id ? { ...p, bg: out } : p)));
+        } catch (err) {
+          console.warn("angle bg removal failed", err);
+        }
+      })();
+    }
+  }
+
+  function removeLabelPhoto(id: string) {
+    setLabelPhotos((prev) => {
+      const target = prev.find((p) => p.id === id);
+      if (target) URL.revokeObjectURL(target.url);
+      return prev.filter((p) => p.id !== id);
+    });
+  }
+
+  function removeAnglePhoto(id: string) {
+    setAnglePhotos((prev) => {
+      const target = prev.find((p) => p.id === id);
+      if (target) URL.revokeObjectURL(target.url);
+      return prev.filter((p) => p.id !== id);
+    });
   }
 
   async function submit(addAnother: boolean) {
@@ -455,17 +510,22 @@ export default function AddItemForm({
     if (bgRemoved && !useOriginal) {
       fd.append("imageBgRemoved", new File([bgRemoved], "bg.png", { type: "image/png" }));
     }
-    if (labelPhoto) {
-      fd.append("labelImage", labelPhoto);
+    // First label rides the create call — server treats it as the
+    // canonical label that auto-tag, bulk re-tag, and other AI passes
+    // read. Any additional labels and all angles go up after the item
+    // id is known (POST /api/items/[id]/photos with kind).
+    const primaryLabel = labelPhotos[0] ?? null;
+    if (primaryLabel) {
+      fd.append("labelImage", primaryLabel.file);
       // Send the bg-removed cutout if it finished in time. If the
       // user hit Save while bg removal was still running we just
       // skip — server will save the raw label, the strip falls
       // back to it, and a future "redo bg removal" pass can fill
       // it in.
-      if (labelBgRemoved) {
+      if (primaryLabel.bg) {
         fd.append(
           "labelImageBgRemoved",
-          new File([labelBgRemoved], "label-bg.png", { type: "image/png" }),
+          new File([primaryLabel.bg], "label-bg.png", { type: "image/png" }),
         );
       }
     }
@@ -497,6 +557,42 @@ export default function AddItemForm({
       };
       haptic("success");
 
+      // Upload any additional labels (beyond the first) and angle
+      // photos as separate ItemPhoto rows. Sequential, best-effort:
+      // a single failure surfaces as a toast and skips that photo
+      // but doesn't roll back the main item.
+      const itemId = data.item?.id;
+      if (itemId) {
+        const extras: Array<{ photo: ExtraPhoto; kind: "label" | "angle" }> = [
+          ...labelPhotos.slice(1).map((p) => ({ photo: p, kind: "label" as const })),
+          ...anglePhotos.map((p) => ({ photo: p, kind: "angle" as const })),
+        ];
+        let extraFails = 0;
+        for (const { photo, kind } of extras) {
+          try {
+            const efd = new FormData();
+            efd.append("kind", kind);
+            efd.append("image", photo.file);
+            if (photo.bg) {
+              efd.append(
+                "imageBgRemoved",
+                new File([photo.bg], `${kind}-bg.png`, { type: "image/png" }),
+              );
+            }
+            const er = await fetch(`/api/items/${itemId}/photos`, {
+              method: "POST",
+              body: efd,
+            });
+            if (!er.ok) extraFails++;
+          } catch {
+            extraFails++;
+          }
+        }
+        if (extraFails > 0) {
+          toast(`Saved item, but ${extraFails} extra photo${extraFails === 1 ? "" : "s"} failed.`, "error");
+        }
+      }
+
       // "You might already own this" check. Server returned at least
       // one item with a perceptual hash within the duplicate
       // threshold — pause the finalize flow and let the user decide
@@ -516,10 +612,10 @@ export default function AddItemForm({
         setBgRemoved(null);
         if (bgUrl) URL.revokeObjectURL(bgUrl);
         setBgUrl(null);
-        setLabelPhoto(null);
-        if (labelUrl) URL.revokeObjectURL(labelUrl);
-        setLabelUrl(null);
-        setLabelBgRemoved(null);
+        for (const p of labelPhotos) URL.revokeObjectURL(p.url);
+        setLabelPhotos([]);
+        for (const p of anglePhotos) URL.revokeObjectURL(p.url);
+        setAnglePhotos([]);
         setBgState("idle");
         setSubType("");
         setColor(null);
@@ -533,6 +629,9 @@ export default function AddItemForm({
         if (fileRef.current) fileRef.current.value = "";
         if (cameraRef.current) cameraRef.current.value = "";
         if (labelFileRef.current) labelFileRef.current.value = "";
+        if (labelCameraRef.current) labelCameraRef.current.value = "";
+        if (angleFileRef.current) angleFileRef.current.value = "";
+        if (angleCameraRef.current) angleCameraRef.current.value = "";
         setSubmitting(false);
         toast(batchMode ? "Saved. Snap the next one." : "Saved");
         if (batchMode) {
@@ -1011,43 +1110,122 @@ export default function AddItemForm({
         }}
       />
 
-      {/* Label / tag photo */}
+      {/* Extra angle photos — back, side, detail shots that show up
+          in the read-only carousel on the item detail page. AI doesn't
+          read these on create; they're for the human reference. */}
       <div className="card p-4">
-        <p className="label mb-2">Label / tag photo <span className="normal-case font-normal text-stone-400">(optional)</span></p>
-        <p className="text-xs text-stone-500 mb-3">Snap the brand, size, or care tag so you can reference it later.</p>
-        {labelUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={labelUrl} alt="Label photo" className="mb-3 max-h-48 w-auto rounded-xl bg-cream-50 object-contain p-1 ring-1 ring-stone-100" />
+        <p className="label mb-2">Angle photos <span className="normal-case font-normal text-stone-400">(optional)</span></p>
+        <p className="text-xs text-stone-500 mb-3">Add back, side, or detail shots. They show up in the item&apos;s carousel.</p>
+        {anglePhotos.length > 0 && (
+          <div className="mb-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {anglePhotos.map((p) => (
+              <div key={p.id} className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={p.url}
+                  alt="Angle photo"
+                  className="aspect-square w-full rounded-xl bg-cream-50 object-cover ring-1 ring-stone-100"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeAnglePhoto(p.id)}
+                  className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-white/90 text-xs text-stone-600 ring-1 ring-stone-200 hover:text-blush-600"
+                  aria-label="Remove angle photo"
+                  title="Remove"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <input
+          ref={angleFileRef}
+          type="file"
+          accept="image/*,.heic,.heif"
+          multiple
+          onChange={onPickAnglePhotos}
+          className="hidden"
+          aria-label="Choose angle photos from library"
+        />
+        <input
+          ref={angleCameraRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={onPickAnglePhotos}
+          className="hidden"
+          aria-label="Take angle photo with camera"
+        />
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="btn-secondary text-xs" onClick={() => angleFileRef.current?.click()}>
+            🖼️ Choose from library
+          </button>
+          <button type="button" className="btn-ghost text-xs" onClick={() => angleCameraRef.current?.click()}>
+            📷 Take photo
+          </button>
+        </div>
+      </div>
+
+      {/* Label / tag photo(s). First label is what AI auto-tag reads;
+          extras are additional reference shots (care symbols, second
+          tag, brand close-up). */}
+      <div className="card p-4">
+        <p className="label mb-2">Label / tag photos <span className="normal-case font-normal text-stone-400">(optional)</span></p>
+        <p className="text-xs text-stone-500 mb-3">Snap the brand, size, or care tags so you can reference them later. The first one is what AI auto-tag reads.</p>
+        {labelPhotos.length > 0 && (
+          <div className="mb-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {labelPhotos.map((p, i) => (
+              <div key={p.id} className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={p.url}
+                  alt="Label photo"
+                  className="aspect-square w-full rounded-xl bg-cream-50 object-contain p-1 ring-1 ring-stone-100"
+                />
+                {i === 0 && labelPhotos.length > 1 && (
+                  <span className="absolute left-1 top-1 rounded-full bg-blush-500/90 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                    AI
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removeLabelPhoto(p.id)}
+                  className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-white/90 text-xs text-stone-600 ring-1 ring-stone-200 hover:text-blush-600"
+                  aria-label="Remove label photo"
+                  title="Remove"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
         )}
         <input
           ref={labelFileRef}
           type="file"
           accept="image/*,.heic,.heif"
-          onChange={onPickLabelPhoto}
+          multiple
+          onChange={onPickLabelPhotos}
           className="hidden"
-          aria-label="Choose tag photo from library"
+          aria-label="Choose tag photos from library"
         />
         <input
           ref={labelCameraRef}
           type="file"
           accept="image/*"
           capture="environment"
-          onChange={onPickLabelPhoto}
+          onChange={onPickLabelPhotos}
           className="hidden"
           aria-label="Take tag photo with camera"
         />
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button type="button" className="btn-secondary text-xs" onClick={() => labelFileRef.current?.click()}>
             🖼️ Choose from library
           </button>
           <button type="button" className="btn-ghost text-xs" onClick={() => labelCameraRef.current?.click()}>
             📷 Take photo
           </button>
-          {labelPhoto && (
-            <button type="button" className="btn-ghost text-xs text-stone-400" onClick={() => { setLabelPhoto(null); if (labelUrl) URL.revokeObjectURL(labelUrl); setLabelUrl(null); }}>
-              Remove
-            </button>
-          )}
         </div>
       </div>
 
