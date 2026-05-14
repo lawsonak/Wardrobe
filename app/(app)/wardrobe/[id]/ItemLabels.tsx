@@ -5,12 +5,11 @@ import { useRouter } from "next/navigation";
 import { removeBackground } from "@/lib/bgRemoval";
 import { heicToJpeg, isHeic } from "@/lib/heic";
 import { normalizeOrientation } from "@/lib/imageOrientation";
-import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import { haptic } from "@/lib/haptics";
 import BgRetryControl from "@/components/BgRetryControl";
 import ProgressBar from "@/components/ProgressBar";
-import ZoomableImage from "@/components/ZoomableImage";
+import PhotoActionsSheet from "./PhotoActionsSheet";
 
 export type Label = {
   id: string;
@@ -43,6 +42,7 @@ export default function ItemLabels({
   const [bgProgress, setBgProgress] = useState(0);
   const [bgPhase, setBgPhase] = useState<"fetch" | "compute" | "other" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activePhotoId, setActivePhotoId] = useState<string | null>(null);
 
   async function add(picked: File) {
     setError(null);
@@ -100,41 +100,9 @@ export default function ItemLabels({
     }
   }
 
-  async function remove(photoId: string) {
-    const ok = await confirmDialog({
-      title: "Remove this label?",
-      body: "The photo will be deleted.",
-      confirmText: "Remove",
-      destructive: true,
-    });
-    if (!ok) return;
-    try {
-      const res = await fetch(`/api/items/${itemId}/photos/${photoId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      toast("Label removed");
-      router.refresh();
-    } catch (err) {
-      console.error(err);
-      toast("Couldn't remove label", "error");
-    }
-  }
-
-  function rotateLabel(photoId: string) {
-    return async (degrees: 90 | 270) => {
-      const res = await fetch(`/api/items/${itemId}/photos/${photoId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ degrees }),
-      });
-      if (!res.ok) {
-        toast("Couldn't rotate the label", "error");
-        return;
-      }
-      router.refresh();
-    };
-  }
-
   if (!editing && labels.length === 0) return null;
+
+  const activePhoto = labels.find((l) => l.id === activePhotoId);
 
   return (
     <div className="space-y-2">
@@ -146,31 +114,23 @@ export default function ItemLabels({
             const src = l.imageBgRemovedPath
               ? `/api/uploads/${l.imageBgRemovedPath}`
               : `/api/uploads/${l.imagePath}`;
-            const zoomSrc = l.imageOriginalPath
-              ? `/api/uploads/${l.imageOriginalPath}`
-              : `/api/uploads/${l.imagePath}`;
             return (
               <div key={l.id} className="relative">
-                <div className="tile-bg flex h-20 w-20 items-center justify-center overflow-hidden rounded-xl ring-1 ring-stone-100">
-                  <ZoomableImage
-                    src={src}
-                    zoomSrc={zoomSrc}
-                    alt="Label tag"
-                    className="h-full w-full object-contain p-1"
-                    onRotate={editing ? rotateLabel(l.id) : undefined}
-                  />
-                </div>
-                {editing && (
+                {editing ? (
                   <button
                     type="button"
-                    onClick={() => remove(l.id)}
-                    aria-label="Remove label"
-                    className="absolute -right-1.5 -top-1.5 z-10 grid h-6 w-6 place-items-center rounded-full bg-white text-stone-500 shadow-card ring-1 ring-stone-200 hover:text-blush-600"
+                    onClick={() => setActivePhotoId(l.id)}
+                    className="tile-bg flex h-20 w-20 items-center justify-center overflow-hidden rounded-xl ring-1 ring-stone-100 transition hover:ring-blush-300"
+                    aria-label="Edit this label photo"
                   >
-                    <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-                    </svg>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={src} alt="Label tag" className="h-full w-full object-contain p-1" />
                   </button>
+                ) : (
+                  <div className="tile-bg flex h-20 w-20 items-center justify-center overflow-hidden rounded-xl ring-1 ring-stone-100">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={src} alt="Label tag" className="h-full w-full object-contain p-1" />
+                  </div>
                 )}
                 {editing && l.imageBgRemovedPath && (
                   <div className="mt-0.5 text-center">
@@ -181,6 +141,18 @@ export default function ItemLabels({
             );
           })}
         </div>
+      )}
+      {editing && activePhoto && (
+        <PhotoActionsSheet
+          itemId={itemId}
+          photo={{
+            id: activePhoto.id,
+            imagePath: activePhoto.imagePath,
+            imageBgRemovedPath: activePhoto.imageBgRemovedPath,
+            kind: "label",
+          }}
+          onClose={() => setActivePhotoId(null)}
+        />
       )}
       {editing && (
         <>

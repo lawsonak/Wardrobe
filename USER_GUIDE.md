@@ -225,6 +225,17 @@ Below the hero in edit mode. Tap **+ Add label photo** to upload one or more clo
 
 Same shape, for additional full-body shots from different angles (front / back / detail of the buttons / etc.). Renders in the read-only carousel at the top of the detail page so you can swipe through them.
 
+### Re-role a photo (in edit mode)
+
+Tap any label, angle, or pending thumbnail in edit mode and a sheet opens with:
+
+- **★ Make this the main photo** — swaps roles with the current hero. A follow-up asks whether the old main should become a label or an angle (so you can use this to "demote main → label" if a tag photo got uploaded as the hero by accident).
+- **🏷 Mark as label** — moves the photo into the labels strip (hidden when it's already a label).
+- **📸 Mark as angle** — moves it into the angles strip (hidden when it's already an angle).
+- **Delete photo** — destructive; the image file is removed from disk.
+
+The promoted photo keeps its bg-removed cutout. The demoted (old main) loses its hi-res lightbox cutout — that was paired with the hero, not the photo itself — but everyday viewing falls back to the display cutout cleanly.
+
 ### Adjust cutout aggressiveness (↻ slider)
 
 The bg-removal model produces decent cutouts but sometimes trims too much off the edges or leaves background bleed. Every photo with a cutout has an **↻ Adjust cutout** control. Open it and slide along five levels:
