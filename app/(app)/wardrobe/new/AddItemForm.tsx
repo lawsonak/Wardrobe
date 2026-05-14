@@ -7,6 +7,8 @@ import {
   SEASONS,
   ACTIVITIES,
   SPICY_CATEGORIES,
+  BEAUTY_CATEGORIES,
+  BEAUTY_CATEGORY_GROUPS,
   type Category,
 } from "@/lib/constants";
 import TagChips from "@/components/TagChips";
@@ -14,6 +16,7 @@ import ColorSwatch from "@/components/ColorSwatch";
 import BrandInput from "@/components/BrandInput";
 import FitDetailsEditor from "@/components/FitDetailsEditor";
 import SubtypePicker from "@/components/SubtypePicker";
+import BarcodeScanner from "@/components/BarcodeScanner";
 import { removeBackground, resetBackgroundRemover } from "@/lib/bgRemoval";
 import { heicToJpeg, isHeic } from "@/lib/heic";
 import { normalizeOrientation, rotateImage } from "@/lib/imageOrientation";
@@ -25,10 +28,29 @@ import { fetchWithRetry, friendlyFetchError } from "@/lib/fetchRetry";
 import ProgressBar from "@/components/ProgressBar";
 import { useTimedProgress } from "@/lib/progress";
 
+// Common finish suggestions surfaced via <datalist> on the beauty
+// finish input. The column accepts anything (some brands name finishes
+// idiosyncratically — "soft matte", "velvet shine") so this is a hint
+// list, not a constraint.
+const FINISH_SUGGESTIONS = [
+  "matte",
+  "satin",
+  "gloss",
+  "cream",
+  "shimmer",
+  "glitter",
+  "metallic",
+  "sheer",
+  "natural",
+  "dewy",
+];
+
 export default function AddItemForm({
   defaultBackroom = false,
+  defaultBeauty = false,
 }: {
   defaultBackroom?: boolean;
+  defaultBeauty?: boolean;
 }) {
   const router = useRouter();
   const search = useSearchParams();
@@ -57,7 +79,9 @@ export default function AddItemForm({
   // unavailable, the label still uploads as-is.
   const [labelBgRemoved, setLabelBgRemoved] = useState<Blob | null>(null);
 
-  const [category, setCategory] = useState<string>(defaultBackroom ? "Lingerie" : "Tops");
+  const [category, setCategory] = useState<string>(
+    defaultBeauty ? "Lipstick" : defaultBackroom ? "Lingerie" : "Tops",
+  );
   const [subType, setSubType] = useState("");
   const [color, setColor] = useState<string | null>(null);
   const [brand, setBrand] = useState("");
@@ -70,6 +94,18 @@ export default function AddItemForm({
   const [activities, setActivities] = useState<string[]>([]);
   const [isFavorite, setIsFavorite] = useState(false);
   const [isBackroom, setIsBackroom] = useState(defaultBackroom);
+  // Beauty mode: when on, the category dropdown swaps to
+  // BEAUTY_CATEGORIES (sectioned by group via <optgroup>), the
+  // shade + finish row appears, and the form's POST flips
+  // isBeauty=1 so the item lands on /wardrobe/beauty.
+  const [isBeauty, setIsBeauty] = useState(defaultBeauty);
+  const [shadeName, setShadeName] = useState("");
+  const [shadeHex, setShadeHex] = useState("");
+  const [finish, setFinish] = useState("");
+  // Barcode scanner sheet (mobile-first; manual UPC fallback when
+  // BarcodeDetector isn't available). Only surfaced on beauty mode.
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [barcodeBusy, setBarcodeBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reopenCamera, setReopenCamera] = useState(false);
@@ -416,6 +452,10 @@ export default function AddItemForm({
     activities.forEach((a) => fd.append("activities", a));
     if (isFavorite) fd.append("isFavorite", "1");
     if (isBackroom) fd.append("isBackroom", "1");
+    if (isBeauty) fd.append("isBeauty", "1");
+    if (shadeName.trim()) fd.append("shadeName", shadeName.trim());
+    if (shadeHex.trim()) fd.append("shadeHex", shadeHex.trim());
+    if (finish.trim()) fd.append("finish", finish.trim());
 
     try {
       const res = await fetch("/api/items", { method: "POST", body: fd });
@@ -643,13 +683,24 @@ export default function AddItemForm({
             value={category}
             onChange={(e) => { setCategory(e.target.value); setSubType(""); }}
           >
-            {/* Spicy items pick from a separate vocabulary
-                (Lingerie / Costume / Toys / …); regular items get the
-                main 14. The schema field is the same free string so
-                the server-side validator accepts either list. */}
-            {(isBackroom ? SPICY_CATEGORIES : CATEGORIES).map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
+            {/* Three vocabularies, one Item.category column. Beauty
+                wins over Spicy when both flags are on (since shade /
+                finish are the more constraining attribute set);
+                Spicy wins over the main 14; otherwise the main list.
+                Beauty uses <optgroup> so the ~30-item list reads as
+                six logical sections (Lips / Eyes / Face / Skincare
+                / Tools / Fragrance). */}
+            {isBeauty
+              ? BEAUTY_CATEGORY_GROUPS.map((g) => (
+                  <optgroup key={g.label} label={g.label}>
+                    {g.categories.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </optgroup>
+                ))
+              : (isBackroom ? SPICY_CATEGORIES : CATEGORIES).map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
           </select>
         </div>
         <div>
@@ -745,7 +796,183 @@ export default function AddItemForm({
           />
           🌶
         </label>
+
+        {/* 💄 flag — sends this item to /wardrobe/beauty and swaps
+            the form into beauty mode (BEAUTY_CATEGORIES dropdown,
+            shade + finish fields below, barcode scan shortcut). */}
+        <label
+          className="flex items-center gap-2 text-sm text-stone-700"
+          title="Move to the 💄 page; swap to beauty categories with shade fields."
+        >
+          <input
+            type="checkbox"
+            checked={isBeauty}
+            onChange={(e) => {
+              const next = e.target.checked;
+              setIsBeauty(next);
+              // Snap category to a value that's selectable in the
+              // new vocabulary so the dropdown doesn't sit on a
+              // value that's not a current option.
+              if (next) {
+                const beautyList: readonly string[] = BEAUTY_CATEGORIES;
+                if (!beautyList.includes(category)) {
+                  setCategory("Lipstick");
+                  setSubType("");
+                }
+              } else {
+                const fallbackList: readonly string[] = isBackroom ? SPICY_CATEGORIES : CATEGORIES;
+                if (!fallbackList.includes(category)) {
+                  setCategory(fallbackList[0]);
+                  setSubType("");
+                }
+              }
+            }}
+          />
+          💄
+        </label>
+
+        {/* Beauty-only fields. Shade name + hex picker live in a
+            single row; the hex input doubles as a swatch preview
+            (browsers show a color picker). Finish is a free-text
+            input with a <datalist> of common values. */}
+        {isBeauty && (
+          <div className="space-y-3 rounded-xl bg-blush-50/50 p-3 ring-1 ring-blush-100">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setScannerOpen(true)}
+                disabled={barcodeBusy}
+                className="btn-secondary text-xs"
+              >
+                {barcodeBusy ? "Looking up…" : "📷 Scan barcode"}
+              </button>
+              <span className="text-xs text-stone-500">
+                Looks the product up via Open Beauty Facts (or AI fallback) and pre-fills name, brand, category.
+              </span>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="label" htmlFor="shadeName">Shade name</label>
+                <input
+                  id="shadeName"
+                  type="text"
+                  value={shadeName}
+                  onChange={(e) => setShadeName(e.target.value)}
+                  placeholder="e.g. Ruby Woo"
+                  className="input"
+                  maxLength={80}
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="shadeHex">Shade color</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="shadeHex"
+                    type="color"
+                    value={shadeHex || "#a82c52"}
+                    onChange={(e) => setShadeHex(e.target.value)}
+                    className="h-10 w-14 cursor-pointer rounded-lg border border-stone-200 bg-white p-1"
+                    aria-label="Shade color picker"
+                  />
+                  <input
+                    type="text"
+                    value={shadeHex}
+                    onChange={(e) => setShadeHex(e.target.value)}
+                    placeholder="#a82c52"
+                    className="input flex-1 font-mono text-xs"
+                    maxLength={7}
+                  />
+                  {shadeHex && (
+                    <button
+                      type="button"
+                      onClick={() => setShadeHex("")}
+                      className="text-xs text-stone-400 hover:text-blush-600"
+                      aria-label="Clear shade color"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="label" htmlFor="finish">Finish</label>
+              <input
+                id="finish"
+                type="text"
+                value={finish}
+                onChange={(e) => setFinish(e.target.value)}
+                placeholder="matte / satin / gloss / shimmer …"
+                className="input"
+                list="finish-suggestions"
+                maxLength={60}
+              />
+              <datalist id="finish-suggestions">
+                {FINISH_SUGGESTIONS.map((f) => (
+                  <option key={f} value={f} />
+                ))}
+              </datalist>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Barcode scanner sheet — only mounted when open so the
+          camera permission isn't requested on idle. The reusable
+          BarcodeScanner handles capture; we POST the code to
+          /api/barcode-lookup and pre-fill matched fields. */}
+      <BarcodeScanner
+        open={scannerOpen}
+        onCancel={() => setScannerOpen(false)}
+        onDetect={async (code) => {
+          setScannerOpen(false);
+          setBarcodeBusy(true);
+          try {
+            const r = await fetch("/api/barcode-lookup", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ code }),
+            });
+            const data = (await r.json().catch(() => ({}))) as {
+              ok?: boolean;
+              source?: string;
+              match?: {
+                name?: string | null;
+                brand?: string | null;
+                category?: string | null;
+                shadeName?: string | null;
+              } | null;
+              error?: string;
+            };
+            if (!data.ok) {
+              toast(data.error ?? "Barcode lookup failed.", "error");
+              return;
+            }
+            if (!data.match) {
+              toast(`No match for ${code}. Fill in by hand.`, "info");
+              return;
+            }
+            // Soft-fill: only overwrite empty fields so the user's
+            // already-typed values aren't lost.
+            const m = data.match;
+            if (m.name && !subType) setSubType(m.name.slice(0, 80));
+            if (m.brand && !brand) setBrand(m.brand);
+            if (m.category && (BEAUTY_CATEGORIES as readonly string[]).includes(m.category)) {
+              setCategory(m.category);
+            }
+            if (m.shadeName && !shadeName) setShadeName(m.shadeName);
+            const fromLabel = data.source === "open-beauty-facts" ? "Open Beauty Facts" : "AI";
+            toast(`Pre-filled from ${fromLabel}.`);
+          } catch (err) {
+            console.error(err);
+            toast("Couldn't reach the lookup service.", "error");
+          } finally {
+            setBarcodeBusy(false);
+          }
+        }}
+      />
 
       {/* Label / tag photo */}
       <div className="card p-4">

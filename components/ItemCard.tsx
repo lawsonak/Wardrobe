@@ -14,6 +14,14 @@ export type ItemCardItem = {
   subType: string | null;
   color: string | null;
   isFavorite: boolean;
+  // Optional cosmetic-shade pair. Both are null on clothing items
+  // (the closet gallery never sees them). When shadeHex is set, the
+  // tile renders a small color dot in the corner; when shadeName is
+  // set, the caption swaps from `subType` to `subType · shadeName`
+  // so swatch-driven product lines (lipsticks, blushes) read at a
+  // glance.
+  shadeName?: string | null;
+  shadeHex?: string | null;
 };
 
 export default function ItemCard({
@@ -120,12 +128,28 @@ export default function ItemCard({
           <path d="M12 21s-7-4.35-9.5-8.5C.5 8.5 3 5 6.5 5c2 0 3.5 1 5.5 3 2-2 3.5-3 5.5-3 3.5 0 6 3.5 4 7.5C19 16.65 12 21 12 21z" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
+      {/* Shade dot for beauty items — tiny circle driven by
+          shadeHex, top-left so it doesn't fight the heart in the
+          top-right. Only renders when shadeHex is non-null
+          (clothing items never set it). */}
+      {item.shadeHex && (
+        <div
+          className={cn(
+            "pointer-events-none absolute rounded-full ring-2 ring-white shadow",
+            compact ? "left-1 top-1 h-3 w-3" : "left-2 top-2 h-4 w-4",
+          )}
+          style={{ backgroundColor: item.shadeHex }}
+          title={item.shadeName ?? "Shade"}
+          aria-label={item.shadeName ?? "Shade swatch"}
+        />
+      )}
       {/* Subtype caption — same gradient/white-text treatment in both
           compact (closet gallery) and full (outfit-builder picker)
           modes so the gallery isn't a sea of unlabeled photos. Falls
           back to the category when no subType is set. Compact gets
           tighter padding + slightly smaller text to fit the 3-col
-          mobile grid. */}
+          mobile grid. Beauty items append the shade name when set
+          ("Lipstick · Ruby Woo") so swatch lines are scannable. */}
       {(item.subType || item.category) && (
         <div
           className={cn(
@@ -134,6 +158,9 @@ export default function ItemCard({
           )}
         >
           {item.subType ?? item.category}
+          {item.shadeName && (
+            <span className="ml-1 text-white/80">· {item.shadeName}</span>
+          )}
         </div>
       )}
     </div>

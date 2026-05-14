@@ -184,10 +184,18 @@ export default async function WardrobePage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* Spicy door — sole entry to the dedicated /wardrobe/backroom
-              page. The main closet has no other reference to backroom
-              items: they're hard-excluded from the gallery, the
-              filters, and any toggles here. */}
+          {/* Spicy door + Beauty door — both are sole entry points to
+              their dedicated pages. The main closet has no other
+              reference to either bucket; both are hard-excluded from
+              the gallery, the filters, and any toggles here. */}
+          <Link
+            href="/wardrobe/beauty"
+            className="grid h-9 w-9 place-items-center rounded-full bg-stone-100 text-base hover:bg-stone-200"
+            aria-label="Open 💄 items"
+            title="💄"
+          >
+            💄
+          </Link>
           <Link
             href="/wardrobe/backroom"
             className="grid h-9 w-9 place-items-center rounded-full bg-stone-100 text-base hover:bg-stone-200"

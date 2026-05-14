@@ -29,6 +29,10 @@ type DetailItem = {
   activities: string;
   isFavorite: boolean;
   isBackroom: boolean;
+  isBeauty: boolean;
+  shadeName: string | null;
+  shadeHex: string | null;
+  finish: string | null;
   status: string;
 };
 
@@ -223,13 +227,22 @@ export default function ItemDetailView({
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-2">
         {/* Back-link routes to whichever closet the item belongs to,
-            so a user browsing 🌶 stays inside it instead of being
-            yanked to the main /wardrobe page. */}
+            so a user browsing 💄 / 🌶 stays inside it instead of
+            being yanked to the main /wardrobe page. Beauty wins
+            when an item is both — matches the form's "beauty wins"
+            rule (since shade / finish are the more constraining
+            attribute set). */}
         <Link
-          href={item.isBackroom ? "/wardrobe/backroom" : "/wardrobe"}
+          href={
+            item.isBeauty
+              ? "/wardrobe/beauty"
+              : item.isBackroom
+                ? "/wardrobe/backroom"
+                : "/wardrobe"
+          }
           className="text-sm text-blush-600 hover:underline"
         >
-          ← Back to {item.isBackroom ? "🌶" : "closet"}
+          ← Back to {item.isBeauty ? "💄" : item.isBackroom ? "🌶" : "closet"}
         </Link>
         <div className="flex items-center gap-2">
           <ItemNav prevId={prevId} nextId={nextId} />
@@ -264,14 +277,37 @@ export default function ItemDetailView({
                 {item.color}
               </span>
             )}
+            {/* Beauty-specific chips: shade swatch + name, finish.
+                Only render for beauty items so clothing pills aren't
+                cluttered with empty slots. */}
+            {item.isBeauty && item.shadeName && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-stone-100 px-2 py-0.5 text-stone-700">
+                {item.shadeHex && (
+                  <span
+                    className="h-3 w-3 rounded-full ring-1 ring-stone-300"
+                    style={{ backgroundColor: item.shadeHex }}
+                    aria-hidden
+                  />
+                )}
+                {item.shadeName}
+              </span>
+            )}
+            {item.isBeauty && item.finish && (
+              <span className="rounded-full bg-cream-100 px-2 py-0.5 capitalize text-stone-600">
+                {item.finish}
+              </span>
+            )}
           </div>
         </div>
         <FavoriteToggle itemId={item.id} initial={item.isFavorite} />
       </div>
 
       {/* One-click try-on: AI builds an outfit anchored on this item
-          and the next page renders the mannequin composite on mount. */}
-      <TryOnButton itemId={item.id} />
+          and the next page renders the mannequin composite on mount.
+          Hidden for beauty items — try-on doesn't apply to a
+          standalone lipstick. (PR D introduces a Look-driven try-on
+          companion concept.) */}
+      {!item.isBeauty && <TryOnButton itemId={item.id} />}
 
       {/* Metadata grid */}
       <section className="card p-4">

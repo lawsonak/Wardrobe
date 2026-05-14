@@ -146,12 +146,16 @@ export default async function ItemDetail({
     // swiping inside the 🌶 closet stays inside it (and vice
     // versa) — otherwise the next/prev arrows would silently jump
     // the user from the 🌶 page back into the main closet.
+    // Scope prev/next to the same flag bucket so swiping inside
+    // 💄 / 🌶 / main closet stays where the user is, instead of
+    // silently leaking across the bucket boundary.
     const [prevItem, nextItem] = await Promise.all([
       prisma.item.findFirst({
         where: {
           ownerId: userId,
           status: "active",
           isBackroom: item.isBackroom,
+          isBeauty: item.isBeauty,
           createdAt: { gt: item.createdAt },
         },
         orderBy: { createdAt: "asc" },
@@ -162,6 +166,7 @@ export default async function ItemDetail({
           ownerId: userId,
           status: "active",
           isBackroom: item.isBackroom,
+          isBeauty: item.isBeauty,
           createdAt: { lt: item.createdAt },
         },
         orderBy: { createdAt: "desc" },
@@ -210,6 +215,10 @@ export default async function ItemDetail({
           activities: item.activities,
           isFavorite: item.isFavorite,
           isBackroom: item.isBackroom,
+          isBeauty: item.isBeauty,
+          shadeName: item.shadeName ?? null,
+          shadeHex: item.shadeHex ?? null,
+          finish: item.finish ?? null,
           status: item.status,
         }}
         outfits={detailOutfits}
@@ -311,6 +320,10 @@ export default async function ItemDetail({
               activities: csvToList(item.activities),
               isFavorite: item.isFavorite,
               isBackroom: item.isBackroom,
+              isBeauty: item.isBeauty,
+              shadeName: item.shadeName ?? null,
+              shadeHex: item.shadeHex ?? null,
+              finish: item.finish ?? null,
               status: item.status,
               pendingAiSuggestions: item.pendingAiSuggestions ?? null,
             }}

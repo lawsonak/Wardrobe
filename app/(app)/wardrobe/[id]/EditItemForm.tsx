@@ -5,12 +5,21 @@ import { useRouter } from "next/navigation";
 import {
   CATEGORIES,
   SPICY_CATEGORIES,
+  BEAUTY_CATEGORIES,
+  BEAUTY_CATEGORY_GROUPS,
   SEASONS,
   ACTIVITIES,
   ITEM_STATUSES,
   type Category,
   type ItemStatus,
 } from "@/lib/constants";
+
+// Same finish suggestions as the new-item form. Free-text input
+// with a <datalist> hint list — column accepts anything.
+const FINISH_SUGGESTIONS = [
+  "matte", "satin", "gloss", "cream", "shimmer",
+  "glitter", "metallic", "sheer", "natural", "dewy",
+];
 import TagChips from "@/components/TagChips";
 import ColorSwatch from "@/components/ColorSwatch";
 import BrandInput from "@/components/BrandInput";
@@ -42,6 +51,10 @@ type Item = {
   activities: string[];
   isFavorite: boolean;
   isBackroom: boolean;
+  isBeauty: boolean;
+  shadeName: string | null;
+  shadeHex: string | null;
+  finish: string | null;
   status: string;
   fitDetails: string | null;
   fitNotes: string | null;
@@ -72,6 +85,10 @@ export default function EditItemForm({ item }: { item: Item }) {
   const [activities, setActivities] = useState<string[]>(item.activities);
   const [isFavorite, setIsFavorite] = useState(item.isFavorite);
   const [isBackroom, setIsBackroom] = useState(item.isBackroom);
+  const [isBeauty, setIsBeauty] = useState(item.isBeauty);
+  const [shadeName, setShadeName] = useState(item.shadeName ?? "");
+  const [shadeHex, setShadeHex] = useState(item.shadeHex ?? "");
+  const [finish, setFinish] = useState(item.finish ?? "");
   const [status, setStatus] = useState<ItemStatus>(item.status as ItemStatus);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -770,6 +787,10 @@ export default function EditItemForm({ item }: { item: Item }) {
         activities,
         isFavorite,
         isBackroom,
+        isBeauty,
+        shadeName: shadeName.trim() || null,
+        shadeHex: shadeHex.trim() || null,
+        finish: finish.trim() || null,
         status,
       }),
     });
@@ -819,19 +840,32 @@ export default function EditItemForm({ item }: { item: Item }) {
       <div>
         <label className="label">Category</label>
         <select className="input" value={category} onChange={(e) => { setCategory(e.target.value); setSubType(""); }}>
-          {/* Spicy items pick from a separate vocabulary; regular
-              items get the main 14. The current value still renders
-              even if it doesn't appear in the active list (e.g. an
-              older spicy item tagged "Bras" before SPICY_CATEGORIES
-              existed) so the dropdown never shows a blank selection. */}
-          {(isBackroom ? SPICY_CATEGORIES : CATEGORIES).map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-          {!(isBackroom ? SPICY_CATEGORIES : CATEGORIES).includes(
-            category as never,
-          ) && category && (
-            <option value={category}>{category} (legacy)</option>
-          )}
+          {/* Three vocabularies, one column. Beauty wins over Spicy
+              when both flags are on (since shade / finish are the
+              more constraining attribute set). Beauty uses
+              <optgroup> so the ~30-item list reads as six logical
+              sections. The current value still renders as a
+              "(legacy)" option when it isn't in the active list so
+              the dropdown never shows a blank selection. */}
+          {isBeauty
+            ? BEAUTY_CATEGORY_GROUPS.map((g) => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.categories.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </optgroup>
+              ))
+            : (isBackroom ? SPICY_CATEGORIES : CATEGORIES).map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+          {(() => {
+            const activeList: readonly string[] = isBeauty
+              ? BEAUTY_CATEGORIES
+              : (isBackroom ? SPICY_CATEGORIES : CATEGORIES);
+            return !activeList.includes(category) && category ? (
+              <option value={category}>{category} (legacy)</option>
+            ) : null;
+          })()}
         </select>
       </div>
       <div>
@@ -891,6 +925,78 @@ export default function EditItemForm({ item }: { item: Item }) {
         <textarea className="input min-h-[64px]" value={notes} onChange={(e) => setNotes(e.target.value)} />
       </div>
 
+      {/* Beauty-specific fields. Only render when 💄 is on so a
+          clothing item's edit page stays focused on apparel
+          attributes. Toggling 💄 off hides this card; toggling on
+          re-renders with whatever values were last set. */}
+      {isBeauty && (
+        <div className="space-y-3 rounded-xl bg-blush-50/50 p-3 ring-1 ring-blush-100">
+          <p className="text-xs font-medium text-blush-800">Beauty details</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="label" htmlFor="edit-shadeName">Shade name</label>
+              <input
+                id="edit-shadeName"
+                type="text"
+                value={shadeName}
+                onChange={(e) => setShadeName(e.target.value)}
+                placeholder="e.g. Ruby Woo"
+                className="input"
+                maxLength={80}
+              />
+            </div>
+            <div>
+              <label className="label" htmlFor="edit-shadeHex">Shade color</label>
+              <div className="flex items-center gap-2">
+                <input
+                  id="edit-shadeHex"
+                  type="color"
+                  value={shadeHex || "#a82c52"}
+                  onChange={(e) => setShadeHex(e.target.value)}
+                  className="h-10 w-14 cursor-pointer rounded-lg border border-stone-200 bg-white p-1"
+                  aria-label="Shade color picker"
+                />
+                <input
+                  type="text"
+                  value={shadeHex}
+                  onChange={(e) => setShadeHex(e.target.value)}
+                  placeholder="#a82c52"
+                  className="input flex-1 font-mono text-xs"
+                  maxLength={7}
+                />
+                {shadeHex && (
+                  <button
+                    type="button"
+                    onClick={() => setShadeHex("")}
+                    className="text-xs text-stone-400 hover:text-blush-600"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          <div>
+            <label className="label" htmlFor="edit-finish">Finish</label>
+            <input
+              id="edit-finish"
+              type="text"
+              value={finish}
+              onChange={(e) => setFinish(e.target.value)}
+              placeholder="matte / satin / gloss / shimmer …"
+              className="input"
+              list="edit-finish-suggestions"
+              maxLength={60}
+            />
+            <datalist id="edit-finish-suggestions">
+              {FINISH_SUGGESTIONS.map((f) => (
+                <option key={f} value={f} />
+              ))}
+            </datalist>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-4">
           <label className="flex items-center gap-2 text-sm text-stone-700">
@@ -911,6 +1017,20 @@ export default function EditItemForm({ item }: { item: Item }) {
               onChange={(e) => setIsBackroom(e.target.checked)}
             />
             🌶
+          </label>
+          {/* 💄 flag — sends this item to /wardrobe/beauty and swaps
+              the form's category dropdown to BEAUTY_CATEGORIES.
+              Independent of 🌶 (a beauty item can also be Spicy). */}
+          <label
+            className="flex items-center gap-2 text-sm text-stone-700"
+            title="Move to the 💄 page; swap to beauty categories with shade fields."
+          >
+            <input
+              type="checkbox"
+              checked={isBeauty}
+              onChange={(e) => setIsBeauty(e.target.checked)}
+            />
+            💄
           </label>
         </div>
 
