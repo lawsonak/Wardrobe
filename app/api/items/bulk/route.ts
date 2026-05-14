@@ -9,10 +9,11 @@ import { logActivity } from "@/lib/activity";
 export const runtime = "nodejs";
 
 // Multipart POST. Accepts multiple `images` parts plus a single
-// `category` and optional `status` (defaults to "needs_review"). Saves
-// each photo as its own Item in one round trip — no background removal,
-// no AI tagging. Returns the created item ids so the client can keep
-// processing them client-side (bg removal, auto-tag) on its own time.
+// `category`. Saves each photo as its own Item in one round trip — no
+// background removal, no AI tagging. Returns the created item ids so
+// the client can keep processing them client-side (bg removal,
+// auto-tag) on its own time. All items land as "active" — there's no
+// review queue anymore.
 //
 // This is what you call from the bulk-upload page so the user can close
 // the tab right after the upload completes; bg removal becomes a
@@ -26,15 +27,16 @@ export async function POST(req: NextRequest) {
   const rawCategory = String(form.get("category") || "");
   // "__auto__" means the user wants AI to assign a category. We need a
   // non-null category at insert time, so store a placeholder ("Tops")
-  // and force needs_review status — AI tagging will overwrite both.
+  // — AI tagging will overwrite it once it runs.
   const isAuto = rawCategory === "__auto__";
   const category = isAuto ? "Tops" : rawCategory;
   if (!isAuto && (!category || !isKnownCategory(category))) {
     return NextResponse.json({ error: "Missing or invalid category" }, { status: 400 });
   }
-  const statusVal = isAuto
-    ? "needs_review"
-    : (form.get("status") as string | null) || "needs_review";
+  // Every bulk upload lands as active. The "Needs review" queue was
+  // removed — items are usable immediately and the user edits any
+  // missing tags from the item detail page.
+  const statusVal = "active";
   // Optional Backroom flag for the entire batch — useful when the user
   // is importing intimate items in one shot. Per-item override happens
   // via the edit page after upload.

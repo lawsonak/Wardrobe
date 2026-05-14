@@ -845,7 +845,7 @@ export const COLOR_PALETTE = [
 // Derived to keep the two lists from drifting.
 export const COLOR_NAMES = COLOR_PALETTE.map((c) => c.name);
 
-export const ITEM_STATUSES = ["active", "needs_review", "draft"] as const;
+export const ITEM_STATUSES = ["active", "draft"] as const;
 export type ItemStatus = (typeof ITEM_STATUSES)[number];
 
 export const WISHLIST_PRIORITIES = ["low", "medium", "high"] as const;

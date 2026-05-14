@@ -33,12 +33,6 @@ export default async function WardrobePage({
   const category = sp.category && CATEGORIES.includes(sp.category as Category) ? sp.category : undefined;
   const favOnly = sp.fav === "1";
   const q = sp.q?.trim();
-  const statusFilter = sp.status;
-  // "Unlabeled" surfaces items still waiting for tagging — produced
-  // by the bulk upload flow before AI runs (status=needs_review) or
-  // by anyone uploading with the AI off. Implemented as a one-tap
-  // quick filter that just rewrites the existing status query param.
-  const unlabeledOnly = statusFilter === "needs_review";
   const pendingOnly = sp.pending === "1";
   const color = sp.color?.trim() || undefined;
   const season = sp.season?.trim() || undefined;
@@ -82,13 +76,11 @@ export default async function WardrobePage({
     ...(!drop.has("category") && category ? { category } : {}),
     ...(favOnly ? { isFavorite: true } : {}),
     // `pending=1` shows everything with a non-null pendingAiSuggestions
-    // blob — independent of `status`, since pending review is its own
-    // axis (an active item can have pending suggestions too).
+    // blob. Otherwise the closet defaults to active items only —
+    // drafts live on the Quality page.
     ...(pendingOnly
       ? { pendingAiSuggestions: { not: null } }
-      : statusFilter
-        ? { status: statusFilter }
-        : { status: "active" }),
+      : { status: "active" }),
     ...(!drop.has("color") && color ? { color } : {}),
     ...(!drop.has("season") && season ? { seasons: { contains: season } } : {}),
     ...(!drop.has("activity") && activityClause ? activityClause : {}),
@@ -104,9 +96,6 @@ export default async function WardrobePage({
       : {}),
   });
 
-  // Always show how many items are unlabeled so the pill carries a
-  // badge even when the filter isn't active. Cheap COUNT query, owner-
-  // scoped, fires in parallel with the gallery fetch below.
   const select = {
     id: true,
     imagePath: true,
@@ -117,8 +106,7 @@ export default async function WardrobePage({
     isFavorite: true,
   } as const;
 
-  const [unlabeledCount, pendingAiCount, strictItems] = await Promise.all([
-    prisma.item.count({ where: { ownerId: userId, status: "needs_review" } }),
+  const [pendingAiCount, strictItems] = await Promise.all([
     prisma.item.count({ where: { ownerId: userId, pendingAiSuggestions: { not: null } } }),
     prisma.item.findMany({
       where: buildWhere(new Set()),
@@ -171,7 +159,6 @@ export default async function WardrobePage({
   if (season) activeFilters.push({ label: season, href: dropParam(sp, "season") });
   if (activity) activeFilters.push({ label: activity, href: dropParam(sp, "activity") });
   if (favOnly) activeFilters.push({ label: "favorites", href: dropParam(sp, "fav") });
-  if (unlabeledOnly) activeFilters.push({ label: "unlabeled", href: dropParam(sp, "status") });
   if (pendingOnly) activeFilters.push({ label: "pending AI", href: dropParam(sp, "pending") });
 
   return (
@@ -220,18 +207,6 @@ export default async function WardrobePage({
           className={"chip " + (favOnly ? "chip-on" : "chip-off")}
         >
           ★ Favorites
-        </Link>
-        <Link
-          href={unlabeledOnly ? dropParam(sp, "status") : `/wardrobe?${withParam(sp, "status", "needs_review")}`}
-          className={"chip " + (unlabeledOnly ? "chip-on" : "chip-off")}
-          title="Items waiting for AI tags or manual cleanup"
-        >
-          Unlabeled
-          {unlabeledCount > 0 && (
-            <span className={"ml-1 rounded-full px-1.5 text-[10px] " + (unlabeledOnly ? "bg-white/25 text-white" : "bg-stone-100 text-stone-500")}>
-              {unlabeledCount}
-            </span>
-          )}
         </Link>
         {/* Items with AI suggestions staged from a bulk re-tag run
             that the user hasn't reviewed yet. Hidden when the count

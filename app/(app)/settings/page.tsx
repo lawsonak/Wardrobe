@@ -288,12 +288,6 @@ export default async function SettingsPage() {
             <span className="text-stone-500"> — full user guide for every feature.</span>
           </li>
           <li>
-            <Link href="/wardrobe/needs-review" className="text-blush-600 hover:underline">
-              Needs Review inbox
-            </Link>
-            <span className="text-stone-500"> — items waiting for tags.</span>
-          </li>
-          <li>
             <Link href="/wardrobe/quality" className="text-blush-600 hover:underline">
               Closet quality
             </Link>

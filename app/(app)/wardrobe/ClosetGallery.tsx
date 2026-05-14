@@ -17,11 +17,10 @@ import { cn } from "@/lib/cn";
 // navigating. A sticky action bar appears at the bottom with:
 //   ✨ Re-run AI tagging (POST /api/ai/tag-bulk { itemIds })
 //   ✂️ Remove backgrounds  (POST /api/items/bg-remove-batch { itemIds })
-//   ✓ Mark needs-review    (PATCH each item.status — local loop)
 //   Cancel / Done           (exits select mode without acting)
 //
 // Both bulk action endpoints are existing — same dispatch the bulk
-// upload + needs-review buttons use. Server kicks off the work and
+// upload buttons use. Server kicks off the work and
 // fires a notification when done; the user can leave the page.
 export default function ClosetGallery({ items }: { items: ItemCardItem[] }) {
   const router = useRouter();

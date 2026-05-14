@@ -44,7 +44,6 @@ type DetailOutfit = {
 
 const STATUS_LABELS: Record<string, string> = {
   active: "Active",
-  needs_review: "Needs review",
   draft: "Draft",
 };
 

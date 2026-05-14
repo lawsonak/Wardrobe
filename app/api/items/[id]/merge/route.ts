@@ -18,11 +18,11 @@ const MAX_SOURCES_PER_CALL = 25;
 //
 // Fold one or more "source" items into this target. Use case: the
 // user dumped a stack of clothing-tag photos through bulk upload and
-// each one landed as a standalone item with status="needs_review".
-// Merging consolidates them onto the actual garments — the source's
-// main photo becomes a new ItemPhoto on the target (kind=label by
-// default), any extra photos already on the source are moved across
-// preserving their kind, and the source row is deleted.
+// each one landed as a standalone item. Merging consolidates them
+// onto the actual garments — the source's main photo becomes a new
+// ItemPhoto on the target (kind=label by default), any extra photos
+// already on the source are moved across preserving their kind, and
+// the source row is deleted.
 //
 // Body: { sourceIds: string[], asKind?: "angle" | "label" | "pending" }
 //   - sourceIds: items to merge INTO `id`. Owner-checked.
@@ -125,9 +125,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // has no cascade in the schema, so the explicit deleteMany is
     // required to avoid an FK violation on the Item.delete below.
     // CollectionItem does cascade but we delete it explicitly anyway —
-    // belt and braces, and means a tag-only "needs_review" item that
-    // somehow ended up in a packing list doesn't drag Outfit-builder
-    // entries along.
+    // belt and braces, and means a tag-only orphan item that somehow
+    // ended up in a packing list doesn't drag Outfit-builder entries
+    // along.
     await prisma.outfitItem.deleteMany({ where: { itemId: src.id } });
     await prisma.collectionItem.deleteMany({ where: { itemId: src.id } });
 
