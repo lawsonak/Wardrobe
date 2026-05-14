@@ -3,7 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CATEGORIES, SPICY_CATEGORIES } from "@/lib/constants";
+import {
+  CATEGORIES,
+  SPICY_CATEGORIES,
+  BEAUTY_CATEGORIES,
+  BEAUTY_CATEGORY_GROUPS,
+} from "@/lib/constants";
 import { heicToJpeg, isHeic } from "@/lib/heic";
 import { normalizeOrientation } from "@/lib/imageOrientation";
 import ProgressBar from "@/components/ProgressBar";
@@ -62,6 +67,9 @@ export default function BulkUpload() {
   // edit page lets the user toggle individual rows back if they
   // accidentally lumped a non-Backroom photo in.
   const [allBackroom, setAllBackroom] = useState(false);
+  // Same shape for "Mark all as Beauty". Independent of Backroom —
+  // both can be on, in which case items land as both spicy + beauty.
+  const [allBeauty, setAllBeauty] = useState(false);
   const [removeBg, setRemoveBg] = useState(true);
   const [aiTag, setAiTag] = useState(true);
   const [promoteAtConfidence, setPromoteAtConfidence] = useState(0.85);
@@ -204,6 +212,7 @@ export default function BulkUpload() {
         fd.append("category", defaultCategory);
         fd.append("status", defaultStatus);
         if (allBackroom) fd.append("isBackroom", "1");
+        if (allBeauty) fd.append("isBeauty", "1");
         fd.append("images", working.file, working.file.name);
         const res = await fetch("/api/items/bulk", { method: "POST", body: fd });
         if (!res.ok) {
@@ -381,6 +390,8 @@ export default function BulkUpload() {
           setRemoveBg={setRemoveBg}
           allBackroom={allBackroom}
           setAllBackroom={setAllBackroom}
+          allBeauty={allBeauty}
+          setAllBeauty={setAllBeauty}
           jobs={jobs}
           onFiles={onFiles}
           onRemove={remove}
@@ -486,6 +497,8 @@ function Step1Choose({
   setRemoveBg,
   allBackroom,
   setAllBackroom,
+  allBeauty,
+  setAllBeauty,
   jobs,
   onFiles,
   onRemove,
@@ -504,6 +517,8 @@ function Step1Choose({
   setRemoveBg: (v: boolean) => void;
   allBackroom: boolean;
   setAllBackroom: (v: boolean) => void;
+  allBeauty: boolean;
+  setAllBeauty: (v: boolean) => void;
   jobs: Job[];
   onFiles: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onRemove: (id: string) => void;
@@ -523,13 +538,22 @@ function Step1Choose({
               onChange={(e) => setDefaultCategory(e.target.value)}
             >
               <option value={AUTO_CATEGORY}>✨ Let AI decide</option>
-              {/* When the batch is being marked all-Spicy the
-                  dropdown swaps to the spicy vocabulary so the user
-                  isn't picking from a list of categories that won't
-                  appear on /wardrobe/backroom. */}
-              {(allBackroom ? SPICY_CATEGORIES : CATEGORIES).map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
+              {/* When the batch is being marked all-Beauty the
+                  dropdown swaps to BEAUTY_CATEGORIES (sectioned by
+                  group), all-Spicy swaps to SPICY_CATEGORIES,
+                  otherwise the main 14. Beauty wins over Spicy when
+                  both are on (mirrors the per-item form). */}
+              {allBeauty
+                ? BEAUTY_CATEGORY_GROUPS.map((g) => (
+                    <optgroup key={g.label} label={g.label}>
+                      {g.categories.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </optgroup>
+                  ))
+                : (allBackroom ? SPICY_CATEGORIES : CATEGORIES).map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
             </select>
             <p className="mt-1 text-xs text-stone-500">
               {defaultCategory === AUTO_CATEGORY
@@ -626,6 +650,40 @@ function Step1Choose({
                   {allBackroom
                     ? "Every item lands on the 🌶 page only — hidden from the main closet, outfit builder, and AI prompts."
                     : "Tag everything in this batch with 🌶 — only visible in the dedicated 🌶 page."}
+                </span>
+              </span>
+            </label>
+
+            {/* "Mark all as Beauty" — same shape; sends every item
+                in the batch to /wardrobe/beauty. Independent of 🌶
+                (both can be on, in which case items land in both
+                buckets). When checked, the Default category dropdown
+                above swaps to BEAUTY_CATEGORIES. */}
+            <label className="flex items-start gap-2 text-sm text-stone-700">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={allBeauty}
+                onChange={(e) => {
+                  const next = e.target.checked;
+                  setAllBeauty(next);
+                  // Same vocabulary-snap as Spicy: if the current
+                  // pick isn't in the new (beauty / non-beauty)
+                  // list, fall back to ✨ Auto.
+                  const list: readonly string[] = next
+                    ? BEAUTY_CATEGORIES
+                    : (allBackroom ? SPICY_CATEGORIES : CATEGORIES);
+                  if (defaultCategory !== AUTO_CATEGORY && !list.includes(defaultCategory)) {
+                    setDefaultCategory(AUTO_CATEGORY);
+                  }
+                }}
+              />
+              <span>
+                <span className="font-medium">💄 Mark all</span>
+                <span className="block text-xs text-stone-500">
+                  {allBeauty
+                    ? "Every item lands on the 💄 page only — separate from the main closet and AI outfit prompts."
+                    : "Tag everything in this batch with 💄 — only visible in the dedicated 💄 page."}
                 </span>
               </span>
             </label>
