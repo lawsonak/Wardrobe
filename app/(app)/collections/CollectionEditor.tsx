@@ -8,6 +8,7 @@ import { cn } from "@/lib/cn";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import ItemPicker, { type Selectable } from "./ItemPicker";
 import CollectionShop from "./CollectionShop";
+import { useUnsavedChanges } from "@/lib/useUnsavedChanges";
 
 export type CollectionData = {
   id: string;
@@ -59,6 +60,25 @@ export default function CollectionEditor({
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Warn before discarding edits — every field compared against the
+  // collection as loaded; selected items compared as a sorted id set.
+  const editorDirty =
+    !busy &&
+    (kind !== (collection.kind === "trip" ? "trip" : "general") ||
+      name !== collection.name ||
+      description !== (collection.description ?? "") ||
+      destination !== (collection.destination ?? "") ||
+      startDate !== (collection.startDate ?? "") ||
+      endDate !== (collection.endDate ?? "") ||
+      notes !== (collection.notes ?? "") ||
+      occasion !== (collection.occasion ?? "") ||
+      season !== (collection.season ?? "") ||
+      [...activities].sort().join(",") !==
+        csvToList(collection.activities).sort().join(",") ||
+      [...selected].sort().join(",") !==
+        [...collection.itemIds].sort().join(","));
+  useUnsavedChanges(editorDirty);
 
   const [aiBusy, setAiBusy] = useState<"acts" | "pack" | null>(null);
   const [aiHint, setAiHint] = useState<string | null>(null);

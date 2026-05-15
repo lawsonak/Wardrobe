@@ -14,6 +14,7 @@ import { toast } from "@/lib/toast";
 import { haptic } from "@/lib/haptics";
 import { fetchWithRetry, friendlyFetchError } from "@/lib/fetchRetry";
 import { useTimedProgress } from "@/lib/progress";
+import { useUnsavedChanges } from "@/lib/useUnsavedChanges";
 import ProgressBar from "@/components/ProgressBar";
 
 // Detection coming back from /api/ai/detect-items.
@@ -72,6 +73,11 @@ export default function SplitItemForm({
   const [rows, setRows] = useState<Row[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const detectProgress = useTimedProgress(detectState === "running", 12);
+
+  // Dirty once a photo is picked or detections are on screen — all
+  // of that is lost on navigate-away. submitting itself navigates
+  // programmatically on success, which the guard ignores.
+  useUnsavedChanges((!!source || rows.length > 0) && !submitting);
 
   useEffect(() => {
     return () => {

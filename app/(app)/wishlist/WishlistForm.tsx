@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CATEGORIES, WISHLIST_PRIORITIES, type WishlistPriority } from "@/lib/constants";
+import { useUnsavedChanges } from "@/lib/useUnsavedChanges";
 
 type InitialValues = {
   id?: string;
@@ -51,6 +52,24 @@ export default function WishlistForm({ initial }: { initial?: InitialValues }) {
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Warn before discarding a half-filled wishlist entry — any field
+  // diverging from what it was loaded with (or anything typed on a
+  // fresh add). The success path navigates programmatically.
+  const wishDirty =
+    !submitting &&
+    (name.trim() !== (initial?.name ?? "") ||
+      category !== (initial?.category ?? "") ||
+      brand.trim() !== (initial?.brand ?? "") ||
+      link.trim() !== (initial?.link ?? "") ||
+      price.trim() !== (initial?.price ?? "") ||
+      priority !== ((initial?.priority as WishlistPriority) ?? "medium") ||
+      occasion.trim() !== (initial?.occasion ?? "") ||
+      notes.trim() !== (initial?.notes ?? "") ||
+      fillsGap !== (initial?.fillsGap ?? false) ||
+      giftIdea !== (initial?.giftIdea ?? false) ||
+      imageFile !== null);
+  useUnsavedChanges(wishDirty);
 
   // ── ✨ Auto-fill from URL or product name ──────────────────────
   // The user pastes a product link OR types "white linen blazer

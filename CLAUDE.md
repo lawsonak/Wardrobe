@@ -147,6 +147,7 @@ The route uses the inflight-lock pattern; pass 3 runs after the cheap shrinks so
 - Color tokens: blush (primary), cream (background), sage (accent), stone (neutral). Defined in `tailwind.config.ts`.
 - Mobile bottom nav (`components/MobileNav.tsx`) and desktop top nav (in `app/(app)/layout.tsx`) must stay in sync — adding a new top-level route means updating both.
 - Sticky bottom action bars on long forms (see `CollectionWizard` step 4) — primary action one tap away from anywhere on the screen.
+- **Unsaved-changes guard.** `useUnsavedChanges(dirty)` (`lib/useUnsavedChanges.ts`) blocks accidental navigation away from an in-progress workflow. Pass a `dirty` boolean computed from "has the user started / changed anything not yet saved". It guards hard nav via `beforeunload` (generic browser string — platform-forced) and in-app `<Link>` clicks via a document capture-phase interceptor that shows the branded `confirmDialog`. Wired into AddItemForm, EditItemForm, SplitItemForm, BulkUpload, OutfitBuilder, LookBuilder, CollectionWizard, CollectionEditor, WishlistForm. Programmatic `router.push` (post-save) is NOT intercepted, so forms just need `dirty` accurate — it goes false on save / unmount naturally. SPA back/forward is intentionally not guarded (re-entrant history interception is bug-prone); `beforeunload` still catches back-to-outside-the-app. Escape hatch: mark a link / ancestor `data-skip-unsaved-guard`.
 
 ## Key file map
 

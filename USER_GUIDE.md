@@ -776,6 +776,7 @@ The 🌶 icon for Spicy is intentionally **not** in either nav — it lives only
 
 - **focus-visible rings** on every button, input, chip — keyboard navigation is fully supported.
 - **Native confirm dialogs** are replaced by `ConfirmDialog` everywhere (delete item / outfit / wish / collection, mannequin reset, orphan cleanup, etc.) — better mobile UX, more readable copy.
+- **Unsaved-changes guard.** If you start a workflow — adding an item, editing one, a bulk upload, splitting a photo, an outfit / Look / collection / wishlist entry — and then tap away (e.g. accidentally hitting **Collections** in the nav) before saving, a confirm pops up: *"By leaving you'll lose any progress you haven't saved. Are you sure?"* with **Stay** / **Leave**. Closing or refreshing the tab triggers the browser's own (generic-worded) version. The guard only arms once you've actually entered something, and a successful Save navigates freely.
 - **Toast notifications** on every save and delete.
 - **Haptic feedback** on Android for key actions. iOS Safari ignores `navigator.vibrate` (no-op).
 - **Horizontal swipe gestures** on the item detail page to navigate between items in closet order.
