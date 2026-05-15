@@ -3,6 +3,8 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { csvToList, SLOTS } from "@/lib/constants";
+import { parseFitDetails } from "@/lib/fitDetails";
+import { assessFit, parse as parseMeasurements } from "@/lib/measurements";
 import EditItemForm from "./EditItemForm";
 import ItemDetailView from "./ItemDetailView";
 import ItemAngles from "./ItemAngles";
@@ -149,7 +151,7 @@ export default async function ItemDetail({
     // Scope prev/next to the same flag bucket so swiping inside
     // 💄 / 🌶 / main closet stays where the user is, instead of
     // silently leaking across the bucket boundary.
-    const [prevItem, nextItem] = await Promise.all([
+    const [prevItem, nextItem, me] = await Promise.all([
       prisma.item.findFirst({
         where: {
           ownerId: userId,
@@ -172,7 +174,19 @@ export default async function ItemDetail({
         orderBy: { createdAt: "desc" },
         select: { id: true },
       }),
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: { measurements: true },
+      }),
     ]);
+
+    // Phase B: advisory fit hint. Beauty items have no body fit, so
+    // skip them; otherwise compare the user's measurements against
+    // the item's recorded fitDetails. Null when there's nothing
+    // comparable — the badge just doesn't render.
+    const fit = item.isBeauty
+      ? null
+      : assessFit(parseMeasurements(me?.measurements ?? null), parseFitDetails(item.fitDetails));
 
     const detailOutfits = item.outfitItems.map((oi) => {
       // Sort companion items by canonical slot order so the thumbnail
@@ -232,6 +246,7 @@ export default async function ItemDetail({
         candidates={candidates}
         prevId={prevItem?.id ?? null}
         nextId={nextItem?.id ?? null}
+        fit={fit}
       />
     );
   }

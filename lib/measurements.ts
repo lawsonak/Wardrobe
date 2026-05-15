@@ -217,3 +217,81 @@ export function hasUsableMeasurements(m: Measurements | null): boolean {
   if (!m) return false;
   return Object.keys(m.core).length > 0 || !!m.bra?.size;
 }
+
+// ── Phase B: garment fit assessment ────────────────────────────────
+// Compare the user's body against an item's recorded fitDetails.
+// fitDetails keys are body-circumference style (bust / waist / hip /
+// inseam / sleeve / shoulder), values are strings that may carry a
+// unit or be free text — we pull the leading number and treat it as
+// inches (FIT_FIELDS declares unit "in"). This is an advisory hint,
+// not a fitting-room guarantee: people record either the size-chart
+// body number or a flat-lay number, so the copy stays soft.
+export type FitVerdict = "fits" | "snug" | "roomy";
+export type FitReason = {
+  label: string;
+  garmentIn: number;
+  bodyIn: number;
+  deltaIn: number; // garment − body; negative = garment smaller
+};
+export type FitAssessment = {
+  verdict: FitVerdict;
+  headline: string;
+  reasons: FitReason[];
+};
+
+const FIT_KEY_TO_BODY: Record<string, keyof CoreMeasurements> = {
+  bust: "bust",
+  chest: "bust",
+  waist: "waist",
+  hip: "hips",
+  hips: "hips",
+  inseam: "inseam",
+  sleeve: "sleeve",
+  shoulder: "shoulder",
+};
+
+// Tolerance in inches. Within ±SNUG..ROOMY of the body number reads
+// as a normal fit; tighter than SNUG flags snug; looser everywhere
+// than ROOMY flags roomy.
+const SNUG_IN = 1.5;
+const ROOMY_IN = 2.5;
+
+export function assessFit(
+  m: Measurements | null,
+  fitDetails: Record<string, string> | null | undefined,
+): FitAssessment | null {
+  if (!m || !fitDetails) return null;
+  const reasons: FitReason[] = [];
+  for (const [rawKey, rawVal] of Object.entries(fitDetails)) {
+    const bodyKey = FIT_KEY_TO_BODY[rawKey.toLowerCase()];
+    if (!bodyKey) continue;
+    const bodyRaw = m.core[bodyKey];
+    if (typeof bodyRaw !== "number") continue;
+    const garmentNum = parseFloat(String(rawVal).replace(/[^0-9.]/g, ""));
+    if (!Number.isFinite(garmentNum) || garmentNum <= 0) continue;
+    const bodyIn = toInches(bodyRaw, m.unit);
+    reasons.push({
+      label: rawKey,
+      garmentIn: garmentNum,
+      bodyIn: Math.round(bodyIn * 10) / 10,
+      deltaIn: Math.round((garmentNum - bodyIn) * 10) / 10,
+    });
+  }
+  if (reasons.length === 0) return null;
+
+  // The most-negative delta is the field most likely to pinch.
+  const tightest = reasons.reduce((a, b) => (b.deltaIn < a.deltaIn ? b : a));
+  let verdict: FitVerdict = "fits";
+  if (tightest.deltaIn <= -SNUG_IN) verdict = "snug";
+  else if (reasons.every((r) => r.deltaIn >= ROOMY_IN)) verdict = "roomy";
+
+  const headline =
+    verdict === "snug"
+      ? `May run snug at the ${tightest.label}`
+      : verdict === "roomy"
+        ? "May be roomy"
+        : "Likely fits";
+
+  return { verdict, headline, reasons };
+}
+

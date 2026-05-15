@@ -2,6 +2,7 @@ import { Fragment } from "react";
 import Link from "next/link";
 import { csvToList } from "@/lib/constants";
 import { parseFitDetails, FIT_FIELDS } from "@/lib/fitDetails";
+import type { FitAssessment } from "@/lib/measurements";
 import type { Category } from "@/lib/constants";
 import { FavoriteToggle, DeleteItemButton } from "./ItemActions";
 import ItemNav from "./ItemNav";
@@ -173,6 +174,7 @@ export default function ItemDetailView({
   candidates,
   prevId,
   nextId,
+  fit,
 }: {
   item: DetailItem;
   outfits: DetailOutfit[];
@@ -184,6 +186,10 @@ export default function ItemDetailView({
   candidates: Candidate[];
   prevId: string | null;
   nextId: string | null;
+  /** Advisory body-vs-garment fit hint. Null when the user has no
+   *  measurements, the item has no comparable fitDetails, or it's a
+   *  beauty item. Computed server-side in the page. */
+  fit: FitAssessment | null;
 }) {
   const src = item.imageBgRemovedPath
     ? `/api/uploads/${item.imageBgRemovedPath}`
@@ -329,6 +335,37 @@ export default function ItemDetailView({
         </div>
         <FavoriteToggle itemId={item.id} initial={item.isFavorite} />
       </div>
+
+      {/* Advisory fit hint vs the user's saved measurements. Soft
+          copy on purpose — it compares the numbers as recorded, and
+          people log either size-chart or flat-lay values. */}
+      {fit && (
+        <div
+          className={
+            "rounded-xl px-3 py-2 text-sm ring-1 " +
+            (fit.verdict === "snug"
+              ? "bg-amber-50 text-amber-800 ring-amber-200"
+              : fit.verdict === "roomy"
+                ? "bg-sky-50 text-sky-800 ring-sky-200"
+                : "bg-sage-200/50 text-sage-600 ring-sage-400/50")
+          }
+          title={fit.reasons
+            .map(
+              (r) =>
+                `${r.label}: garment ${r.garmentIn}in vs you ${r.bodyIn}in (${r.deltaIn >= 0 ? "+" : ""}${r.deltaIn}in)`,
+            )
+            .join("\n")}
+        >
+          <span className="font-medium">
+            {fit.verdict === "snug" ? "↔ " : fit.verdict === "roomy" ? "↔ " : "✓ "}
+            {fit.headline}
+          </span>{" "}
+          <span className="opacity-80">
+            — based on your measurements vs this item&rsquo;s recorded fit. A
+            rough guide, not a guarantee.
+          </span>
+        </div>
+      )}
 
       {/* One-click try-on: AI builds an outfit anchored on this item
           and the next page renders the mannequin composite on mount.
