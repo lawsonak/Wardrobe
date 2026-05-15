@@ -37,18 +37,26 @@ type Debug = {
 export async function generateMannequinFromPhoto(input: {
   photo: Buffer;
   mime: string;
+  /** Compact body-measurement summary (Phase D). When present it's
+   *  appended to the prompt so the figure is built to the user's
+   *  real proportions, not just what the photo angle implies. */
+  proportions?: string | null;
 }): Promise<MannequinResult> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) {
     return { ok: false, error: "GEMINI_API_KEY not set", debug: { error: "GEMINI_API_KEY not set" } };
   }
 
+  const prompt = input.proportions?.trim()
+    ? `${PROMPT} The person's measured body proportions are: ${input.proportions.trim()}. Build the figure to these proportions where the photo is ambiguous.`
+    : PROMPT;
+
   const body = {
     contents: [
       {
         role: "user",
         parts: [
-          { text: PROMPT },
+          { text: prompt },
           {
             inlineData: {
               mimeType: input.mime || "image/jpeg",

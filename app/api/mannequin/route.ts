@@ -10,6 +10,7 @@ import {
 import { generateMannequinFromPhoto } from "@/lib/ai/mannequin";
 import { prisma } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
+import { measurementsSummary, parse as parseMeasurements } from "@/lib/measurements";
 
 export const runtime = "nodejs";
 // Photo → illustration is a single Gemini Flash Image call, ~5-15s.
@@ -78,7 +79,15 @@ export async function POST(req: NextRequest) {
 
   inflight.add(userId);
   try {
-    const result = await generateMannequinFromPhoto({ photo: photoBuf, mime: photoMime });
+    const me = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { measurements: true },
+    });
+    const result = await generateMannequinFromPhoto({
+      photo: photoBuf,
+      mime: photoMime,
+      proportions: measurementsSummary(parseMeasurements(me?.measurements ?? null)),
+    });
     if (!result.ok) {
       const info = await getUserMannequin(userId);
       return NextResponse.json({ error: result.error, ...info, debug: result.debug }, { status: 502 });
