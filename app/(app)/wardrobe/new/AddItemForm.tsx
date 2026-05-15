@@ -26,6 +26,7 @@ import { haptic } from "@/lib/haptics";
 import { fetchWithRetry, friendlyFetchError } from "@/lib/fetchRetry";
 import ProgressBar from "@/components/ProgressBar";
 import { useTimedProgress } from "@/lib/progress";
+import { useUnsavedChanges } from "@/lib/useUnsavedChanges";
 
 // Common finish suggestions surfaced via <datalist> on the beauty
 // finish input. The column accepts anything (some brands name finishes
@@ -136,6 +137,21 @@ export default function AddItemForm({
   const [autoTagState, setAutoTagState] = useState<"idle" | "running" | "done" | "disabled" | "error">("idle");
   const [autoTagMessage, setAutoTagMessage] = useState<string | null>(null);
   const autoTagProgress = useTimedProgress(autoTagState === "running", 18);
+
+  // Warn before navigating away once the user has actually started:
+  // a photo picked, a tag photo / angle added, or any field typed.
+  const dirty =
+    !!original ||
+    labelPhotos.length > 0 ||
+    anglePhotos.length > 0 ||
+    subType.trim() !== "" ||
+    !!color ||
+    brand.trim() !== "" ||
+    size.trim() !== "" ||
+    notes.trim() !== "" ||
+    shadeName.trim() !== "" ||
+    finish.trim() !== "";
+  useUnsavedChanges(dirty);
 
   useEffect(() => {
     return () => {

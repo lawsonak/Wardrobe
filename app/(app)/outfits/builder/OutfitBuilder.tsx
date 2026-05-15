@@ -15,6 +15,7 @@ import { cn } from "@/lib/cn";
 import { toast } from "@/lib/toast";
 import { haptic } from "@/lib/haptics";
 import { itemMatchesActivity } from "@/lib/activities";
+import { useUnsavedChanges } from "@/lib/useUnsavedChanges";
 
 type BuilderItem = {
   id: string;
@@ -136,6 +137,28 @@ export default function OutfitBuilder({
   const [lookPickerOpen, setLookPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Guard against losing an unsaved outfit. Signature = picked item
+  // ids + name + paired look + favorite flag; captured once on mount
+  // so arriving with pre-seeded picks (e.g. "build around this item"
+  // deep-link) isn't treated as dirty until the user changes
+  // something. The post-save navigation is a programmatic push the
+  // guard ignores; `!saving` just suppresses a prompt mid-save.
+  const dirtySig =
+    Object.values(picks)
+      .flat()
+      .map((i) => i.id)
+      .sort()
+      .join(",") +
+    "|" +
+    name.trim() +
+    "|" +
+    (pairedLookId ?? "") +
+    "|" +
+    isFavorite;
+  const baselineSigRef = useRef<string | null>(null);
+  if (baselineSigRef.current === null) baselineSigRef.current = dirtySig;
+  useUnsavedChanges(!saving && dirtySig !== baselineSigRef.current);
 
   const pairedLook = pairedLookId
     ? availableLooks.find((l) => l.id === pairedLookId) ?? null

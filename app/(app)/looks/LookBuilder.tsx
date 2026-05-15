@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useUnsavedChanges } from "@/lib/useUnsavedChanges";
 import Link from "next/link";
 import { LOOK_SLOTS, type LookSlot } from "@/lib/constants";
 import { confirmDialog } from "@/components/ConfirmDialog";
@@ -64,6 +65,23 @@ export default function LookBuilder({
   // Which slot's picker sheet is open. Null = none. Tap a slot to
   // open it; tap an item inside the sheet to set the slot.
   const [openSlot, setOpenSlot] = useState<LookSlot | null>(null);
+
+  // Warn before discarding an unsaved Look. Signature = filled
+  // slots + name + notes, baselined on mount so opening an existing
+  // Look to edit isn't "dirty" until something actually changes.
+  const lookSig =
+    Object.entries(picks)
+      .filter(([, v]) => !!v)
+      .map(([s, v]) => `${s}:${v}`)
+      .sort()
+      .join(",") +
+    "|" +
+    name.trim() +
+    "|" +
+    notes.trim();
+  const lookBaselineRef = useRef<string | null>(null);
+  if (lookBaselineRef.current === null) lookBaselineRef.current = lookSig;
+  useUnsavedChanges(!busy && lookSig !== lookBaselineRef.current);
 
   // Bucket items by the slot they fit (category string match). Built
   // once; the picker reads from this map.

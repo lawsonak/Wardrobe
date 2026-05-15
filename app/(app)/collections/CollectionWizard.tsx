@@ -13,6 +13,7 @@ import {
 } from "@/lib/packingTargets";
 import ItemPicker, { type Selectable } from "./ItemPicker";
 import CollectionShop from "./CollectionShop";
+import { useUnsavedChanges } from "@/lib/useUnsavedChanges";
 
 type Kind = "trip" | "general";
 type Mode = "closet" | "shop";
@@ -90,6 +91,17 @@ export default function CollectionWizard({
   const [step, setStep] = useState<Step>(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Dirty once the user has started building: named it, set a
+  // destination, advanced past step 1, or picked items. `busy`
+  // (saving) is excluded — the save navigates programmatically.
+  useUnsavedChanges(
+    !busy &&
+      (step > 1 ||
+        name.trim() !== "" ||
+        destination.trim() !== "" ||
+        selected.size > 0),
+  );
 
   // Shop mode persists a draft collection on entering Step 3 so the
   // shop API can read its destination/dates/activities. Stored here

@@ -12,6 +12,7 @@ import {
 import { heicToJpeg, isHeic } from "@/lib/heic";
 import ProgressBar from "@/components/ProgressBar";
 import { cn } from "@/lib/cn";
+import { useUnsavedChanges } from "@/lib/useUnsavedChanges";
 
 // Sentinel for the "Let AI decide" option. The bulk endpoint accepts
 // this and stores a placeholder category until AI tagging fills the
@@ -402,6 +403,12 @@ export default function BulkUpload() {
   // Mirror the latest jobs into a ref for use inside async callbacks.
   const jobsRef = useRef<Job[] | null>(null);
   jobsRef.current = jobs;
+
+  // Dirty while there are photos that haven't all finished uploading.
+  // Once phase === "done" every item is durable on the server, so
+  // leaving Step 3 loses nothing and shouldn't prompt. Picked-but-
+  // not-started (Step 1) and mid-upload (Step 2) both lose work.
+  useUnsavedChanges(jobs.length > 0 && phase !== "done");
 
   const counts = useMemo(() => {
     return jobs.reduce(

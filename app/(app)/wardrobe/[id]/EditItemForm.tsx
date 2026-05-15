@@ -34,6 +34,7 @@ import { haptic } from "@/lib/haptics";
 import { fetchWithRetry, friendlyFetchError } from "@/lib/fetchRetry";
 import ProgressBar from "@/components/ProgressBar";
 import { useTimedProgress } from "@/lib/progress";
+import { useUnsavedChanges } from "@/lib/useUnsavedChanges";
 
 type Item = {
   id: string;
@@ -328,6 +329,31 @@ export default function EditItemForm({ item }: { item: Item }) {
   // brand search above — both share the lookupCandidate review state.
   const [lookupUrl, setLookupUrl] = useState("");
   const lookupProgress = useTimedProgress(lookupState === "running", 12);
+
+  // Dirty = any editable field diverges from what the item was
+  // loaded with, and the user hasn't just saved. Arrays / the
+  // fitDetails object are compared by their serialized form so a
+  // re-order or whitespace tweak doesn't false-positive.
+  const dirty =
+    !saved &&
+    (category !== item.category ||
+      subType.trim() !== (item.subType ?? "") ||
+      color !== item.color ||
+      brand.trim() !== (item.brand ?? "") ||
+      size.trim() !== (item.size ?? "") ||
+      fitNotes.trim() !== (item.fitNotes ?? "") ||
+      notes.trim() !== (item.notes ?? "") ||
+      [...seasons].sort().join(",") !== [...item.seasons].sort().join(",") ||
+      [...activities].sort().join(",") !== [...item.activities].sort().join(",") ||
+      isFavorite !== item.isFavorite ||
+      isBackroom !== item.isBackroom ||
+      isBeauty !== item.isBeauty ||
+      shadeName.trim() !== (item.shadeName ?? "") ||
+      shadeHex.trim() !== (item.shadeHex ?? "") ||
+      finish.trim() !== (item.finish ?? "") ||
+      status !== item.status ||
+      (serializeFitDetails(fitDetails) ?? "") !== (item.fitDetails ?? ""));
+  useUnsavedChanges(dirty);
 
   // Load the item's main photo (preferring the smaller bg-removed
   // cutout) and the label photo if present. Uses fetchWithRetry so a
