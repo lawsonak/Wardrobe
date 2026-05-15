@@ -48,6 +48,11 @@ export type Measurements = {
   core: CoreMeasurements;
   bra?: BraMeasurements;
   extra?: ExtraMeasurements;
+  /** Free-text shape / proportional descriptor — "defined waist,
+   *  volume at hips, slightly long torso". Editable; may be seeded
+   *  by the Phase-E photo estimate or typed by hand. Fed into the
+   *  shopping + mannequin AI prompts via measurementsSummary. */
+  shape?: string;
 };
 
 // ── Unit conversion ────────────────────────────────────────────────
@@ -183,6 +188,7 @@ export function sanitize(input: unknown): Measurements | null {
     core,
     bra,
     extra,
+    shape: str(r.shape, 240),
   };
 }
 
@@ -204,7 +210,8 @@ export function serialize(m: Measurements | null): string | null {
   if (
     Object.keys(clean.core).length === 0 &&
     !clean.bra &&
-    !clean.extra
+    !clean.extra &&
+    !clean.shape
   ) {
     return null;
   }
@@ -242,8 +249,14 @@ export function measurementsSummary(m: Measurements | null): string | null {
   push("inseam", "inseam");
   if (typeof c.shoeUS === "number") parts.push(`US shoe ${c.shoeUS}`);
   if (m.bra?.size) parts.push(`bra ${m.bra.size}`);
-  if (parts.length === 0) return null;
-  return parts.join(", ");
+  const numbers = parts.length > 0 ? parts.join(", ") : null;
+  // Shape rides as a trailing clause so the prompt gets both the
+  // hard numbers and the qualitative silhouette ("...; shape:
+  // defined waist, volume at hips"). Either half can stand alone.
+  const shape = m.shape?.trim();
+  if (!numbers && !shape) return null;
+  if (numbers && shape) return `${numbers}; shape: ${shape}`;
+  return numbers ?? `shape: ${shape}`;
 }
 
 // ── Phase B: garment fit assessment ────────────────────────────────

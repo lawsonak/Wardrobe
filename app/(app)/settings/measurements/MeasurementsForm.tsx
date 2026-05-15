@@ -1,14 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   computeBraSize,
   type MeasurementUnit,
   type Measurements,
 } from "@/lib/measurements";
+import { heicToJpeg, isHeic } from "@/lib/heic";
+import { normalizeOrientation } from "@/lib/imageOrientation";
 import { toast } from "@/lib/toast";
 import { haptic } from "@/lib/haptics";
+import { fetchWithRetry, friendlyFetchError } from "@/lib/fetchRetry";
 import { useUnsavedChanges } from "@/lib/useUnsavedChanges";
 
 // Guided manual entry. Core section always visible; the Bra (an
@@ -79,7 +82,19 @@ export default function MeasurementsForm({
     notes: initial?.extra?.notes ?? "",
   });
 
+  const [shape, setShape] = useState(initial?.shape ?? "");
+
   const [saving, setSaving] = useState(false);
+
+  // Phase E: photo estimate. Photos are sent and dropped — never
+  // stored. Front required, side optional but improves accuracy.
+  const frontRef = useRef<HTMLInputElement>(null);
+  const sideRef = useRef<HTMLInputElement>(null);
+  const [frontFile, setFrontFile] = useState<File | null>(null);
+  const [sideFile, setSideFile] = useState<File | null>(null);
+  const [estimateOpen, setEstimateOpen] = useState(false);
+  const [estimating, setEstimating] = useState(false);
+  const [estimateMsg, setEstimateMsg] = useState<string | null>(null);
 
   const lengthUnit = unit === "cm" ? "cm" : "in";
   const weightUnit = unit === "cm" ? "kg" : "lb";
@@ -103,7 +118,7 @@ export default function MeasurementsForm({
 
   const dirty =
     !saving &&
-    JSON.stringify({ unit, core, bra, braSizeOverride, extra }) !==
+    JSON.stringify({ unit, core, bra, braSizeOverride, extra, shape }) !==
       JSON.stringify({
         unit: initial?.unit ?? "in",
         core: {
@@ -130,6 +145,7 @@ export default function MeasurementsForm({
           ringSize: initial?.extra?.ringSize ?? "",
           notes: initial?.extra?.notes ?? "",
         },
+        shape: initial?.shape ?? "",
       });
   useUnsavedChanges(dirty);
 
@@ -167,6 +183,7 @@ export default function MeasurementsForm({
           ringSize: extra.ringSize.trim() || undefined,
           notes: extra.notes.trim() || undefined,
         },
+        shape: shape.trim() || undefined,
       };
       const res = await fetch("/api/measurements", {
         method: "PUT",
@@ -185,6 +202,96 @@ export default function MeasurementsForm({
       console.error(err);
       toast(err instanceof Error ? err.message : "Couldn't save", "error");
       setSaving(false);
+    }
+  }
+
+  // HEIC → JPEG + bake EXIF so the model sees an upright image (a
+  // sideways photo would scramble the width/height it scales from).
+  async function prepPhoto(f: File): Promise<File> {
+    let file = f;
+    if (isHeic(file)) {
+      try {
+        file = await heicToJpeg(file);
+      } catch {
+        /* fall through with the original; Gemini may still read it */
+      }
+    }
+    try {
+      file = await normalizeOrientation(file);
+    } catch {
+      /* non-fatal */
+    }
+    return file;
+  }
+
+  async function runEstimate() {
+    if (estimating) return;
+    if (!frontFile) {
+      setEstimateMsg("Add a front photo first.");
+      return;
+    }
+    if (!core.height.trim()) {
+      setEstimateMsg("Enter your tape-measured height above — it's the scale reference.");
+      return;
+    }
+    setEstimating(true);
+    setEstimateMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append("front", await prepPhoto(frontFile));
+      if (sideFile) fd.append("side", await prepPhoto(sideFile));
+      fd.append("height", core.height.trim());
+      fd.append("unit", unit);
+      const res = await fetchWithRetry(
+        "/api/ai/estimate-measurements",
+        { method: "POST", body: fd },
+        { timeoutMs: 95_000 },
+      );
+      const data = (await res.json().catch(() => ({}))) as {
+        enabled?: boolean;
+        message?: string;
+        error?: string;
+        draft?: {
+          bust?: number;
+          waist?: number;
+          hips?: number;
+          shoulder?: number;
+          sleeve?: number;
+          inseam?: number;
+          shape?: string;
+          confidence?: number;
+        };
+      };
+      if (data?.enabled === false) {
+        setEstimateMsg(data.message ?? "AI is disabled.");
+        return;
+      }
+      if (!res.ok || !data.draft) {
+        setEstimateMsg(data?.error ?? "Couldn't estimate from those photos.");
+        return;
+      }
+      const d = data.draft;
+      const set = (k: keyof typeof core, v: number | undefined) => {
+        if (typeof v === "number") setCore((p) => ({ ...p, [k]: String(v) }));
+      };
+      set("bust", d.bust);
+      set("waist", d.waist);
+      set("hips", d.hips);
+      set("shoulder", d.shoulder);
+      set("sleeve", d.sleeve);
+      set("inseam", d.inseam);
+      if (d.shape) setShape(d.shape);
+      const pct =
+        typeof d.confidence === "number" ? ` (model confidence ${Math.round(d.confidence * 100)}%)` : "";
+      setEstimateMsg(
+        `Draft filled in above${pct}. These are rough estimates — check each against a tape before saving.`,
+      );
+      haptic("success");
+    } catch (err) {
+      console.error(err);
+      setEstimateMsg(friendlyFetchError(err, "Estimate failed."));
+    } finally {
+      setEstimating(false);
     }
   }
 
@@ -208,6 +315,88 @@ export default function MeasurementsForm({
           cm
         </button>
       </div>
+
+      {/* Phase E: photo estimate */}
+      <section className="card p-4">
+        <button
+          type="button"
+          onClick={() => setEstimateOpen((v) => !v)}
+          className="flex w-full items-center justify-between text-left"
+        >
+          <span className="font-display text-lg text-stone-800">
+            ✨ Estimate from photos (optional)
+          </span>
+          <span className="text-stone-400">{estimateOpen ? "−" : "+"}</span>
+        </button>
+        {estimateOpen && (
+          <div className="mt-3 space-y-3 text-sm">
+            <p className="text-stone-600">
+              A rough starting point — AI reads your silhouette and fills the
+              fields below for you to review. <strong>Not tailor-accurate</strong>{" "}
+              (expect ±1-3 {lengthUnit}); always sanity-check against a tape.
+            </p>
+            <ul className="list-disc space-y-1 pl-5 text-xs text-stone-500">
+              <li>Enter your tape-measured <strong>height</strong> below first — it&apos;s the scale reference, the estimate can&apos;t run without it.</li>
+              <li>Wear <strong>fitted</strong> clothing — leggings + a fitted top, activewear, or (for best accuracy, optional) underwear. Loose fabric hides the real shape.</li>
+              <li>Plain wall, full body in frame head-to-toe, phone about hip height ~2-3 m away, barefoot, arms ~15° out from your sides.</li>
+              <li><strong>Front photo</strong> required; a <strong>true side</strong> photo (turned 90°) noticeably improves it.</li>
+              <li>Photos are sent for the estimate and <strong>not saved</strong> — they&apos;re processed and discarded.</li>
+            </ul>
+
+            <input
+              ref={frontRef}
+              type="file"
+              accept="image/*,.heic,.heif"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (e.target) e.target.value = "";
+                if (f) setFrontFile(f);
+              }}
+            />
+            <input
+              ref={sideRef}
+              type="file"
+              accept="image/*,.heic,.heif"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (e.target) e.target.value = "";
+                if (f) setSideFile(f);
+              }}
+            />
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="btn-secondary text-xs"
+                onClick={() => frontRef.current?.click()}
+              >
+                {frontFile ? "✓ Front photo" : "Front photo"}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary text-xs"
+                onClick={() => sideRef.current?.click()}
+              >
+                {sideFile ? "✓ Side photo" : "Side photo (optional)"}
+              </button>
+              <button
+                type="button"
+                className="btn-primary text-xs disabled:opacity-50"
+                disabled={estimating || !frontFile}
+                onClick={runEstimate}
+              >
+                {estimating ? "Estimating…" : "✨ Estimate"}
+              </button>
+            </div>
+            {estimateMsg && (
+              <p className="rounded-lg bg-blush-50 px-3 py-2 text-xs text-blush-800 ring-1 ring-blush-200">
+                {estimateMsg}
+              </p>
+            )}
+          </div>
+        )}
+      </section>
 
       {/* Core */}
       <section className="card space-y-3 p-4">
@@ -239,6 +428,26 @@ export default function MeasurementsForm({
             onChange={(e) => setCore((p) => ({ ...p, shoeUS: e.target.value }))}
           />
         </label>
+      </section>
+
+      {/* Shape / style descriptor — free text, fed into the
+          shopping + mannequin AI prompts. Seeded by the photo
+          estimate but always editable. */}
+      <section className="card space-y-2 p-4">
+        <h2 className="font-display text-lg text-stone-800">Shape &amp; style notes</h2>
+        <p className="text-xs text-stone-500">
+          A short description of your silhouette and proportions — where
+          volume sits, waist definition, torso/leg balance. Used to sharpen
+          AI shopping picks and the try-on figure. Edit freely; the photo
+          estimate above can fill this in for you.
+        </p>
+        <textarea
+          className="input min-h-[64px]"
+          placeholder="e.g. defined waist, volume at hips, slightly long torso, broad shoulders"
+          value={shape}
+          maxLength={240}
+          onChange={(e) => setShape(e.target.value)}
+        />
       </section>
 
       {/* Bra (ABTF-style) */}
