@@ -676,12 +676,14 @@ When you regenerate or reset, the mannequin id changes and every outfit's cached
 
 Settings → **📏 Measure yourself** opens a guided tape-measure flow at `/settings/measurements`. Everything is optional and saved privately to your profile (the other account can never see it).
 
+- **✨ Estimate from photos (optional)** — a rough AI starting point. Enter your tape-measured height first (it's the scale reference), wear fitted clothing, take a front photo (and ideally a true-side photo turned 90°) against a plain wall, full body in frame. The estimate fills the fields below for you to review and correct. **Photos are processed and not saved.** Expect ±1-3 in — it's a draft, not tailor-accurate; always sanity-check against a tape before saving.
 - **Units toggle** — inches (default) or cm.
 - **Core** — height, bust/chest, waist, hips, shoulder, sleeve, inseam, US shoe size. Each has a one-line how-to-measure hint.
+- **Shape & style notes** — a short free-text description of your silhouette ("defined waist, volume at hips, slightly long torso"). The photo estimate can fill this in; edit it freely. It feeds the AI shopping picks and the try-on figure.
 - **Bra size (optional, collapsible)** — the r/ABraThatFits method: underbust (snug) + bust standing, plus optional leaning / lying-down bust. A band+cup size is computed live as you type; you can override it if yours runs different.
 - **More (optional)** — neck, thigh, weight, US ring size, free-text notes.
 
-Right now this just saves. It's the foundation for upcoming features: a fit hint on each item, size-aware AI shopping picks, a more accurate try-on figure, and an optional "estimate from a photo" helper that uses a known-size object (a credit card / sheet of paper) for scale.
+How it's used once saved: a fit hint on each item page, size-aware AI shopping picks (Today's Suggestion + Shop-for-trip), and a try-on mannequin built to your proportions. Everything stays editable and private to your profile.
 
 ### Home city
 
