@@ -10,7 +10,6 @@ import {
   BEAUTY_CATEGORY_GROUPS,
 } from "@/lib/constants";
 import { heicToJpeg, isHeic } from "@/lib/heic";
-import { normalizeOrientation } from "@/lib/imageOrientation";
 import ProgressBar from "@/components/ProgressBar";
 import { cn } from "@/lib/cn";
 
@@ -189,90 +188,33 @@ export default function BulkUpload() {
     if (pending.length === 0) return;
     setPhase("uploading");
 
-    for (const original of pending) {
-      if (cancelRef.current) break;
-      let working = original;
+    // Bounded concurrency. The old loop sent one POST at a time and
+    // fully awaited the server's per-file work (sharp rotate + display
+    // re-encode + original re-encode + perceptual hash) before
+    // starting the next photo, so a 50-photo import was ~50× the
+    // single-file latency. Running a few in flight overlaps the
+    // network wait + server work and roughly cuts wall time by this
+    // factor. Kept low (3) because each concurrent sharp pipeline on
+    // the Proxmox LXC is ~tens of MB of RAM and the box is CPU-bound —
+    // higher just thrashes. Tune here if the deploy gets more cores.
+    const CONCURRENCY = 3;
 
-      // Clear any leftover error string from a previous failed attempt
-      // so the mid-flight label (e.g. "Processing HEIC…") doesn't
-      // render with a stale "— Load failed" suffix while the retry
-      // runs. The error gets re-set below if this attempt also fails.
-      if (working.error) {
-        update(working.id, { error: undefined });
-        working = { ...working, error: undefined };
+    // Shared cursor. JS is single-threaded so workers incrementing a
+    // closure-scoped index is race-free; each worker pulls the next
+    // unclaimed job until the queue drains (or the user cancels).
+    let cursor = 0;
+    const processNext = async (): Promise<void> => {
+      while (true) {
+        if (cancelRef.current) return;
+        const i = cursor++;
+        if (i >= pending.length) return;
+        await processOneJob(pending[i]);
       }
+    };
 
-      // HEIC → JPEG, then EXIF orientation → physical pixels. Done per
-      // file (rather than batch up front) so progress reflects work
-      // actually completing, not a long invisible preprocessing phase.
-      if (isHeic(working.file)) {
-        update(working.id, { state: "processing-heic" });
-        try {
-          const converted = await heicToJpeg(working.file);
-          if (working.previewUrl) URL.revokeObjectURL(working.previewUrl);
-          const newPreview = URL.createObjectURL(converted);
-          update(working.id, { file: converted, previewUrl: newPreview });
-          working = { ...working, file: converted, previewUrl: newPreview };
-        } catch (err) {
-          console.error("HEIC conversion failed", err);
-          update(working.id, { state: "error", error: "HEIC conversion failed" });
-          continue;
-        }
-      }
-      try {
-        const reoriented = await normalizeOrientation(working.file);
-        if (reoriented !== working.file) {
-          if (working.previewUrl) URL.revokeObjectURL(working.previewUrl);
-          const newPreview = URL.createObjectURL(reoriented);
-          update(working.id, { file: reoriented, previewUrl: newPreview });
-          working = { ...working, file: reoriented, previewUrl: newPreview };
-        }
-      } catch (err) {
-        console.warn("orientation normalize failed for bulk job", err);
-      }
-
-      update(working.id, { state: "uploading" });
-      try {
-        const fd = new FormData();
-        fd.append("category", defaultCategory);
-        fd.append("status", defaultStatus);
-        if (allBackroom) fd.append("isBackroom", "1");
-        if (allBeauty) fd.append("isBeauty", "1");
-        fd.append("images", working.file, working.file.name);
-        const res = await fetch("/api/items/bulk", { method: "POST", body: fd });
-        if (!res.ok) {
-          // Pull the server's reason if we can. JSON 4xx responses from
-          // /api/items/bulk look like { error: "..." }; non-JSON
-          // failures (nginx 413, generic 500 HTML) get fallback to the
-          // status code so the user doesn't see a wall of HTML.
-          const ct = res.headers.get("content-type") || "";
-          let detail = "";
-          if (ct.includes("application/json")) {
-            const body = (await res.json().catch(() => null)) as { error?: string } | null;
-            detail = body?.error ?? "";
-          } else {
-            const text = (await res.text().catch(() => "")).trim();
-            // Heuristic: HTML error pages aren't useful to surface;
-            // keep a short text body if it's plausibly a plain message.
-            if (text && !text.startsWith("<") && text.length < 500) detail = text;
-          }
-          throw new Error(detail || `HTTP ${res.status} ${res.statusText || ""}`.trim());
-        }
-        const data = (await res.json()) as { created: Array<{ id: string; imagePath: string }> };
-        const created = data.created?.[0];
-        if (!created) throw new Error("Server returned no created item");
-        // Clear any leftover `error` from a previous failed attempt
-        // so a successful retry doesn't render "Saved — Load failed".
-        update(working.id, { itemId: created.id, state: "uploaded", error: undefined });
-      } catch (err) {
-        console.error(err);
-        const message = err instanceof Error ? err.message : "Upload failed";
-        // Cap is generous so the user sees the full server message
-        // (e.g. a 413 body, a sharp error explaining a corrupt JPEG)
-        // instead of a head-truncated snippet that ends mid-sentence.
-        update(working.id, { state: "error", error: message.slice(0, 500) });
-      }
-    }
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, pending.length) }, () => processNext()),
+    );
 
     // Notification so the user knows it's safe to close the tab.
     const uploadedIds = (jobsRef.current ?? [])
@@ -294,7 +236,88 @@ export default function BulkUpload() {
       }
     }
 
+    // One RSC refresh after the whole pool drains so the closet
+    // count / recents pick up the new items — instead of 1 per file.
     router.refresh();
+  }
+
+  // One job's full lifecycle: HEIC convert (if needed) → upload →
+  // mark uploaded/error. Pulled out of runUploadPhase so the worker
+  // pool can call it concurrently. No client-side EXIF normalize —
+  // saveUploadWithOriginal does sharp().rotate() server-side, and
+  // <img> honors EXIF for the preview, so the old client-side canvas
+  // re-encode (the worst main-thread freeze) was pure redundant work.
+  async function processOneJob(original: Job) {
+    let working = original;
+
+    // Clear any leftover error string from a previous failed attempt
+    // so the mid-flight label (e.g. "Processing HEIC…") doesn't
+    // render with a stale "— Load failed" suffix while the retry
+    // runs. The error gets re-set below if this attempt also fails.
+    if (working.error) {
+      update(working.id, { error: undefined });
+      working = { ...working, error: undefined };
+    }
+
+    // HEIC → JPEG stays client-side: the server's sharp build can't
+    // decode HEIC, so this conversion is required (not redundant
+    // like the orientation bake was).
+    if (isHeic(working.file)) {
+      update(working.id, { state: "processing-heic" });
+      try {
+        const converted = await heicToJpeg(working.file);
+        if (working.previewUrl) URL.revokeObjectURL(working.previewUrl);
+        const newPreview = URL.createObjectURL(converted);
+        update(working.id, { file: converted, previewUrl: newPreview });
+        working = { ...working, file: converted, previewUrl: newPreview };
+      } catch (err) {
+        console.error("HEIC conversion failed", err);
+        update(working.id, { state: "error", error: "HEIC conversion failed" });
+        return;
+      }
+    }
+
+    update(working.id, { state: "uploading" });
+    try {
+      const fd = new FormData();
+      fd.append("category", defaultCategory);
+      fd.append("status", defaultStatus);
+      if (allBackroom) fd.append("isBackroom", "1");
+      if (allBeauty) fd.append("isBeauty", "1");
+      fd.append("images", working.file, working.file.name);
+      const res = await fetch("/api/items/bulk", { method: "POST", body: fd });
+      if (!res.ok) {
+        // Pull the server's reason if we can. JSON 4xx responses from
+        // /api/items/bulk look like { error: "..." }; non-JSON
+        // failures (nginx 413, generic 500 HTML) get fallback to the
+        // status code so the user doesn't see a wall of HTML.
+        const ct = res.headers.get("content-type") || "";
+        let detail = "";
+        if (ct.includes("application/json")) {
+          const body = (await res.json().catch(() => null)) as { error?: string } | null;
+          detail = body?.error ?? "";
+        } else {
+          const text = (await res.text().catch(() => "")).trim();
+          // Heuristic: HTML error pages aren't useful to surface;
+          // keep a short text body if it's plausibly a plain message.
+          if (text && !text.startsWith("<") && text.length < 500) detail = text;
+        }
+        throw new Error(detail || `HTTP ${res.status} ${res.statusText || ""}`.trim());
+      }
+      const data = (await res.json()) as { created: Array<{ id: string; imagePath: string }> };
+      const created = data.created?.[0];
+      if (!created) throw new Error("Server returned no created item");
+      // Clear any leftover `error` from a previous failed attempt
+      // so a successful retry doesn't render "Saved — Load failed".
+      update(working.id, { itemId: created.id, state: "uploaded", error: undefined });
+    } catch (err) {
+      console.error(err);
+      const message = err instanceof Error ? err.message : "Upload failed";
+      // Cap is generous so the user sees the full server message
+      // (e.g. a 413 body, a sharp error explaining a corrupt JPEG)
+      // instead of a head-truncated snippet that ends mid-sentence.
+      update(working.id, { state: "error", error: message.slice(0, 500) });
+    }
   }
 
   // Server-side AI tag dispatch. Runs even after the tab closes (Node
