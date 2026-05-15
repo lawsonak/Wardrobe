@@ -107,6 +107,19 @@ export default async function SettingsPage() {
       </section>
 
       <section className="card p-4">
+        <h2 className="font-display text-lg text-stone-800">Your measurements</h2>
+        <p className="mt-1 text-sm text-stone-600">
+          A guided tape-measure flow. Saved privately to your profile and used to
+          sharpen AI shopping picks, the try-on figure, and a fit hint on each item.
+        </p>
+        <div className="mt-3">
+          <Link href="/settings/measurements" className="btn-secondary text-sm">
+            📏 Measure yourself
+          </Link>
+        </div>
+      </section>
+
+      <section className="card p-4">
         <h2 className="font-display text-lg text-stone-800">Home city</h2>
         <p className="mt-1 text-sm text-stone-600">
           Used to tailor &ldquo;Today&apos;s outfit&rdquo; on your dashboard with the local weather.

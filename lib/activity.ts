@@ -50,6 +50,8 @@ export type ActivityKind =
   // Mannequin
   | "mannequin.update"
   | "mannequin.reset"
+  // Body measurements
+  | "measurements.update"
   // AI
   | "ai.tag"
   | "ai.tag-bulk"

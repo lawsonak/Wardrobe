@@ -24,6 +24,11 @@ model User {
   itemSets      ItemSet[]
   activityLogs  ActivityLog[]
   looks         Look[]
+  // Body measurements as a free-form JSON blob (same extend-without-
+  // migration pattern as Item.fitDetails). Owner-scoped + private by
+  // the per-profile design — never cross-read. Shape lives in
+  // lib/measurements.ts. Null until the user fills the guided form.
+  measurements  String?
 }
 
 model Item {
