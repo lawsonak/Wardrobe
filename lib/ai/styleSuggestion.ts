@@ -39,7 +39,15 @@ export type StyleSuggestionResult =
 
 export async function suggestProductForCloset(
   summary: ClosetSummary,
-  options?: { again?: boolean; category?: string | null; query?: string | null },
+  options?: {
+    again?: boolean;
+    category?: string | null;
+    query?: string | null;
+    /** Compact body-measurement summary (Phase C). When present the
+     *  model is told to favor products that come in the user's size
+     *  and to name the recommended size. */
+    sizeSummary?: string | null;
+  },
 ): Promise<StyleSuggestionResult> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) {
@@ -69,6 +77,12 @@ export async function suggestProductForCloset(
   }
   if (userQuery) {
     constraintLines.push(`The user is specifically looking for: "${userQuery}". The product MUST match this description.`);
+  }
+  const sizeSummary = options?.sizeSummary?.trim() || null;
+  if (sizeSummary) {
+    constraintLines.push(
+      `The shopper's body measurements: ${sizeSummary}. Strongly prefer a product that comes in a size that fits these, and state the recommended size in the reasoning.`,
+    );
   }
 
   const prompt = [

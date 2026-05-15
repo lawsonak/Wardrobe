@@ -218,6 +218,34 @@ export function hasUsableMeasurements(m: Measurements | null): boolean {
   return Object.keys(m.core).length > 0 || !!m.bra?.size;
 }
 
+// ── Phase C: compact AI-prompt summary ─────────────────────────────
+// One-line, human-readable size summary for the shopping-AI prompts
+// (Today's Suggestion, Shop-for-trip, product / wishlist lookup).
+// Numbers stay in the user's chosen unit with the unit appended so
+// the model doesn't have to guess; shoe + bra are unitless scales.
+// Returns null when there's nothing worth telling the model.
+export function measurementsSummary(m: Measurements | null): string | null {
+  if (!m) return null;
+  const u = m.unit;
+  const c = m.core;
+  const parts: string[] = [];
+  const push = (key: keyof CoreMeasurements, name: string) => {
+    const v = c[key];
+    if (typeof v === "number") parts.push(`${name} ${v}${u}`);
+  };
+  push("height", "height");
+  push("bust", "bust");
+  push("waist", "waist");
+  push("hips", "hips");
+  push("shoulder", "shoulder");
+  push("sleeve", "sleeve");
+  push("inseam", "inseam");
+  if (typeof c.shoeUS === "number") parts.push(`US shoe ${c.shoeUS}`);
+  if (m.bra?.size) parts.push(`bra ${m.bra.size}`);
+  if (parts.length === 0) return null;
+  return parts.join(", ");
+}
+
 // ── Phase B: garment fit assessment ────────────────────────────────
 // Compare the user's body against an item's recorded fitDetails.
 // fitDetails keys are body-circumference style (bust / waist / hip /

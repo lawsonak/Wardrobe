@@ -10,6 +10,7 @@ import { buildClosetSummary } from "@/lib/ai/closetSummary";
 import { runShopPipeline } from "@/lib/ai/shopPipeline";
 import { getTripForecast } from "@/lib/weather";
 import { logActivity } from "@/lib/activity";
+import { measurementsSummary, parse as parseMeasurements } from "@/lib/measurements";
 
 export const runtime = "nodejs";
 // One Gemini call that may emit up to 50 specs (one per piece in the
@@ -107,7 +108,13 @@ export async function POST(req: NextRequest) {
           )
         : null;
 
-    const closet = await buildClosetSummary(userId);
+    const [closet, me] = await Promise.all([
+      buildClosetSummary(userId),
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: { measurements: true },
+      }),
+    ]);
 
     const result = await runShopPipeline({
       kind: collection.kind === "trip" ? "trip" : "general",
@@ -124,6 +131,7 @@ export async function POST(req: NextRequest) {
       weather: forecast,
       targets,
       intensity,
+      sizeSummary: measurementsSummary(parseMeasurements(me?.measurements ?? null)),
     });
 
     if (!result.ok) {

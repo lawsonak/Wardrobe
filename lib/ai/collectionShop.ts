@@ -41,6 +41,10 @@ export type ShopRequest = {
   weather: TripForecast | null;
   targets: PackingTargets;
   intensity: number;
+  /** Compact body-measurement summary (Phase C). When present the
+   *  model is told to bias toward products that come in the user's
+   *  size. */
+  sizeSummary?: string | null;
 };
 
 export type ProductSpec = {
@@ -159,6 +163,9 @@ function buildPrompt(req: ShopRequest): string {
     "",
     describeIntensity(intensity),
     `Closet awareness intensity: ${intensity} / 100.`,
+    req.sizeSummary && req.sizeSummary.trim()
+      ? `Shopper's body measurements: ${req.sizeSummary.trim()}. Favor products that come in a size that fits these.`
+      : "",
     "",
     `Return between 3 and ${MAX_SPECS} distinct specs. Match the per-category counts above as closely as possible — if the user asked for 5 Tops, return 5 distinct top specs (different styles or colors, not 5 of the same piece). For uniform categories like Underwear or Socks where buying multiples of a single style is normal, you may emit fewer specs than the count (e.g. 2 underwear specs to cover an "Underwear: 8" target).`,
     "Each spec describes ONE product as if you were searching Google for it. Be specific enough that a search engine would surface a single canonical product (e.g. include color + fit + material), but loose enough that current inventory exists (don't lock to a discontinued style number).",

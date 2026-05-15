@@ -10,6 +10,8 @@ import { suggestProductForCloset } from "@/lib/ai/styleSuggestion";
 import { buildClosetSummary } from "@/lib/ai/closetSummary";
 import { logActivity } from "@/lib/activity";
 import { isKnownCategory } from "@/lib/constants";
+import { prisma } from "@/lib/db";
+import { measurementsSummary, parse as parseMeasurements } from "@/lib/measurements";
 
 export const runtime = "nodejs";
 // Grounded search + content fetch can take 5-15s. Allow generous headroom.
@@ -72,7 +74,13 @@ export async function POST(req: NextRequest) {
   inflight.add(userId);
 
   try {
-    const summary = await buildClosetSummary(userId);
+    const [summary, me] = await Promise.all([
+      buildClosetSummary(userId),
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: { measurements: true },
+      }),
+    ]);
     if (summary.totalItems === 0) {
       return NextResponse.json(
         {
@@ -87,6 +95,7 @@ export async function POST(req: NextRequest) {
       again,
       category: userCategory,
       query: userQuery,
+      sizeSummary: measurementsSummary(parseMeasurements(me?.measurements ?? null)),
     });
     if (!result.ok) {
       return NextResponse.json(
