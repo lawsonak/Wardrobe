@@ -60,6 +60,7 @@ Other conventions:
 | `WishlistItem` | Standalone wishlist | priority, giftIdea, purchased flags. Photos saved under `<userId>/wishlist/` — files are EXIF-rotated + resized via sharp on upload (`/api/wishlist/route.ts`). |
 | `Notification` | In-app bell-icon notifications | title, body, href, read. POST validates `href` to same-origin paths or `https://` only — `javascript:` / `data:` / `http:` / `//foo` are dropped. |
 | `ActivityLog` | Strictly per-user audit log | userId, kind (`item.create`, `auth.signin`, `ai.outfit`, `activity.cleared`, …), summary, optional targetType+targetId+meta. Surfaces on the Settings → Activity card; user can wipe via DELETE `/api/activity` (which writes one final `activity.cleared` entry). Older events drop off automatically after ~90 days. |
+| `User.measurements` | Body measurements, free-form JSON blob (extend-without-migration, same pattern as `Item.fitDetails`) | `{ unit, updatedAt, core{height,bust,waist,hips,shoulder,sleeve,inseam,shoeUS}, bra?{underbust,bustStanding/Leaning/Lying,size}, extra?{neck,thigh,weight,ringSize,notes} }`. Lengths stored as-entered in `unit` (no normalization on disk); `lib/measurements.ts` converts to inches for the ABraThatFits-style bra calc + the (future) AI-prompt summary. Owner-scoped + private by the per-profile design. Read/written via owner-scoped `GET`/`PUT /api/measurements`; captured on `/settings/measurements`. **Phase A (foundation) only — nothing consumes it yet; Phases B (garment fit badge), C (shopping-AI size injection), D (try-on/mannequin proportions), E (AI photo estimate w/ reference object) are the planned follow-ups.** |
 
 **Conventions:**
 - SQLite has no array type; we use comma-separated strings for `seasons` and `activities`. Helpers in `lib/constants.ts`: `csvToList`, `listToCsv`.
@@ -181,6 +182,7 @@ The route uses the inflight-lock pattern; pass 3 runs after the cheap shrinks so
 | Packing-target formula | `lib/packingTargets.ts` |
 | Constants | `lib/constants.ts` |
 | User prefs / weather | `lib/userPrefs.ts`, `lib/weather.ts` |
+| Body measurements (types, ABTF bra calc, unit conv, sanitize) | `lib/measurements.ts`, `app/api/measurements/route.ts`, `app/(app)/settings/measurements/page.tsx` + `MeasurementsForm.tsx` |
 | Auth | `auth.ts`, `auth.config.ts` |
 | Dashboard | `app/(app)/page.tsx` |
 | App shell / desktop nav | `app/(app)/layout.tsx` |
@@ -207,6 +209,7 @@ The route uses the inflight-lock pattern; pass 3 runs after the cheap shrinks so
 
 Things that are good ideas but haven't been done. Pick one of these if the user asks "what's next" without a specific request:
 
+- **Body-measurements feature — Phases B-E.** Phase A (schema + `lib/measurements.ts` + `/api/measurements` + `/settings/measurements` capture form) has shipped; the data saves but nothing reads it yet. Remaining, in order: **B** — garment fit badge on the item page (compare `User.measurements` vs the item's `fitDetails`, no AI); **C** — inject a compact size summary into the shopping-AI prompts (`styleSuggestion.ts`, `collectionShop.ts`, `productLookup.ts`, `wishlistLookup.ts`); **D** — feed proportions into the mannequin (`mannequin.ts`) + try-on (`tryon.ts`) prompts; **E** — `/api/ai/estimate-measurements` + an optional "✨ Estimate from a photo" button that uses a known-size reference object (credit card / US Letter / dollar bill) for scale, returning an editable draft.
 - **Trip countdown card on the dashboard** — surface upcoming Collections (where `kind="trip"` and `startDate >= today`) as a hero card. Ties the Collections feature into the home screen.
 - **`components/AiOutfitPicker.tsx` is orphaned** after the dashboard cleanup — safe to delete or repurpose.
 - **No tests in the repo.** Typecheck + `next build` are the only gate. At minimum, add smoke tests for AI-disabled fallbacks on each `/api/ai/*` route.

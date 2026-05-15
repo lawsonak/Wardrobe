@@ -672,6 +672,17 @@ Upload a photo of yourself; Gemini's image-generation model turns it into a soft
 
 When you regenerate or reset, the mannequin id changes and every outfit's cached try-on is invalidated.
 
+### Your measurements
+
+Settings → **📏 Measure yourself** opens a guided tape-measure flow at `/settings/measurements`. Everything is optional and saved privately to your profile (the other account can never see it).
+
+- **Units toggle** — inches (default) or cm.
+- **Core** — height, bust/chest, waist, hips, shoulder, sleeve, inseam, US shoe size. Each has a one-line how-to-measure hint.
+- **Bra size (optional, collapsible)** — the r/ABraThatFits method: underbust (snug) + bust standing, plus optional leaning / lying-down bust. A band+cup size is computed live as you type; you can override it if yours runs different.
+- **More (optional)** — neck, thigh, weight, US ring size, free-text notes.
+
+Right now this just saves. It's the foundation for upcoming features: a fit hint on each item, size-aware AI shopping picks, a more accurate try-on figure, and an optional "estimate from a photo" helper that uses a known-size object (a credit card / sheet of paper) for scale.
+
 ### Home city
 
 Cookie-based; used for the weather card, Today's Outfit prompt, and trip Shop suggestions. Open-Meteo, no API key required.
