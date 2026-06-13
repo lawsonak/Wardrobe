@@ -345,6 +345,11 @@ export default function BulkUpload() {
         setAiBanner(
           `AI is tagging ${data.count} item${data.count === 1 ? "" : "s"} in the background — close this tab any time, you'll get a notification when it's done.`,
         );
+      } else if (!res.ok) {
+        // 4xx/5xx with no recognizable body (HTML error page, etc.) —
+        // without this branch the user gets no banner at all and has
+        // no idea tagging never started.
+        setAiBanner(`Couldn't start AI tagging (HTTP ${res.status}).`);
       }
     } catch (err) {
       console.error(err);

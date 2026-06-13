@@ -123,12 +123,12 @@ export async function estimateMeasurements(
   };
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     MODEL,
-  )}:generateContent?key=${encodeURIComponent(key)}`;
+  )}:generateContent`;
 
   try {
     const res = await fetchWithTimeout(
       url,
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+      { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify(body) },
       TIMEOUT_MS,
     );
     const text = await res.text();

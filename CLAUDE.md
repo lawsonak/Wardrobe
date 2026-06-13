@@ -123,6 +123,8 @@ Long-running per-user endpoints share a `const inflight = new Set<string>()` at 
 - Owned-id filtering on every response — the model can't invent items.
 - Debug payload (`status`, `rawText`, `promptTokens`, `responseTokens`, `error`) is always returned.
 - Hard rules in the outfit / packing prompts: never include Underwear / Bras as outfit pieces (but **do** include them in packing lists), never pair Swimwear with formalwear, swim one-piece replaces top + bottom, etc.
+- **API key goes in the `x-goog-api-key` header, never the URL** — keeps the key out of any URL-logging path. Every Gemini fetch also goes through `fetchWithTimeout` (60s text / grounded, 90s image gen via `IMAGE_TIMEOUT_MS`) so a hung connection can't hold a per-user inflight lock forever — `maxDuration` is serverless-only and NOT enforced on the long-running `next start` deploy.
+- **Multipart item routes validate uploads via `validateUploadFile`** (`lib/uploads.ts`): 25 MB cap + JPEG/PNG/WebP/GIF whitelist (HEIC intentionally absent — clients convert before upload since server sharp can't decode it).
 
 ## Bulk upload (`/wardrobe/bulk`)
 

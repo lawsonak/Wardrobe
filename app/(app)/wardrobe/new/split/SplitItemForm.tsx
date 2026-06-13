@@ -555,13 +555,14 @@ function RowEditor({ row, onChange }: { row: Row; onChange: (patch: Partial<Row>
 // Browser-side helpers: read image dimensions + crop a region of a
 // File into a blob URL. Both go through a canvas, no external deps.
 async function readImageDims(file: File): Promise<{ w: number; h: number } | null> {
+  const url = URL.createObjectURL(file);
   try {
-    const url = URL.createObjectURL(file);
     const img = await loadImage(url);
-    URL.revokeObjectURL(url);
     return { w: img.naturalWidth, h: img.naturalHeight };
   } catch {
     return null;
+  } finally {
+    URL.revokeObjectURL(url);
   }
 }
 

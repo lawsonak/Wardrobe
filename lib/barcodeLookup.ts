@@ -11,6 +11,8 @@
 // When OBF returns a hit, we get name/brand/categories/image with no
 // AI cost. When it misses, Gemini fills the gap.
 
+import { fetchWithTimeout } from "@/lib/fetchRetry";
+
 const OBF_BASE = "https://world.openbeautyfacts.org/api/v2/product";
 
 export type BarcodeMatch = {
@@ -126,13 +128,17 @@ async function tryOpenBeautyFacts(
 ): Promise<{ match: BarcodeMatch; status: number } | null> {
   let res: Response;
   try {
-    res = await fetch(`${OBF_BASE}/${encodeURIComponent(code)}.json`, {
-      headers: {
-        // OBF asks API consumers to identify themselves so they can
-        // diagnose load issues. Lowercase user agent is fine.
-        "User-Agent": "Wardrobe/1.0 (self-hosted personal wardrobe app)",
+    res = await fetchWithTimeout(
+      `${OBF_BASE}/${encodeURIComponent(code)}.json`,
+      {
+        headers: {
+          // OBF asks API consumers to identify themselves so they can
+          // diagnose load issues. Lowercase user agent is fine.
+          "User-Agent": "Wardrobe/1.0 (self-hosted personal wardrobe app)",
+        },
       },
-    });
+      15_000,
+    );
   } catch {
     // Network blip — let Gemini fallback take over. Report status 0
     // so the caller can see we did try.
@@ -306,15 +312,19 @@ async function tryGeminiSearch(code: string): Promise<{
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     TEXT_MODEL,
-  )}:generateContent?key=${encodeURIComponent(key)}`;
+  )}:generateContent`;
 
   let status: number | undefined;
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const res = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify(body),
+      },
+      60_000,
+    );
     status = res.status;
     if (!res.ok) {
       return { match: null, status, error: `HTTP ${res.status}` };

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { isKnownCategory } from "@/lib/constants";
-import { saveUploadWithOriginal, computeDHash } from "@/lib/uploads";
+import { saveUploadWithOriginal, computeDHash, validateUploadFile } from "@/lib/uploads";
 import { runHiResBgRemovalBatch } from "@/lib/bgRemovalServer";
 import { logActivity } from "@/lib/activity";
 
@@ -53,6 +53,10 @@ export async function POST(req: NextRequest) {
   if (files.length > 50) {
     return NextResponse.json({ error: "Max 50 photos per request" }, { status: 400 });
   }
+  for (const file of files) {
+    const err = validateUploadFile(file);
+    if (err) return NextResponse.json({ error: `${file.name}: ${err}` }, { status: 400 });
+  }
 
   const created: Array<{ id: string; imagePath: string }> = [];
   for (const file of files) {
@@ -66,17 +70,27 @@ export async function POST(req: NextRequest) {
         isBeauty,
       },
     });
-    const { displayPath, originalPath } = await saveUploadWithOriginal(
-      userId,
-      placeholder.id,
-      file,
-      "orig",
-    );
-    const phash = await computeDHash(Buffer.from(await file.arrayBuffer()));
-    const updated = await prisma.item.update({
-      where: { id: placeholder.id },
-      data: { imagePath: displayPath, imageOriginalPath: originalPath, phash },
-    });
+    // File-write failure (disk full, corrupt JPEG) deletes the
+    // placeholder so the closet doesn't accumulate broken
+    // imagePath="pending" tiles. The client retries the file as a
+    // whole — no half-created row to collide with.
+    let updated;
+    try {
+      const { displayPath, originalPath } = await saveUploadWithOriginal(
+        userId,
+        placeholder.id,
+        file,
+        "orig",
+      );
+      const phash = await computeDHash(Buffer.from(await file.arrayBuffer()));
+      updated = await prisma.item.update({
+        where: { id: placeholder.id },
+        data: { imagePath: displayPath, imageOriginalPath: originalPath, phash },
+      });
+    } catch (err) {
+      await prisma.item.delete({ where: { id: placeholder.id } }).catch(() => {});
+      throw err;
+    }
     created.push({ id: updated.id, imagePath: updated.imagePath });
   }
 

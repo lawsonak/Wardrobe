@@ -3,7 +3,7 @@ import sharp from "sharp";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { BEAUTY_CATEGORIES, COLOR_NAMES, isKnownCategory } from "@/lib/constants";
-import { saveUploadWithOriginal, computeDHash } from "@/lib/uploads";
+import { saveUploadWithOriginal, computeDHash, validateUploadFile } from "@/lib/uploads";
 import { runHiResBgRemovalBatch } from "@/lib/bgRemovalServer";
 import { logActivity } from "@/lib/activity";
 import { brandKey } from "@/lib/brand";
@@ -57,6 +57,8 @@ export async function POST(req: NextRequest) {
   if (!image || !(image instanceof File) || image.size === 0) {
     return NextResponse.json({ error: "Missing image" }, { status: 400 });
   }
+  const fileErr = validateUploadFile(image);
+  if (fileErr) return NextResponse.json({ error: fileErr }, { status: 400 });
 
   const detectionsRaw = form.get("detections");
   if (typeof detectionsRaw !== "string") {
@@ -185,20 +187,29 @@ export async function POST(req: NextRequest) {
       });
 
       // saveUploadWithOriginal wants a File; wrap the cropped buffer.
+      // File-write failure deletes the placeholder so a broken
+      // imagePath="pending" tile can't land in the closet; the
+      // detection is reported in `errors` instead.
       const cropFile = new File([new Uint8Array(cropBuf)], `crop-${i}.jpg`, {
         type: "image/jpeg",
       });
-      const { displayPath, originalPath } = await saveUploadWithOriginal(
-        userId,
-        placeholder.id,
-        cropFile,
-        "orig",
-      );
-      const phash = await computeDHash(cropBuf);
-      const updated = await prisma.item.update({
-        where: { id: placeholder.id },
-        data: { imagePath: displayPath, imageOriginalPath: originalPath, phash },
-      });
+      let updated;
+      try {
+        const { displayPath, originalPath } = await saveUploadWithOriginal(
+          userId,
+          placeholder.id,
+          cropFile,
+          "orig",
+        );
+        const phash = await computeDHash(cropBuf);
+        updated = await prisma.item.update({
+          where: { id: placeholder.id },
+          data: { imagePath: displayPath, imageOriginalPath: originalPath, phash },
+        });
+      } catch (err) {
+        await prisma.item.delete({ where: { id: placeholder.id } }).catch(() => {});
+        throw err;
+      }
       created.push({ id: updated.id, imagePath: updated.imagePath });
     } catch (err) {
       console.error("split: detection failed", err);

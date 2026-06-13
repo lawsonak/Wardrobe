@@ -296,12 +296,12 @@ function makeGemini(): TagProvider {
 
           const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
             step.model,
-          )}:generateContent?key=${encodeURIComponent(key)}`;
+          )}:generateContent`;
           const r = await fetchWithTimeout(
             url,
             {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: { "Content-Type": "application/json", "x-goog-api-key": key },
               body: JSON.stringify(body),
             },
             GEMINI_TIMEOUT_MS,
@@ -486,12 +486,12 @@ function makeGemini(): TagProvider {
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
           GEMINI_MODEL,
-        )}:generateContent?key=${encodeURIComponent(key)}`;
+        )}:generateContent`;
         const res = await fetchWithTimeout(
           url,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "x-goog-api-key": key },
             body: JSON.stringify(body),
           },
           GEMINI_TIMEOUT_MS,
@@ -605,12 +605,12 @@ function makeGemini(): TagProvider {
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
           GEMINI_MODEL,
-        )}:generateContent?key=${encodeURIComponent(key)}`;
+        )}:generateContent`;
         const res = await fetchWithTimeout(
           url,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "x-goog-api-key": key },
             body: JSON.stringify(body),
           },
           GEMINI_TIMEOUT_MS,
@@ -733,12 +733,12 @@ function makeGemini(): TagProvider {
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
           GEMINI_MODEL,
-        )}:generateContent?key=${encodeURIComponent(key)}`;
+        )}:generateContent`;
         const res = await fetchWithTimeout(
           url,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "x-goog-api-key": key },
             body: JSON.stringify(body),
           },
           GEMINI_TIMEOUT_MS,
@@ -816,12 +816,12 @@ function makeGemini(): TagProvider {
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
           GEMINI_MODEL,
-        )}:generateContent?key=${encodeURIComponent(key)}`;
+        )}:generateContent`;
         const res = await fetchWithTimeout(
           url,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "x-goog-api-key": key },
             body: JSON.stringify(body),
           },
           GEMINI_TIMEOUT_MS,
@@ -897,12 +897,12 @@ function makeGemini(): TagProvider {
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
           GEMINI_MODEL,
-        )}:generateContent?key=${encodeURIComponent(key)}`;
+        )}:generateContent`;
         const res = await fetchWithTimeout(
           url,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "x-goog-api-key": key },
             body: JSON.stringify(body),
           },
           GEMINI_TIMEOUT_MS,
@@ -1033,12 +1033,12 @@ function makeGemini(): TagProvider {
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
           GEMINI_TAG_MODEL,
-        )}:generateContent?key=${encodeURIComponent(key)}`;
+        )}:generateContent`;
         const res = await fetchWithTimeout(
           url,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "x-goog-api-key": key },
             body: JSON.stringify(body),
           },
           GEMINI_TIMEOUT_MS,

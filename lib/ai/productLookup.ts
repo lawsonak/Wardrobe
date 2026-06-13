@@ -19,6 +19,12 @@
 
 import { fetchProductMeta } from "@/lib/productMeta";
 import { BEAUTY_CATEGORIES } from "@/lib/constants";
+import { fetchWithTimeout } from "@/lib/fetchRetry";
+
+// Bounded so a hung Gemini connection can't hold the route's
+// per-user inflight lock indefinitely (maxDuration isn't enforced on
+// a long-running `next start` server).
+const LOOKUP_TIMEOUT_MS = 60_000;
 
 const TEXT_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
@@ -126,17 +132,21 @@ export async function lookupProductOnline(
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     TEXT_MODEL,
-  )}:generateContent?key=${encodeURIComponent(key)}`;
+  )}:generateContent`;
 
   let httpStatus: number | undefined;
   let rawText = "";
 
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const res = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify(body),
+      },
+      LOOKUP_TIMEOUT_MS,
+    );
     httpStatus = res.status;
     const responseText = await res.text();
     rawText = responseText.slice(0, 600);
@@ -375,7 +385,7 @@ export async function lookupProductFromUrl(
 
   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     TEXT_MODEL,
-  )}:generateContent?key=${encodeURIComponent(key)}`;
+  )}:generateContent`;
 
   let aiOut: {
     material?: string;
@@ -387,11 +397,15 @@ export async function lookupProductFromUrl(
     finish?: string;
   } = {};
   try {
-    const res = await fetch(apiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const res = await fetchWithTimeout(
+      apiUrl,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify(body),
+      },
+      LOOKUP_TIMEOUT_MS,
+    );
     if (res.ok) {
       const data = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
       const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join("") ?? "";

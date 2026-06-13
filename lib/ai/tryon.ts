@@ -11,6 +11,13 @@
 // body location instead of treating the whole image as one garment.
 
 import type { Slot } from "@/lib/constants";
+import { fetchWithTimeout } from "@/lib/fetchRetry";
+
+// Image generation legitimately takes 15-30s; bound it anyway so a
+// hung connection can't hold the route's per-user inflight lock until
+// a service restart (route maxDuration is serverless-only — it isn't
+// enforced on a long-running `next start` server).
+export const IMAGE_TIMEOUT_MS = 90_000;
 
 // Bumping this constant invalidates every cached try-on by changing the
 // hash inputs. Bump when the prompt template below changes meaningfully.
@@ -215,17 +222,21 @@ export async function generateTryOn(input: TryOnInput): Promise<TryOnResult> {
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     TRY_ON_MODEL,
-  )}:generateContent?key=${encodeURIComponent(key)}`;
+  )}:generateContent`;
 
   let httpStatus: number | undefined;
   let rawText = "";
 
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const res = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify(body),
+      },
+      IMAGE_TIMEOUT_MS,
+    );
     httpStatus = res.status;
     const responseText = await res.text();
     rawText = responseText.slice(0, 400);

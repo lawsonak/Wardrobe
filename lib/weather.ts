@@ -238,7 +238,13 @@ export async function getTripForecast(
     if (!d?.temperature_2m_max?.length) return null;
 
     const highC = Math.max(...d.temperature_2m_max);
-    const lowC = Math.min(...(d.temperature_2m_min ?? d.temperature_2m_max));
+    // `??` only covers null/undefined — a present-but-empty min array
+    // would spread into Math.min() and yield Infinity, so check
+    // length explicitly before falling back to the max series (which
+    // the guard above already proved non-empty).
+    const lowC = Math.min(
+      ...(d.temperature_2m_min?.length ? d.temperature_2m_min : d.temperature_2m_max),
+    );
     const maxPrecip = d.precipitation_probability_max?.length
       ? Math.max(...d.precipitation_probability_max.map((n) => n ?? 0))
       : 0;

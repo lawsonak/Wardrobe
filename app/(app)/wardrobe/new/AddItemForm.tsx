@@ -153,8 +153,15 @@ export default function AddItemForm({
     finish.trim() !== "";
   useUnsavedChanges(dirty);
 
+  // True while the component is mounted. The fire-and-forget bg
+  // removal callbacks check this before their setState — without it
+  // a navigation mid-removal would setState on an unmounted tree
+  // (harmless in React 18 but retains the blob until GC).
+  const mountedRef = useRef(true);
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       if (originalUrl) URL.revokeObjectURL(originalUrl);
       if (bgUrl) URL.revokeObjectURL(bgUrl);
       for (const p of labelPhotos) URL.revokeObjectURL(p.url);
@@ -472,6 +479,7 @@ export default function AddItemForm({
       void (async () => {
         try {
           const out = await removeBackground(file);
+          if (!mountedRef.current) return;
           setLabelPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, bg: out } : p)));
         } catch (err) {
           console.warn("label bg removal failed", err);
@@ -493,6 +501,7 @@ export default function AddItemForm({
       void (async () => {
         try {
           const out = await removeBackground(file);
+          if (!mountedRef.current) return;
           setAnglePhotos((prev) => prev.map((p) => (p.id === id ? { ...p, bg: out } : p)));
         } catch (err) {
           console.warn("angle bg removal failed", err);

@@ -8,6 +8,7 @@ import {
   saveUploadWithOriginal,
   computeDHash,
   hammingDistance,
+  validateUploadFile,
 } from "@/lib/uploads";
 import { runHiResBgRemovalBatch } from "@/lib/bgRemovalServer";
 import { describeItem, logActivity } from "@/lib/activity";
@@ -81,6 +82,8 @@ export async function POST(req: NextRequest) {
   if (!original || !(original instanceof File) || !category) {
     return NextResponse.json({ error: "Missing image or category" }, { status: 400 });
   }
+  const fileErr = validateUploadFile(original);
+  if (fileErr) return NextResponse.json({ error: fileErr }, { status: 400 });
   // Accept either the main vocabulary or the SPICY_CATEGORIES — the
   // form on /wardrobe/new?backroom=1 picks from the spicy list. The
   // schema field is a free string so no further conversion is
@@ -166,19 +169,32 @@ export async function POST(req: NextRequest) {
   // (everything-but-zoom) plus the untouched original for the item
   // detail page's tap-to-zoom. Bg-removed stays single-variant —
   // utility render, not a user-precious memory.
-  const { displayPath: imagePath, originalPath: imageOriginalPath } =
-    await saveUploadWithOriginal(userId, created.id, original, "orig");
+  //
+  // The whole file phase is wrapped so a write failure (disk full,
+  // sharp choking on a corrupt JPEG) deletes the placeholder row —
+  // otherwise it survives forever with imagePath="pending" and shows
+  // as a broken tile in the closet.
+  let imagePath: string;
+  let imageOriginalPath: string | null;
   let imageBgRemovedPath: string | null = null;
-  if (bgRemoved && bgRemoved instanceof File && bgRemoved.size > 0) {
-    imageBgRemovedPath = await saveUpload(userId, created.id, bgRemoved, "bg");
-  }
+  let phash: string | null = null;
+  try {
+    ({ displayPath: imagePath, originalPath: imageOriginalPath } =
+      await saveUploadWithOriginal(userId, created.id, original, "orig"));
+    if (bgRemoved && bgRemoved instanceof File && bgRemoved.size > 0) {
+      imageBgRemovedPath = await saveUpload(userId, created.id, bgRemoved, "bg");
+    }
 
-  // Perceptual hash of the source upload. Computed off the raw bytes
-  // so re-encoding into the display variant doesn't perturb the hash.
-  // Used right below to surface possible duplicates back to the
-  // client; null on sharp failures so the column is "no info" rather
-  // than a misleading match.
-  const phash = await computeDHash(Buffer.from(await original.arrayBuffer()));
+    // Perceptual hash of the source upload. Computed off the raw bytes
+    // so re-encoding into the display variant doesn't perturb the hash.
+    // Used right below to surface possible duplicates back to the
+    // client; null on sharp failures so the column is "no info" rather
+    // than a misleading match.
+    phash = await computeDHash(Buffer.from(await original.arrayBuffer()));
+  } catch (err) {
+    await prisma.item.delete({ where: { id: created.id } }).catch(() => {});
+    throw err;
+  }
 
   const updated = await prisma.item.update({
     where: { id: created.id },

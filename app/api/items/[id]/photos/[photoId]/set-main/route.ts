@@ -85,10 +85,15 @@ export async function POST(
   }
 
   // Next free position within the demotion kind so the old main lands
-  // at the end of the strip.
-  const tailPosition = await prisma.itemPhoto.count({
+  // at the end of the strip. max(position)+1 rather than count() —
+  // counting collides after deletions or rapid successive promotions
+  // (two rows at the same position; createdAt tie-break hides it but
+  // the semantics drift).
+  const tail = await prisma.itemPhoto.aggregate({
     where: { itemId: id, kind: demoteToKind },
+    _max: { position: true },
   });
+  const tailPosition = (tail._max.position ?? -1) + 1;
 
   await prisma.$transaction([
     // Move the ItemPhoto's paths up onto the item.

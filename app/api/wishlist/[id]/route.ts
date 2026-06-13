@@ -16,20 +16,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!session?.user || !userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
 
-  const existing = await prisma.wishlistItem.findUnique({ where: { id } });
-  if (!existing || existing.ownerId !== userId) {
+  // Owner-scoped lookup — same findFirst({ id, ownerId }) shape as
+  // every other route, instead of findUnique + post-hoc check.
+  const existing = await prisma.wishlistItem.findFirst({ where: { id, ownerId: userId } });
+  if (!existing) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   const body = await req.json();
   const data: Record<string, unknown> = {};
-  if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim();
-  if (typeof body.category === "string") data.category = body.category || null;
-  if (typeof body.brand === "string") data.brand = body.brand || null;
-  if (typeof body.link === "string") data.link = body.link || null;
-  if (typeof body.price === "string") data.price = body.price || null;
-  if (typeof body.occasion === "string") data.occasion = body.occasion || null;
-  if (typeof body.notes === "string") data.notes = body.notes || null;
+  if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim().slice(0, 120);
+  if (typeof body.category === "string") data.category = body.category.slice(0, 60) || null;
+  if (typeof body.brand === "string") data.brand = body.brand.slice(0, 80) || null;
+  if (typeof body.link === "string") data.link = body.link.slice(0, 2000) || null;
+  if (typeof body.price === "string") data.price = body.price.slice(0, 60) || null;
+  if (typeof body.occasion === "string") data.occasion = body.occasion.slice(0, 120) || null;
+  if (typeof body.notes === "string") data.notes = body.notes.slice(0, 2000) || null;
   if (typeof body.fillsGap === "boolean") data.fillsGap = body.fillsGap;
   if (typeof body.giftIdea === "boolean") data.giftIdea = body.giftIdea;
   if (typeof body.purchased === "boolean") data.purchased = body.purchased;
@@ -63,8 +65,8 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   if (!session?.user || !userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
 
-  const existing = await prisma.wishlistItem.findUnique({ where: { id } });
-  if (!existing || existing.ownerId !== userId) {
+  const existing = await prisma.wishlistItem.findFirst({ where: { id, ownerId: userId } });
+  if (!existing) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

@@ -124,6 +124,18 @@ export async function POST(req: NextRequest) {
     priority = "medium";
   }
 
+  // Length caps so a runaway client payload (or a paste-the-whole-
+  // page into notes) can't bloat the row and every list response
+  // that includes it. Mirrors the slicing the items routes do.
+  const cap = (v: string | null, max: number) => (v ? v.slice(0, max) : v);
+  name = name.slice(0, 120);
+  category = cap(category, 60);
+  brand = cap(brand, 80);
+  link = cap(link, 2000);
+  price = cap(price, 60);
+  occasion = cap(occasion, 120);
+  notes = cap(notes, 2000);
+
   const created = await prisma.wishlistItem.create({
     data: { ownerId: userId, name, category, brand, link, price, priority, occasion, notes, fillsGap, giftIdea },
   });

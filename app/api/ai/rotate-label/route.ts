@@ -81,11 +81,11 @@ export async function POST(req: NextRequest) {
     const url =
       `https://generativelanguage.googleapis.com/v1beta/models/` +
       `${encodeURIComponent(GEMINI_MODEL)}:generateContent` +
-      `?key=${encodeURIComponent(key)}`;
+      ``;
 
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify(body),
     });
     if (!res.ok) {
