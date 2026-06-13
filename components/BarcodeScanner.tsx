@@ -238,7 +238,7 @@ export default function BarcodeScanner({ open, onDetect, onCancel }: Props) {
                 ref={videoRef}
                 playsInline
                 muted
-                className="h-56 w-full object-cover"
+                className="aspect-[3/4] w-full object-cover sm:h-72"
               />
             </div>
             <p className="text-xs text-stone-500">

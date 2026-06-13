@@ -94,6 +94,10 @@ export default async function SettingsPage() {
         </p>
       </div>
 
+      <h3 className="-mb-2 mt-2 text-xs font-medium uppercase tracking-wider text-stone-400">
+        About you
+      </h3>
+
       <section className="card p-4">
         <h2 className="font-display text-lg text-stone-800">Your mannequin</h2>
         <p className="mt-1 text-sm text-stone-600">
@@ -118,6 +122,10 @@ export default async function SettingsPage() {
           </Link>
         </div>
       </section>
+
+      <h3 className="-mb-2 mt-2 text-xs font-medium uppercase tracking-wider text-stone-400">
+        Preferences
+      </h3>
 
       <section className="card p-4">
         <h2 className="font-display text-lg text-stone-800">Home city</h2>
@@ -172,6 +180,10 @@ export default async function SettingsPage() {
           <button type="submit" className="btn-primary">Save preferences</button>
         </form>
       </section>
+
+      <h3 className="-mb-2 mt-2 text-xs font-medium uppercase tracking-wider text-stone-400">
+        Your data
+      </h3>
 
       <section className="card p-4">
         <h2 className="font-display text-lg text-stone-800">Backup</h2>
@@ -290,6 +302,10 @@ export default async function SettingsPage() {
         )}
         <ClearActivityButton count={activity.length} />
       </section>
+
+      <h3 className="-mb-2 mt-2 text-xs font-medium uppercase tracking-wider text-stone-400">
+        Tools
+      </h3>
 
       <section className="card p-4">
         <h2 className="font-display text-lg text-stone-800">Maintenance</h2>

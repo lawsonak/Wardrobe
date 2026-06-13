@@ -2,6 +2,7 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import CollectionCard from "./CollectionCard";
+import EmptyState from "@/components/EmptyState";
 import { backroomCollectionFilter, readBackroomParam } from "@/lib/backroom";
 
 export const dynamic = "force-dynamic";
@@ -71,12 +72,13 @@ export default async function CollectionsPage({
       </div>
 
       {collections.length === 0 ? (
-        <div className="card p-10 text-center">
-          <div className="text-5xl" aria-hidden>✈️</div>
-          <p className="mt-3 font-display text-2xl text-blush-700">No collections yet</p>
-          <p className="mt-1 text-stone-600">Plan a trip — destination, dates, activities — and let AI build your packing list.</p>
-          <Link href="/collections/new" className="btn-primary mt-4 inline-flex">Plan your first trip</Link>
-        </div>
+        <EmptyState
+          emoji="✈️"
+          headline="Plan your first trip."
+          hint="Destination + dates + activities, and AI builds the packing list."
+          primaryHref="/collections/new"
+          primaryLabel="Plan a trip"
+        />
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2">
           {collections.map((c) => {

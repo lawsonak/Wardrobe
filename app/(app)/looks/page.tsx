@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import EmptyState from "@/components/EmptyState";
 
 export const dynamic = "force-dynamic";
 
@@ -54,17 +55,15 @@ export default async function LooksPage() {
       </div>
 
       {looks.length === 0 ? (
-        <div className="card p-10 text-center">
-          <div className="text-4xl" aria-hidden>💄</div>
-          <p className="mt-3 font-display text-2xl text-blush-700">No looks yet.</p>
-          <p className="mt-1 text-stone-600">
-            Save a routine — &ldquo;Everyday face&rdquo;, &ldquo;Date night
-            smoky&rdquo; — by picking products into the 15 slots.
-          </p>
-          <Link href="/looks/new" className="btn-primary mt-4 inline-flex">
-            Build your first look
-          </Link>
-        </div>
+        <EmptyState
+          emoji="💄"
+          headline="Save your first Look."
+          hint='An "Everyday face" or a "Date-night smoky" — pick products into the 15 slots and reuse it whenever.'
+          primaryHref="/looks/new"
+          primaryLabel="Build a Look"
+          secondaryHref="/wardrobe/beauty"
+          secondaryLabel="See beauty stash"
+        />
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2">
           {looks.map((look) => (

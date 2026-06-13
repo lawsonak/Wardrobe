@@ -27,9 +27,15 @@ export default {
           200: "#efe1cc",
         },
         sage: {
+          // Filled the 50/100 + 800 stops so the fit badge ("Likely
+          // fits", and friends) can use a real palette tone instead
+          // of the stand-in `sage-200/50` we had before.
+          50: "#f1f5ed",
+          100: "#e3ebde",
           200: "#d6e2cf",
           400: "#8fb18a",
           600: "#5b8259",
+          800: "#3a5638",
         },
       },
       fontFamily: {

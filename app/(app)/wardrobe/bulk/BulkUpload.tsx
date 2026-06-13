@@ -639,6 +639,11 @@ function Step1Choose({
                 ? "AI reads each photo and assigns the right category."
                 : `Every photo becomes a ${defaultCategory} — edit individuals later.`}
             </p>
+            {autoCategoryWithoutAi && (
+              <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1.5 text-xs text-amber-800 ring-1 ring-amber-200">
+                ⚠ <strong>✨ Let AI decide</strong> needs Auto-tag turned on below — Continue is disabled until you flip it on, or pick a specific category above.
+              </p>
+            )}
           </div>
 
           <div className="space-y-2 border-t border-stone-100 pt-3">

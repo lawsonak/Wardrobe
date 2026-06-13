@@ -107,18 +107,26 @@ export default function ItemPhotoCarousel({
           </div>
         ))}
       </div>
-      <div className="flex items-center justify-center gap-1.5" aria-hidden>
+      {/* The visible dot stays small; the wrapping button gives it a
+          ~32 px tap target (py-3 px-2) so it's actually hittable with a
+          thumb. Without the padded hit area, the 6 px dot is below
+          every accessibility guideline. */}
+      <div className="flex items-center justify-center" aria-hidden>
         {photos.map((p, i) => (
           <button
             key={p.id}
             type="button"
             aria-label={`Photo ${i + 1} of ${photos.length}`}
             onClick={() => jumpTo(i)}
-            className={cn(
-              "h-1.5 rounded-full transition-all",
-              i === index ? "w-5 bg-blush-500" : "w-1.5 bg-stone-300 hover:bg-stone-400",
-            )}
-          />
+            className="grid place-items-center px-2 py-3"
+          >
+            <span
+              className={cn(
+                "h-1.5 rounded-full transition-all",
+                i === index ? "w-5 bg-blush-500" : "w-1.5 bg-stone-300 hover:bg-stone-400",
+              )}
+            />
+          </button>
         ))}
       </div>
       {photos[index]?.label && (

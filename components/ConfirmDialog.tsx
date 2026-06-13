@@ -100,7 +100,10 @@ export default function ConfirmDialogHost() {
           </button>
           <button
             type="button"
-            className={pending.destructive ? "btn bg-blush-600 text-white shadow-card hover:bg-blush-700" : "btn-primary"}
+            // Destructive uses a true red rather than brand blush so it
+            // reads as "warning, irreversible" even in iOS Increase
+            // Contrast mode where pink blends with the rest of the UI.
+            className={pending.destructive ? "btn bg-red-600 text-white shadow-card hover:bg-red-700" : "btn-primary"}
             onClick={confirm}
           >
             {confirmText}

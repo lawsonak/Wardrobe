@@ -82,12 +82,12 @@ export default function OutfitCard({
 
   return (
     <div className="card overflow-hidden">
-      <Link
-        href={`/outfits/${outfit.id}/style`}
-        aria-label={`Open style canvas for ${outfit.name}`}
-        className="block tile-bg transition hover:opacity-95"
-      >
-        {outfit.tryOnImagePath ? (
+      {outfit.tryOnImagePath ? (
+        <Link
+          href={`/outfits/${outfit.id}/style`}
+          aria-label={`Open style canvas for ${outfit.name}`}
+          className="block tile-bg transition hover:opacity-95"
+        >
           <div className="flex justify-center p-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -96,22 +96,32 @@ export default function OutfitCard({
               className="aspect-[1/2] max-h-80 w-auto rounded-xl object-contain"
             />
           </div>
-        ) : (
-          <div className="grid grid-cols-3 gap-2 p-3">
-            {sorted.slice(0, 6).map(({ item }) => {
-              const src = item.imageBgRemovedPath
-                ? `/api/uploads/${item.imageBgRemovedPath}`
-                : `/api/uploads/${item.imagePath}`;
-              return (
-                <div key={item.id} className="flex aspect-square items-center justify-center rounded-xl bg-white/60 p-1">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={src} alt={item.subType ?? item.category} className="h-full w-full object-contain" />
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Link>
+        </Link>
+      ) : (
+        // No try-on render yet: show each piece as its own tap target
+        // so the user can drill into any item directly. The "✨ Style"
+        // button below still opens the canvas. Splitting the grid out
+        // of the outer wrapper avoids the nested-anchor pattern we'd
+        // get if every tile were a Link inside another Link.
+        <div className="tile-bg grid grid-cols-3 gap-2 p-3">
+          {sorted.slice(0, 6).map(({ item }) => {
+            const src = item.imageBgRemovedPath
+              ? `/api/uploads/${item.imageBgRemovedPath}`
+              : `/api/uploads/${item.imagePath}`;
+            return (
+              <Link
+                key={item.id}
+                href={`/wardrobe/${item.id}`}
+                aria-label={`Open ${item.subType ?? item.category}`}
+                className="flex aspect-square items-center justify-center rounded-xl bg-white/60 p-1 transition hover:bg-white/90"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={src} alt={item.subType ?? item.category} className="h-full w-full object-contain" />
+              </Link>
+            );
+          })}
+        </div>
+      )}
       <div className="flex items-center justify-between gap-2 px-4 py-3">
         <div className="min-w-0">
           <p className="flex items-center gap-1 truncate font-display text-lg text-stone-800">
