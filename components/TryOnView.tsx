@@ -74,10 +74,12 @@ export default function TryOnView({
         //  - we haven't already auto-fired this session,
         //  - and either no try-on exists yet or the existing one is
         //    stale (items changed since last render).
+        // Auto-fire never forces — if there's a fresh cached image it
+        // stays. Only the user-initiated regen button passes force.
         const needsGeneration = !data.tryOnImagePath || !data.isFresh;
         if (data.mannequinReady && needsGeneration && !autoFiredRef.current) {
           autoFiredRef.current = true;
-          generate();
+          generate(false);
         }
       } catch {
         /* network blip — leave UI alone */
@@ -89,11 +91,18 @@ export default function TryOnView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outfitId, items.length]);
 
-  async function generate() {
+  // `force` toggles the server-side ?force=1 query param. The auto-fire
+  // path passes false (cached image is fine if it's fresh); the user's
+  // ✨ Regenerate click passes true so they always get a new render
+  // instead of silently re-receiving the same cached path.
+  async function generate(force: boolean = true) {
     setGenerating(true);
     setError(null);
     try {
-      const res = await fetch(`/api/outfits/${outfitId}/tryon`, { method: "POST" });
+      const url = force
+        ? `/api/outfits/${outfitId}/tryon?force=1`
+        : `/api/outfits/${outfitId}/tryon`;
+      const res = await fetch(url, { method: "POST" });
       const data = (await res.json()) as GenerateResponse;
       if (!res.ok || !data.tryOnImagePath) {
         setError(data.error || `Generation failed (HTTP ${res.status})`);
@@ -149,7 +158,7 @@ export default function TryOnView({
           )}
           <button
             type="button"
-            onClick={generate}
+            onClick={() => generate(true)}
             disabled={generating || !mannequinReady}
             className="btn-primary text-xs disabled:opacity-50"
             title={!mannequinReady ? "Set up your mannequin in Settings to enable AI try-on" : undefined}
@@ -187,7 +196,11 @@ export default function TryOnView({
           <div className="relative mx-auto aspect-[1/2] max-h-[70dvh] w-full overflow-hidden rounded-2xl">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={`/api/uploads/${tryOnPath}`}
+              // The upload route serves `Cache-Control: immutable` and
+              // force-regenerate overwrites the same hashed filename, so
+              // the browser would happily reuse the cached old image
+              // without this `?t=` buster keyed off generatedAt.
+              src={`/api/uploads/${tryOnPath}${generatedAt ? `?t=${encodeURIComponent(generatedAt)}` : ""}`}
               alt="AI try-on"
               className={
                 "h-full w-full object-contain transition " + (generating ? "opacity-50" : "")

@@ -57,11 +57,16 @@ async function buildHash(args: {
   return crypto.createHash("sha256").update(payload).digest("hex").slice(0, 16);
 }
 
-export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id;
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
+  // ?force=1 bypasses the hash cache so an explicit "Regenerate" click
+  // always re-runs Gemini even when nothing has changed since the last
+  // render. The auto-fire effect in TryOnView omits force, so an idle
+  // mount still short-circuits to the cached image.
+  const force = req.nextUrl.searchParams.get("force") === "1";
 
   const outfit = await prisma.outfit.findFirst({
     where: { id, ownerId: userId },
@@ -93,7 +98,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   }));
 
   const hash = await buildHash({ mannequinId: mannequin.id, items });
-  if (outfit.tryOnHash === hash && outfit.tryOnImagePath) {
+  if (!force && outfit.tryOnHash === hash && outfit.tryOnImagePath) {
     return NextResponse.json({
       tryOnImagePath: outfit.tryOnImagePath,
       tryOnGeneratedAt: outfit.tryOnGeneratedAt,
