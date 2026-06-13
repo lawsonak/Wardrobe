@@ -186,8 +186,13 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   for (const p of filesToUnlink) {
     try {
       await fs.unlink(path.join(UPLOAD_ROOT, p));
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // Non-fatal (the row is already gone) but log the path so disk
+      // orphans don't accumulate invisibly — the admin storage page's
+      // orphan sweep can't distinguish "never existed" from "unlink
+      // failed" without this breadcrumb.
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== "ENOENT") console.warn(`item delete: couldn't unlink ${p}:`, err);
     }
   }
 

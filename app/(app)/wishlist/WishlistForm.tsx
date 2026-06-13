@@ -167,7 +167,13 @@ export default function WishlistForm({ initial }: { initial?: InitialValues }) {
     const f = e.target.files?.[0];
     if (!f) return;
     setImageFile(f);
-    setImagePreview(URL.createObjectURL(f));
+    setImagePreview((prev) => {
+      // Revoke the previous blob preview before replacing it — the
+      // initial value can be an /api/uploads URL, which must NOT be
+      // revoked, hence the blob: check.
+      if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(f);
+    });
   }
 
   async function onSubmit(e: React.FormEvent) {

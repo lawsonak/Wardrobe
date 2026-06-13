@@ -9,6 +9,7 @@
 
 import { CATEGORIES } from "@/lib/constants";
 import { describeSummary, type ClosetSummary } from "@/lib/ai/closetSummary";
+import { fetchWithTimeout } from "@/lib/fetchRetry";
 
 export type { ClosetSummary };
 
@@ -123,17 +124,24 @@ export async function suggestProductForCloset(
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     TEXT_MODEL,
-  )}:generateContent?key=${encodeURIComponent(key)}`;
+  )}:generateContent`;
 
   let httpStatus: number | undefined;
   let rawText = "";
 
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    // Grounded search can take 10-20s; bound it so a hung connection
+    // can't hold the route's per-user inflight lock indefinitely
+    // (maxDuration isn't enforced on a long-running `next start`).
+    const res = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify(body),
+      },
+      60_000,
+    );
     httpStatus = res.status;
     const responseText = await res.text();
     rawText = responseText.slice(0, 600);

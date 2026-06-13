@@ -16,6 +16,7 @@ import { CATEGORIES, COLOR_NAMES } from "@/lib/constants";
 import { describeSummary, type ClosetSummary } from "@/lib/ai/closetSummary";
 import { describeForTrip, type TripForecast } from "@/lib/weather";
 import type { PackingTargets } from "@/lib/packingTargets";
+import { fetchWithTimeout } from "@/lib/fetchRetry";
 
 const TEXT_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
@@ -226,17 +227,24 @@ export async function specifyProductsForCollection(req: ShopRequest): Promise<Sp
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     TEXT_MODEL,
-  )}:generateContent?key=${encodeURIComponent(key)}`;
+  )}:generateContent`;
 
   let httpStatus: number | undefined;
   let rawText = "";
 
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    // Bounded so a hung Gemini connection can't hold the route's
+    // per-user inflight lock indefinitely (maxDuration isn't enforced
+    // on a long-running `next start` server).
+    const res = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify(body),
+      },
+      60_000,
+    );
     httpStatus = res.status;
     const responseText = await res.text();
     rawText = responseText.slice(0, 800);

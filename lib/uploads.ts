@@ -24,6 +24,31 @@ const KNOWN_EXTS: Readonly<Record<string, string>> = {
   "image/gif": "gif",
 };
 
+// Upload guardrails for the multipart item routes. 25 MB comfortably
+// covers any phone photo (iPhone HEIC converts client-side to a
+// 3-6 MB JPEG before upload); the cap exists so an accidental video
+// or RAW file can't OOM the sharp pipeline on the LXC. The MIME
+// whitelist matches what sharp + the browser-side pipeline actually
+// handle — HEIC is intentionally absent because the client converts
+// it before upload (the server's sharp build can't decode it).
+export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const ALLOWED_UPLOAD_MIMES = new Set(Object.keys(KNOWN_EXTS));
+
+/** Returns an error string when the file shouldn't be accepted, null
+ *  when it's fine. Callers turn the string into a 400/413. */
+export function validateUploadFile(file: File): string | null {
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return `Image too large (${Math.round(file.size / 1024 / 1024)} MB — max ${MAX_UPLOAD_BYTES / 1024 / 1024} MB)`;
+  }
+  // Some browsers send an empty type for files picked from odd
+  // sources; let those through and let sharp decide rather than
+  // hard-failing a legitimate photo.
+  if (file.type && !ALLOWED_UPLOAD_MIMES.has(file.type)) {
+    return `Unsupported file type "${file.type}" — use JPG, PNG, WebP, or GIF`;
+  }
+  return null;
+}
+
 function safeExtFromMime(mime: string | undefined, fallback: string): string {
   if (mime && KNOWN_EXTS[mime]) return KNOWN_EXTS[mime];
   const raw = (mime?.split("/")[1] || fallback).replace(/[^a-z0-9]/gi, "");

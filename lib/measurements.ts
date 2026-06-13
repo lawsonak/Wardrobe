@@ -106,6 +106,12 @@ function cleanLength(
 // take the largest of the standing/leaning/lying bust numbers like
 // ABTF does (the loosest tissue position gives the truest cup). This
 // is an estimate the user can override — not a fitting-room guarantee.
+//
+// Cup ladder is US-brand notation: D → DD → DDD → G (no E/F). UK
+// sizing — what ABTF's calculator displays — uses D, DD, E, F, FF, G
+// instead, so a UK-fluent user may expect "32E" where this shows
+// "32DDD". Same cup volume, different label; the override field is
+// the escape hatch.
 const US_CUPS = [
   "AA", "A", "B", "C", "D", "DD", "DDD", "G", "H", "I", "J", "K",
 ];
@@ -292,10 +298,29 @@ const FIT_KEY_TO_BODY: Record<string, keyof CoreMeasurements> = {
 };
 
 // Tolerance in inches. Within ±SNUG..ROOMY of the body number reads
-// as a normal fit; tighter than SNUG flags snug; looser everywhere
-// than ROOMY flags roomy.
+// as a normal fit; tighter than SNUG flags snug; mostly-looser than
+// ROOMY flags roomy.
 const SNUG_IN = 1.5;
 const ROOMY_IN = 2.5;
+
+// Parse one fitDetails value into inches, or null when the value
+// can't be trusted as a garment measurement:
+//   - "36.5" / "36.5 in" → 36.5
+//   - "92 cm" / "92cm"   → 36.2 (converted)
+//   - "8" against a 29in body waist → null (a size number, not a
+//     measurement — outside the plausibility window)
+// The plausibility window (50%–200% of the body number) is the
+// backstop for free-text values that happen to contain digits but
+// aren't measurements at all.
+function parseGarmentInches(rawVal: string, bodyIn: number): number | null {
+  const s = String(rawVal);
+  const num = parseFloat(s.replace(/[^0-9.]/g, ""));
+  if (!Number.isFinite(num) || num <= 0) return null;
+  const isCm = /\bcm\b|centimet/i.test(s);
+  const inches = isCm ? num / 2.54 : num;
+  if (inches < bodyIn * 0.5 || inches > bodyIn * 2) return null;
+  return Math.round(inches * 10) / 10;
+}
 
 export function assessFit(
   m: Measurements | null,
@@ -308,23 +333,28 @@ export function assessFit(
     if (!bodyKey) continue;
     const bodyRaw = m.core[bodyKey];
     if (typeof bodyRaw !== "number") continue;
-    const garmentNum = parseFloat(String(rawVal).replace(/[^0-9.]/g, ""));
-    if (!Number.isFinite(garmentNum) || garmentNum <= 0) continue;
     const bodyIn = toInches(bodyRaw, m.unit);
+    const garmentIn = parseGarmentInches(rawVal, bodyIn);
+    if (garmentIn === null) continue;
     reasons.push({
       label: rawKey,
-      garmentIn: garmentNum,
+      garmentIn,
       bodyIn: Math.round(bodyIn * 10) / 10,
-      deltaIn: Math.round((garmentNum - bodyIn) * 10) / 10,
+      deltaIn: Math.round((garmentIn - bodyIn) * 10) / 10,
     });
   }
   if (reasons.length === 0) return null;
 
-  // The most-negative delta is the field most likely to pinch.
+  // Snug wins off the single tightest field (one pinch point is
+  // enough to matter); roomy reads off the MEDIAN delta so one
+  // near-body dimension doesn't flip an obviously oversized garment
+  // back to "fits".
   const tightest = reasons.reduce((a, b) => (b.deltaIn < a.deltaIn ? b : a));
+  const sortedDeltas = reasons.map((r) => r.deltaIn).sort((a, b) => a - b);
+  const median = sortedDeltas[Math.floor(sortedDeltas.length / 2)];
   let verdict: FitVerdict = "fits";
   if (tightest.deltaIn <= -SNUG_IN) verdict = "snug";
-  else if (reasons.every((r) => r.deltaIn >= ROOMY_IN)) verdict = "roomy";
+  else if (median >= ROOMY_IN) verdict = "roomy";
 
   const headline =
     verdict === "snug"

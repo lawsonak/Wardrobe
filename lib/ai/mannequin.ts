@@ -8,6 +8,9 @@
 // is "a mannequin that looks like the user's body type and proportions",
 // not a portrait.
 
+import { fetchWithTimeout } from "@/lib/fetchRetry";
+import { IMAGE_TIMEOUT_MS } from "@/lib/ai/tryon";
+
 const TRY_ON_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
 
 const PROMPT = [
@@ -75,17 +78,21 @@ export async function generateMannequinFromPhoto(input: {
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     TRY_ON_MODEL,
-  )}:generateContent?key=${encodeURIComponent(key)}`;
+  )}:generateContent`;
 
   let httpStatus: number | undefined;
   let rawText = "";
 
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const res = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify(body),
+      },
+      IMAGE_TIMEOUT_MS,
+    );
     httpStatus = res.status;
     const responseText = await res.text();
     rawText = responseText.slice(0, 400);

@@ -154,6 +154,45 @@ export default function MeasurementsForm({
     return Number.isFinite(v) && v > 0 ? v : undefined;
   }
 
+  // Switch units AND convert every filled length field so the
+  // numbers keep their physical meaning. Weight flips lb↔kg with the
+  // toggle too (the label changes), so it converts alongside.
+  // Unitless scales (shoe size, ring size, bra size string) pass
+  // through untouched.
+  function switchUnit(next: MeasurementUnit) {
+    if (next === unit) return;
+    const factor = next === "cm" ? 2.54 : 1 / 2.54;
+    const weightFactor = next === "cm" ? 1 / 2.2046 : 2.2046; // lb↔kg
+    const conv = (s: string, f: number): string => {
+      const v = parseFloat(s);
+      if (!Number.isFinite(v) || v <= 0) return s;
+      return String(Math.round(v * f * 10) / 10);
+    };
+    setCore((p) => ({
+      ...p,
+      height: conv(p.height, factor),
+      bust: conv(p.bust, factor),
+      waist: conv(p.waist, factor),
+      hips: conv(p.hips, factor),
+      shoulder: conv(p.shoulder, factor),
+      sleeve: conv(p.sleeve, factor),
+      inseam: conv(p.inseam, factor),
+    }));
+    setBra((p) => ({
+      underbust: conv(p.underbust, factor),
+      bustStanding: conv(p.bustStanding, factor),
+      bustLeaning: conv(p.bustLeaning, factor),
+      bustLying: conv(p.bustLying, factor),
+    }));
+    setExtra((p) => ({
+      ...p,
+      neck: conv(p.neck, factor),
+      thigh: conv(p.thigh, factor),
+      weight: conv(p.weight, weightFactor),
+    }));
+    setUnit(next);
+  }
+
   async function save() {
     setSaving(true);
     try {
@@ -297,19 +336,21 @@ export default function MeasurementsForm({
 
   return (
     <div className="space-y-5">
-      {/* Unit toggle */}
+      {/* Unit toggle. Converts every filled length so the numbers
+          keep meaning the same thing — without this, "waist 29"
+          entered in inches would silently become 29 cm on toggle. */}
       <div className="flex items-center gap-2 text-sm">
         <span className="text-stone-500">Units</span>
         <button
           type="button"
-          onClick={() => setUnit("in")}
+          onClick={() => switchUnit("in")}
           className={"chip " + (unit === "in" ? "chip-on" : "chip-off")}
         >
           inches
         </button>
         <button
           type="button"
-          onClick={() => setUnit("cm")}
+          onClick={() => switchUnit("cm")}
           className={"chip " + (unit === "cm" ? "chip-on" : "chip-off")}
         >
           cm
