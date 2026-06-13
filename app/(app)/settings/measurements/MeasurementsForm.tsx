@@ -191,6 +191,11 @@ export default function MeasurementsForm({
       weight: conv(p.weight, weightFactor),
     }));
     setUnit(next);
+    // Visible confirmation so the user knows the numbers were CONVERTED,
+    // not re-interpreted in the new unit. Without this the toggle looks
+    // like quiet magic and a user who toggles twice in a row loses
+    // fidelity to rounding.
+    toast(next === "cm" ? "Converted measurements to centimeters" : "Converted measurements to inches");
   }
 
   async function save() {

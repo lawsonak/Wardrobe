@@ -342,12 +342,12 @@ export default function ItemDetailView({
       {fit && (
         <div
           className={
-            "rounded-xl px-3 py-2 text-sm ring-1 " +
+            "flex flex-wrap items-baseline gap-2 rounded-xl px-3 py-2 text-sm ring-1 " +
             (fit.verdict === "snug"
               ? "bg-amber-50 text-amber-800 ring-amber-200"
               : fit.verdict === "roomy"
                 ? "bg-sky-50 text-sky-800 ring-sky-200"
-                : "bg-sage-200/50 text-sage-600 ring-sage-400/50")
+                : "bg-sage-50 text-sage-800 ring-sage-200")
           }
           title={fit.reasons
             .map(
@@ -356,11 +356,22 @@ export default function ItemDetailView({
             )
             .join("\n")}
         >
-          <span className="font-medium">
-            {fit.verdict === "snug" ? "↔ " : fit.verdict === "roomy" ? "↔ " : "✓ "}
-            {fit.headline}
-          </span>{" "}
-          <span className="opacity-80">
+          {/* Pill verdict so the read-from-distance hierarchy is
+              clear (Snug / Roomy / Good fit), then the explanation. */}
+          <span
+            className={
+              "rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide " +
+              (fit.verdict === "snug"
+                ? "bg-amber-100 text-amber-900"
+                : fit.verdict === "roomy"
+                  ? "bg-sky-100 text-sky-900"
+                  : "bg-sage-200 text-sage-800")
+            }
+          >
+            {fit.verdict === "snug" ? "Snug" : fit.verdict === "roomy" ? "Roomy" : "Good fit"}
+          </span>
+          <span className="font-medium">{fit.headline}</span>
+          <span className="text-xs opacity-80">
             — based on your measurements vs this item&rsquo;s recorded fit. A
             rough guide, not a guarantee.
           </span>
@@ -372,7 +383,21 @@ export default function ItemDetailView({
           Hidden for beauty items — try-on doesn't apply to a
           standalone lipstick. (PR D introduces a Look-driven try-on
           companion concept.) */}
-      {!item.isBeauty && <TryOnButton itemId={item.id} />}
+      {!item.isBeauty && (
+        <div className="flex flex-wrap items-center gap-2">
+          <TryOnButton itemId={item.id} />
+          {/* Manual builder entry pre-seeded with this item — closes
+              the "what do I do with this piece I just added?" loop
+              without making the user navigate to /outfits and search
+              for the piece by name. */}
+          <Link
+            href={`/outfits/builder?ids=${item.id}`}
+            className="btn-secondary text-xs"
+          >
+            ➕ Add to a new outfit
+          </Link>
+        </div>
+      )}
 
       {/* Metadata grid — every field the edit form exposes, rendered
           read-only here so the user can see the full picture without

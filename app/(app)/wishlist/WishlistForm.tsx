@@ -132,15 +132,18 @@ export default function WishlistForm({ initial }: { initial?: InitialValues }) {
   // Soft warning: shows a banner with up to 3 candidate matches and
   // a link to each, but never blocks the save.
   const [similar, setSimilar] = useState<SimilarMatch[]>([]);
+  const [similarChecking, setSimilarChecking] = useState(false);
   useEffect(() => {
     // Don't run on the edit form — the user already saved this row,
     // they don't need the duplicate warning every render.
     if (isEdit) return;
     if (!category && !brand) {
       setSimilar([]);
+      setSimilarChecking(false);
       return;
     }
     const ctrl = new AbortController();
+    setSimilarChecking(true);
     const timer = setTimeout(async () => {
       try {
         const params = new URLSearchParams();
@@ -155,6 +158,8 @@ export default function WishlistForm({ initial }: { initial?: InitialValues }) {
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         // Non-fatal — silent on network blips
+      } finally {
+        setSimilarChecking(false);
       }
     }, 600);
     return () => {
@@ -333,6 +338,9 @@ export default function WishlistForm({ initial }: { initial?: InitialValues }) {
 
       {/* "Already in your closet?" soft warning. Non-blocking — the
           user can save the wish anyway, this is just a heads-up. */}
+      {!isEdit && similarChecking && similar.length === 0 && (category || brand.trim()) && (
+        <p className="-mt-3 text-xs text-stone-400">Checking for similar pieces in your closet…</p>
+      )}
       {!isEdit && similar.length > 0 && (
         <div className="card border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <p className="font-medium">You may already own something similar</p>

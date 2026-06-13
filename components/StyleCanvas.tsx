@@ -322,7 +322,7 @@ export default function StyleCanvas({
                   <>
                     <div
                       onPointerDown={(e) => onPointerDown(e, l.id, "resize")}
-                      className="absolute -bottom-2 -right-2 grid h-6 w-6 place-items-center rounded-full bg-blush-500 text-xs text-white shadow-card"
+                      className="absolute -bottom-3 -right-3 grid h-10 w-10 place-items-center rounded-full bg-blush-500 text-base text-white shadow-card ring-2 ring-white"
                       style={{ touchAction: "none", cursor: "nwse-resize" }}
                       aria-label="Resize"
                     >
@@ -330,7 +330,7 @@ export default function StyleCanvas({
                     </div>
                     <div
                       onPointerDown={(e) => onPointerDown(e, l.id, "rotate")}
-                      className="absolute -top-2 -left-2 grid h-6 w-6 place-items-center rounded-full bg-blush-500 text-xs text-white shadow-card"
+                      className="absolute -top-3 -left-3 grid h-10 w-10 place-items-center rounded-full bg-blush-500 text-base text-white shadow-card ring-2 ring-white"
                       style={{ touchAction: "none", cursor: "grab" }}
                       aria-label="Rotate"
                     >

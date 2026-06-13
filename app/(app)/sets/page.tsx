@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import EmptyState from "@/components/EmptyState";
 
 export const dynamic = "force-dynamic";
 
@@ -38,14 +39,13 @@ export default async function SetsPage() {
       </div>
 
       {sets.length === 0 ? (
-        <div className="card p-10 text-center">
-          <div className="text-4xl" aria-hidden>🎽</div>
-          <p className="mt-3 font-display text-2xl text-blush-700">No sets yet</p>
-          <p className="mt-1 text-stone-600">
-            Open any item and tap <span className="font-medium">Link</span> in the
-            &ldquo;Matching set&rdquo; card to create one.
-          </p>
-        </div>
+        <EmptyState
+          emoji="🎽"
+          headline="No sets yet."
+          hint='Pieces that go together — a swimsuit top + bottom, a pajama set. Open any item, then tap "Link" in the Matching set card to create one.'
+          primaryHref="/wardrobe"
+          primaryLabel="Open closet"
+        />
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2">
           {sets.map((s) => (
