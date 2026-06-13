@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import MannequinSilhouette from "@/components/MannequinSilhouette";
 import { confirmDialog } from "@/components/ConfirmDialog";
+import { toast } from "@/lib/toast";
+import { haptic } from "@/lib/haptics";
 import { slotForItem, type Slot } from "@/lib/constants";
 
 export type CanvasItem = {
@@ -59,6 +62,7 @@ export default function StyleCanvas({
   items: CanvasItem[];
   initialLayoutJson?: string | null;
 }) {
+  const router = useRouter();
   const canvasRef = useRef<HTMLDivElement>(null);
 
   // Build initial layers, restoring any saved layout for items that still
@@ -201,6 +205,62 @@ export default function StyleCanvas({
         return { ...l, x: d.x, y: d.y, w: d.w, rotation: 0 };
       }),
     );
+  }
+
+  // Take a piece out of the outfit entirely (not just hide it from the
+  // canvas). PATCHes the new item set + layout in one call — the route
+  // replaces the OutfitItem rows and nulls the cached try-on hash, so
+  // the AI render is correctly marked stale afterward. router.refresh()
+  // re-pulls server state so TryOnView's item list updates too.
+  async function removeFromOutfit(layerId: string) {
+    if (layers.length <= 1) {
+      toast(
+        "An outfit needs at least one piece — delete the whole outfit from the Outfits page instead.",
+        "error",
+      );
+      return;
+    }
+    const layer = layers.find((l) => l.id === layerId);
+    const ok = await confirmDialog({
+      title: "Remove this piece?",
+      body: layer
+        ? `"${layer.label}" comes out of this outfit. The item stays in your closet.`
+        : "This piece comes out of the outfit. It stays in your closet.",
+      confirmText: "Remove",
+      destructive: true,
+    });
+    if (!ok) return;
+
+    const nextLayers = layers.filter((l) => l.id !== layerId);
+    if (!outfitId) {
+      // No persistence target (standalone canvas) — drop locally.
+      setLayers(nextLayers);
+      if (selectedId === layerId) setSelectedId(null);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/outfits/${outfitId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: nextLayers.map((l) => ({ slot: l.slot, itemId: l.id })),
+          layoutJson: JSON.stringify({ layers: nextLayers }),
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      // The PATCH already persisted the layout, so suppress the
+      // debounced autosave that the setLayers below would trigger.
+      skipNextSave.current = true;
+      dirtyRef.current = false;
+      setLayers(nextLayers);
+      if (selectedId === layerId) setSelectedId(null);
+      haptic("impact");
+      toast("Removed from outfit");
+      router.refresh();
+    } catch (err) {
+      console.error("Remove from outfit failed", err);
+      toast("Couldn't remove that piece", "error");
+    }
   }
 
   function onPointerDown(e: React.PointerEvent, layerId: string, mode: "move" | "resize" | "rotate") {
@@ -357,12 +417,17 @@ export default function StyleCanvas({
               </div>
               <div className="flex items-center gap-1 text-xs">
                 <button type="button" onClick={() => setSelectedId(l.id)} className="btn-ghost px-2">Select</button>
-                <button type="button" onClick={() => update(l.id, { hidden: !l.hidden })} className="btn-ghost px-2">
-                  {l.hidden ? "Show" : "Hide"}
-                </button>
+                {/* Show only when a layer is currently hidden — restores
+                    layers hidden by the old Hide toggle. The default
+                    action is now Remove (takes the piece out of the
+                    outfit), per the natural "I don't want this" intent. */}
+                {l.hidden && (
+                  <button type="button" onClick={() => update(l.id, { hidden: false })} className="btn-ghost px-2">Show</button>
+                )}
                 <button type="button" onClick={() => bringToFront(l.id)} className="btn-ghost px-2" aria-label="Bring to front">↑</button>
                 <button type="button" onClick={() => sendToBack(l.id)} className="btn-ghost px-2" aria-label="Send to back">↓</button>
                 <button type="button" onClick={() => reset(l.id)} className="btn-ghost px-2">Reset</button>
+                <button type="button" onClick={() => removeFromOutfit(l.id)} className="btn-ghost px-2 text-blush-600 hover:text-blush-700">Remove</button>
               </div>
             </li>
           );

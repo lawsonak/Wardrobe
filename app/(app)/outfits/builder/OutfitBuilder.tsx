@@ -444,17 +444,33 @@ export default function OutfitBuilder({
         {flatPicks.length === 0 ? (
           <p className="py-4 text-center text-sm text-stone-500">Nothing picked yet.</p>
         ) : (
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-            {flatPicks.map(({ slot, item }) => {
-              const src = item.imageBgRemovedPath ? `/api/uploads/${item.imageBgRemovedPath}` : `/api/uploads/${item.imagePath}`;
-              return (
-                <div key={`${slot}-${item.id}`} className="tile-bg flex aspect-square items-center justify-center rounded-2xl p-2">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={src} alt={item.subType ?? slot} className="h-full w-full object-contain" />
-                </div>
-              );
-            })}
-          </div>
+          <>
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+              {flatPicks.map(({ slot, item }) => {
+                const src = item.imageBgRemovedPath ? `/api/uploads/${item.imageBgRemovedPath}` : `/api/uploads/${item.imagePath}`;
+                return (
+                  <div key={`${slot}-${item.id}`} className="group relative tile-bg flex aspect-square items-center justify-center rounded-2xl p-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={src} alt={item.subType ?? slot} className="h-full w-full object-contain" />
+                    {/* Direct remove from the Preview so the user doesn't
+                        have to scroll back down to the picker to find and
+                        de-select an unwanted piece. */}
+                    <button
+                      type="button"
+                      onClick={() => togglePick(slot, item)}
+                      aria-label={`Remove ${item.subType ?? slot} from this outfit`}
+                      className="absolute right-1 top-1 grid h-7 w-7 place-items-center rounded-full bg-white/90 text-stone-600 shadow-card ring-1 ring-stone-200 transition hover:bg-white hover:text-blush-600"
+                    >
+                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-center text-xs text-stone-400">Tap ✕ to remove a piece.</p>
+          </>
         )}
       </div>
 
