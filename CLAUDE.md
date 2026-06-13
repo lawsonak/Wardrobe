@@ -195,7 +195,7 @@ The route uses the inflight-lock pattern; pass 3 runs after the cheap shrinks so
 | Collections editor (edit) | `app/(app)/collections/CollectionEditor.tsx` |
 | Reusable filtered item grid | `app/(app)/collections/ItemPicker.tsx` |
 | Outfit builder | `app/(app)/outfits/builder/OutfitBuilder.tsx` |
-| Style canvas (manual layout fallback) | `components/StyleCanvas.tsx` |
+| Style canvas (manual layout fallback) | `components/StyleCanvas.tsx`. The per-layer list has a **Remove** action that PATCHes `/api/outfits/[id]` with the reduced item set + layout in one call (replaces OutfitItem rows, nulls `tryOnHash`, then `router.refresh()`); guards against removing the last piece. The old "Hide" toggle is gone — "Show" only appears to restore a layer hidden by the legacy toggle. The OutfitBuilder Preview grid also has a per-tile ✕ to drop a pick without scrolling back to the picker. |
 | Today's outfit card | `components/TodaysOutfitCard.tsx` |
 | Deploy script | `scripts/update.sh` |
 
