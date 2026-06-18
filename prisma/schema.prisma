@@ -303,10 +303,46 @@ model Collection {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  items   CollectionItem[]
-  outfits Outfit[]
+  items     CollectionItem[]
+  outfits   Outfit[]
+  shopItems CollectionShopItem[]
 
   @@index([ownerId])
+}
+
+// A "considering buying this" entry pulled from a product link the user
+// pasted into a collection's shopping list. Distinct from CollectionItem
+// (which references an owned closet Item) and from WishlistItem (the
+// global standalone wishlist) — these are scoped to one collection and
+// represent external products being shopped for that trip / set. Fields
+// mirror what `lib/ai/wishlistLookup.ts` extracts from a product page
+// (Open Graph + JSON-LD), with an optional locally-saved product image.
+model CollectionShopItem {
+  id           String     @id @default(cuid())
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  name         String
+  brand        String?
+  category     String?
+  color        String?
+  price        String?
+  // The product page URL the user pasted (or the canonical link the
+  // extractor resolved to).
+  link         String?
+  // Locally-saved product image, downloaded from the page's og:image /
+  // JSON-LD image and resized via sharp. Stored under
+  // <userId>/collection-shop/. Null when the page had no usable image
+  // or the download failed (the card just renders without a thumbnail).
+  imagePath    String?
+  // Hostname the product came from, lowercase (e.g. "madewell.com").
+  source       String?
+  notes        String?
+  // User-facing "I bought it" flag so the shopping list doubles as a
+  // checklist while packing.
+  purchased    Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+
+  @@index([collectionId])
 }
 
 model CollectionItem {

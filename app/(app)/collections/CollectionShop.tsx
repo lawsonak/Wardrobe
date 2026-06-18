@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { CATEGORIES } from "@/lib/constants";
+import type { ShopItem as ShopItemRow } from "./CollectionShopItems";
 import {
   computePackingTargets,
   totalCount,
@@ -49,9 +51,9 @@ type ShopResponse = {
 // Slider-driven AI shopping for a trip or themed collection. Reads
 // the SAVED collection state on the server, builds a closet snapshot,
 // pulls a forecast (when available), and asks Gemini for a curated
-// shopping list. Each idea is shown with retailer search-page links
-// the user can open in a new tab — and a "Save idea" button that drops
-// the idea into the wishlist for later refinement.
+// shopping list. Each idea is shown with retailer search-page links the
+// user can open in a new tab — and an "+ Add to shopping list" button
+// that drops the idea into the collection's CollectionShopItem list.
 export default function CollectionShop({
   collectionId,
   kind,
@@ -61,6 +63,7 @@ export default function CollectionShop({
   endDate,
   activities,
   targets: externalTargets,
+  onItemAdded,
 }: {
   collectionId: string;
   kind: "trip" | "general";
@@ -75,6 +78,13 @@ export default function CollectionShop({
    *  counts, pass them through; otherwise we recompute from dates +
    *  activities (used by the editor where there's no Quantities UI). */
   targets?: PackingTargets;
+  /** Called with the newly-created CollectionShopItem row when the user
+   *  taps "+ Add to shopping list". The wizard wires this to its lifted
+   *  shop-items state so the adjacent paste-links list updates in
+   *  real time. When undefined (the editor's render path), we fall back
+   *  to router.refresh() — Next re-runs the server component and the
+   *  list updates on the next render. */
+  onItemAdded?: (item: ShopItemRow) => void;
 }) {
   // Use the caller-provided targets when available, else fall back to
   // the deterministic formula. Either way the summary chips and the
@@ -95,6 +105,7 @@ export default function CollectionShop({
     return `${n} night${n === 1 ? "" : "s"}`;
   })();
 
+  const router = useRouter();
   const [intensity, setIntensity] = useState(50);
   const [busy, setBusy] = useState(false);
   const [ideas, setIdeas] = useState<ShopIdea[] | null>(null);
@@ -172,22 +183,36 @@ export default function CollectionShop({
     const key = idea.searchQuery;
     setSavedKey((prev) => ({ ...prev, [key]: "saving" }));
     try {
-      const res = await fetch("/api/wishlist", {
+      // Save onto THIS collection's shopping list (not the global
+      // wishlist). The shop-items route accepts a manual-fields shape
+      // so Gemini's already-structured idea lands without a second
+      // page fetch. We hand it the title / brand / category / color /
+      // priceTier / reasoning the model already wrote, and use the
+      // first retailer's search URL as a starting link.
+      const res = await fetch(`/api/collections/${collectionId}/shop-items`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: idea.title,
           brand: idea.brandHint ?? undefined,
           category: idea.category ?? undefined,
-          // Use the first retailer's search URL as a starting link.
-          // The user can refine to a specific product after browsing.
-          link: idea.retailers[0]?.searchUrl,
+          color: idea.color ?? undefined,
+          price: idea.priceTier ?? undefined,
+          link: idea.retailers[0]?.searchUrl ?? idea.shoppingUrl,
           notes: idea.reasoning || undefined,
-          priority: "medium",
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as { item?: ShopItemRow };
       setSavedKey((prev) => ({ ...prev, [key]: "saved" }));
+      // Wizard-style render passes a callback that appends the row to
+      // its lifted shop-items state. Editor-style render relies on
+      // Next's server refetch to pick up the new row.
+      if (onItemAdded && data.item) {
+        onItemAdded(data.item);
+      } else {
+        router.refresh();
+      }
     } catch {
       setSavedKey((prev) => ({ ...prev, [key]: "error" }));
     }
@@ -323,7 +348,9 @@ export default function CollectionShop({
           {busy ? "Asking the AI…" : ideas ? "✨ Refresh ideas" : "✨ Find new pieces"}
         </button>
         <p className="text-xs text-stone-500">
-          Tap a retailer to search there — or save the idea to your wishlist.
+          Tap a retailer to open a real search there — or add the idea to
+          this collection&apos;s shopping list to track it alongside your
+          pasted links.
         </p>
       </div>
 
@@ -440,12 +467,12 @@ export default function CollectionShop({
                     className="btn-secondary text-xs disabled:opacity-60"
                   >
                     {status === "saved"
-                      ? "✓ Saved"
+                      ? "✓ Added"
                       : status === "saving"
-                        ? "Saving…"
+                        ? "Adding…"
                         : status === "error"
                           ? "Retry"
-                          : "+ Save idea"}
+                          : "+ Add to shopping list"}
                   </button>
                 </div>
               </li>

@@ -8,6 +8,7 @@ import { cn } from "@/lib/cn";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import ItemPicker, { type Selectable } from "./ItemPicker";
 import CollectionShop from "./CollectionShop";
+import CollectionShopItems, { type ShopItem } from "./CollectionShopItems";
 import { useUnsavedChanges } from "@/lib/useUnsavedChanges";
 
 export type CollectionData = {
@@ -33,10 +34,15 @@ type Kind = "trip" | "general";
 export default function CollectionEditor({
   collection,
   items,
+  shopItems,
   includeBackroom = false,
 }: {
   collection: CollectionData;
   items: Selectable[];
+  /** Products pulled from pasted links, saved on this collection.
+   *  Managed independently of the metadata form (adds/removes persist
+   *  immediately), so it's not part of the unsaved-changes guard. */
+  shopItems: ShopItem[];
   /** Mirrors the picker's URL-level Backroom toggle. When true, the
    *  "Re-build packing list with AI" call is allowed to consider
    *  Backroom items. */
@@ -57,6 +63,11 @@ export default function CollectionEditor({
   const [activityDraft, setActivityDraft] = useState("");
 
   const [selected, setSelected] = useState<Set<string>>(new Set(collection.itemIds));
+  // Lifted shop-items state so the AI shop panel and the paste-links
+  // list share one source of truth. Adds/removes still persist
+  // server-side via /api/collections/[id]/shop-items; this is purely
+  // the in-memory mirror.
+  const [shopItemsList, setShopItemsList] = useState(shopItems);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -361,6 +372,12 @@ export default function CollectionEditor({
         </div>
       </section>
 
+      <CollectionShopItems
+        collectionId={collection.id}
+        items={shopItemsList}
+        setItems={setShopItemsList}
+      />
+
       <CollectionShop
         collectionId={collection.id}
         kind={kind}
@@ -369,6 +386,7 @@ export default function CollectionEditor({
         startDate={startDate || null}
         endDate={endDate || null}
         activities={activities}
+        onItemAdded={(item) => setShopItemsList((prev) => [item, ...prev])}
       />
 
       {error && <p className="text-sm text-blush-700">{error}</p>}

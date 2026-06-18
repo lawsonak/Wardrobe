@@ -47,7 +47,7 @@ export default async function CollectionsPage({
           },
         },
       },
-      _count: { select: { items: true } },
+      _count: { select: { items: true, shopItems: true } },
     },
   });
 
@@ -98,6 +98,7 @@ export default async function CollectionsPage({
                   startDateLabel: range || startLabel,
                   endDateLabel: range ? null : endLabel,
                   itemCount: c._count.items,
+                  shopItemCount: c._count.shopItems,
                   items: c.items.map(({ item }) => ({
                     id: item.id,
                     imagePath: item.imagePath,

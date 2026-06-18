@@ -56,6 +56,7 @@ Other conventions:
 | `OutfitItem` | Join row | outfitId, itemId, slot |
 | `Collection` | Trip or themed packing set | `kind` (`trip\|general`), name, description, destination, startDate, endDate, notes, occasion, season, activities (CSV) |
 | `CollectionItem` | Join row | collectionId, itemId |
+| `CollectionShopItem` | A "considering buying this" product pulled from a link pasted into a collection's shopping list | collectionId, name, brand, category, color, price, link, `imagePath` (product thumbnail downloaded + sharp-resized under `<userId>/collection-shop/`), source (host), notes, **purchased** flag. Distinct from `CollectionItem` (owned closet Item) and `WishlistItem` (global standalone wishlist) — scoped to one collection, represents an external product. Populated by `POST /api/collections/[id]/shop-items` which reuses `lookupWishlistProduct` (direct Open Graph/JSON-LD fetch → Gemini grounded-search fallback) + `saveRemoteImage`; falls back to a bare `fetchProductMeta` when AI is off. |
 | `Brand` + `BrandAlias` | Canonical brand with normalized `nameKey` | dedupes "J.Crew" / "JCREW" / "J Crew" |
 | `WishlistItem` | Standalone wishlist | priority, giftIdea, purchased flags. Photos saved under `<userId>/wishlist/` — files are EXIF-rotated + resized via sharp on upload (`/api/wishlist/route.ts`). |
 | `Notification` | In-app bell-icon notifications | title, body, href, read. POST validates `href` to same-origin paths or `https://` only — `javascript:` / `data:` / `http:` / `//foo` are dropped. |
@@ -164,7 +165,8 @@ The route uses the inflight-lock pattern; pass 3 runs after the cheap shrinks so
 | AI try-on shared compose helpers | `lib/ai/composeTryOn.ts` |
 | Try-on UI shell | `components/TryOnView.tsx` |
 | Today's suggestion (daily product pick) | `lib/ai/styleSuggestion.ts`, `lib/todaysSuggestion.ts`, `app/api/ai/style-suggestion/route.ts`, `components/TodaysSuggestionCard.tsx` |
-| Shop for this trip / collection | `lib/ai/collectionShop.ts` (Stage 1 specs), `lib/retailerSearch.ts` (Stage 2 retailer picker), `lib/ai/shopPipeline.ts` (orchestrator), `app/api/ai/collection-shop/route.ts`, `app/(app)/collections/CollectionShop.tsx` |
+| Shop for this trip / collection (AI suggestions) | `lib/ai/collectionShop.ts` (Stage 1 specs), `lib/retailerSearch.ts` (Stage 2 retailer picker), `lib/ai/shopPipeline.ts` (orchestrator), `app/api/ai/collection-shop/route.ts`, `app/(app)/collections/CollectionShop.tsx` |
+| Collection shopping list (paste product links → saved cards) | `app/(app)/collections/CollectionShopItems.tsx` (paste box + sequential per-link queue + cards — **controlled** component: items + setter lifted to parent so the AI shop panel can append to the same list), `app/api/collections/[id]/shop-items/route.ts` (POST one link → row, reusing `lookupWishlistProduct` + `saveRemoteImage`; also accepts a manual-fields shape so `CollectionShop`'s "+ Add to shopping list" lands here without a redundant page fetch), `app/api/collections/[id]/shop-items/[shopItemId]/route.ts` (PATCH purchased / DELETE), `lib/remoteImage.ts` (`saveRemoteImage` — SSRF-guarded download + sharp resize). Rendered both in `CollectionEditor` and on **Step 4 of `CollectionWizard`** so links can be added during creation, not only after. Adds/removes persist immediately (independent of the metadata "Save changes" button). |
 | Web product lookup (manual on item edit) | `lib/ai/productLookup.ts`, `app/api/ai/lookup-product/route.ts` |
 | Merge items (fold source photos onto a target, delete sources) | `app/api/items/[id]/merge/route.ts`, `app/(app)/wardrobe/[id]/ItemMerge.tsx` (single-target picker on the item edit page) and `app/(app)/wardrobe/ClosetGallery.tsx` (multi-select **⤵ Merge** chip in the closet's bulk-action bar). Folded photos default to `kind="pending"` so the user triages each one. |
 | Pending photo review (resolve `ItemPhoto.kind="pending"`) | `app/(app)/wardrobe/[id]/PendingPhotoReview.tsx`; PATCH `/api/items/[id]/photos/[photoId]` accepts `{ kind: "label" \| "angle" \| "pending" }`. |
@@ -191,7 +193,7 @@ The route uses the inflight-lock pattern; pass 3 runs after the cheap shrinks so
 | Dashboard | `app/(app)/page.tsx` |
 | App shell / desktop nav | `app/(app)/layout.tsx` |
 | Mobile bottom nav | `components/MobileNav.tsx` |
-| Collections wizard (create) | `app/(app)/collections/CollectionWizard.tsx` |
+| Collections wizard (create) | `app/(app)/collections/CollectionWizard.tsx`. Single flow regardless of how the user fills the collection: **Step 1** trip basics → **Step 2** activities → **Step 3** quantities → **Step 4 "Pack & shop"** which unifies (a) AI packing list + manual picker for owned closet pieces, (b) the paste-links shopping list, and (c) the AI shop-suggestion panel — all three saving onto the same draft `Collection` row created on entry to Step 4. The earlier "Build from closet" vs "Shop for new pieces" mode binary at Step 1 has been deleted; real trips combined both. The AI shop panel's "+ Add to shopping list" persists to `CollectionShopItem` (not the global wishlist) so all planning stays on one row. |
 | Collections editor (edit) | `app/(app)/collections/CollectionEditor.tsx` |
 | Reusable filtered item grid | `app/(app)/collections/ItemPicker.tsx` |
 | Outfit builder | `app/(app)/outfits/builder/OutfitBuilder.tsx` |
