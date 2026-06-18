@@ -13,27 +13,21 @@ import {
 } from "@/lib/packingTargets";
 import ItemPicker, { type Selectable } from "./ItemPicker";
 import CollectionShop from "./CollectionShop";
+import CollectionShopItems, { type ShopItem } from "./CollectionShopItems";
 import { useUnsavedChanges } from "@/lib/useUnsavedChanges";
 
 type Kind = "trip" | "general";
-type Mode = "closet" | "shop";
 type Step = 1 | 2 | 3 | 4;
 
-// Step labels depend on the chosen mode. Both modes share the first
-// three steps; only the final step diverges — closet mode pulls a
-// packing list from owned items, shop mode opens the AI shopping panel.
-const CLOSET_STEPS = [
+// The wizard always walks the same four steps regardless of how the
+// user wants to fill the collection. Picking from the closet, asking
+// the AI to suggest new pieces, and pasting product links all live
+// together on Step 4 — real trips combine all three.
+const STEPS = [
   { n: 1, label: "Trip" },
   { n: 2, label: "Activities" },
   { n: 3, label: "Quantities" },
-  { n: 4, label: "Packing list" },
-] as const;
-
-const SHOP_STEPS = [
-  { n: 1, label: "Trip" },
-  { n: 2, label: "Activities" },
-  { n: 3, label: "Quantities" },
-  { n: 4, label: "Shop" },
+  { n: 4, label: "Pack & shop" },
 ] as const;
 
 export default function CollectionWizard({
@@ -52,8 +46,9 @@ export default function CollectionWizard({
     return m;
   }, [items]);
 
-  // Step 1 — mode picks closet vs. shop and reshapes the rest of the wizard.
-  const [mode, setMode] = useState<Mode>("closet");
+  // Step 1 — trip basics. Kind decides whether the user gets the
+  // destination/dates pair or occasion/season; both flow into the
+  // same step 4.
   const [kind, setKind] = useState<Kind>("trip");
   const [destination, setDestination] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -103,12 +98,17 @@ export default function CollectionWizard({
         selected.size > 0),
   );
 
-  // Shop mode persists a draft collection on entering Step 3 so the
-  // shop API can read its destination/dates/activities. Stored here
-  // (instead of the URL) so the user can flip back to earlier steps,
-  // tweak metadata, and the same draft row gets re-used on PATCH.
-  const [shopDraftId, setShopDraftId] = useState<string | null>(null);
-  const [enteringShop, setEnteringShop] = useState(false);
+  // Step 4 ("Pack & shop") needs a real Collection row in the DB
+  // because both the AI shop panel and the paste-links list save against
+  // it directly. We create a draft on first entry to step 4 and PATCH
+  // the same row on every subsequent edit so going back to step 1 to
+  // tweak metadata doesn't spawn duplicates.
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [enteringStep4, setEnteringStep4] = useState(false);
+  // Lifted shop-items state — shared by the paste-links list and the
+  // AI shop panel so adding from either sub-section updates the other
+  // in real time.
+  const [shopItemsList, setShopItemsList] = useState<ShopItem[]>([]);
 
   // Auto-suggest a name from destination + dates so the user doesn't
   // have to think about it. Only overrides until they edit it once.
@@ -244,9 +244,11 @@ export default function CollectionWizard({
     });
   }
 
-  // Build the collection row payload shared by both modes' save calls.
-  // Shop mode skips itemIds since the user hasn't picked anything yet —
-  // the AI shopping panel just adds to the wishlist, not to the collection.
+  // Build the collection row payload. `withItems` toggles between the
+  // initial draft (no items yet — user hasn't reached the pieces step)
+  // and the final save (closet picks included). Shop ideas + paste-link
+  // products persist independently via /api/collections/[id]/shop-items
+  // and don't ride this payload.
   function buildPayload(opts: { withItems: boolean }) {
     return {
       kind,
@@ -262,22 +264,22 @@ export default function CollectionWizard({
     };
   }
 
-  // Persist current trip metadata so the shop API can read it. Creates
-  // the row on first call and PATCHes on subsequent calls (e.g. user
-  // edits dates/activities, comes back to the shop step). Keeps the
-  // user on the wizard so wishlist additions stay frictionless.
-  async function enterShopStep() {
+  // Persist trip metadata so step 4's AI shop panel + paste-links
+  // list can save against a real Collection row. Creates the draft on
+  // first entry; PATCHes the same row on subsequent visits if the user
+  // backs up to tweak metadata.
+  async function enterStep4() {
     if (!name.trim()) {
       setError("Give the collection a name first.");
       setStep(1);
       return;
     }
     setError(null);
-    setEnteringShop(true);
+    setEnteringStep4(true);
     try {
       const payload = buildPayload({ withItems: false });
-      const url = shopDraftId ? `/api/collections/${shopDraftId}` : "/api/collections";
-      const method = shopDraftId ? "PATCH" : "POST";
+      const url = draftId ? `/api/collections/${draftId}` : "/api/collections";
+      const method = draftId ? "PATCH" : "POST";
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
@@ -285,15 +287,15 @@ export default function CollectionWizard({
       });
       if (!res.ok) throw new Error(await res.text());
       const data = (await res.json()) as { collection?: { id: string } };
-      const id = data.collection?.id ?? shopDraftId;
+      const id = data.collection?.id ?? draftId;
       if (!id) throw new Error("No collection id returned");
-      setShopDraftId(id);
+      setDraftId(id);
       setStep(4);
     } catch (err) {
       console.error(err);
       setError("Couldn't save your trip details. Try again?");
     } finally {
-      setEnteringShop(false);
+      setEnteringStep4(false);
     }
   }
 
@@ -306,10 +308,10 @@ export default function CollectionWizard({
     setError(null);
     setBusy(true);
     try {
-      // If we already created a draft for shop-mode metadata, patch
-      // that row instead of creating a duplicate.
-      const url = shopDraftId ? `/api/collections/${shopDraftId}` : "/api/collections";
-      const method = shopDraftId ? "PATCH" : "POST";
+      // The draft was created on entering step 4 — final save just
+      // patches in the closet picks + any newly-edited metadata.
+      const url = draftId ? `/api/collections/${draftId}` : "/api/collections";
+      const method = draftId ? "PATCH" : "POST";
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
@@ -317,7 +319,7 @@ export default function CollectionWizard({
       });
       if (!res.ok) throw new Error(await res.text());
       const d = (await res.json()) as { collection?: { id: string } };
-      const id = d.collection?.id ?? shopDraftId;
+      const id = d.collection?.id ?? draftId;
       router.push(id ? `/collections/${id}` : "/collections");
       router.refresh();
     } catch (err) {
@@ -332,7 +334,10 @@ export default function CollectionWizard({
     .filter((it): it is Selectable => !!it);
   const categoriesCovered = new Set(selectedItems.map((it) => it.category)).size;
   const targetTotal = totalCount(targets);
-  const canSave = canAdvance1 && selectedItems.length > 0;
+  // The wizard now lets you save with just shop ideas or just paste-link
+  // products — closet picks aren't required. A collection with a name +
+  // dates is already a useful planning row even when it's empty.
+  const canSave = canAdvance1;
 
   // The Quantities step explains *why* each count was picked. These
   // tooltips live next to each row.
@@ -362,24 +367,11 @@ export default function CollectionWizard({
     <div className="space-y-5 pb-24">
       {/* Quick header so the user always knows what they're building. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Stepper step={step} mode={mode} onJump={(s) => s < step && setStep(s)} />
+        <Stepper step={step} onJump={(s) => s < step && setStep(s)} />
       </div>
 
       {step === 1 && (
         <div className="card space-y-4 p-4">
-          <div>
-            <span className="label">How should we build it?</span>
-            <div className="mt-1 flex flex-wrap gap-2">
-              <ModeToggle current={mode} value="closet" label="👗 Build from my closet" onPick={setMode} />
-              <ModeToggle current={mode} value="shop" label="🛍 Shop for new pieces" onPick={setMode} />
-            </div>
-            <p className="mt-1 text-xs text-stone-500">
-              {mode === "closet"
-                ? "AI assembles a packing list from pieces you already own."
-                : "AI searches the web for new pieces that fit your trip and your style — add favorites to your wishlist."}
-            </p>
-          </div>
-
           <div>
             <span className="label">What kind of collection?</span>
             <div className="mt-1 flex gap-2">
@@ -388,7 +380,7 @@ export default function CollectionWizard({
             </div>
             <p className="mt-1 text-xs text-stone-500">
               {kind === "trip"
-                ? "We'll ask for destination + dates and let AI work from those."
+                ? "We'll use the destination + dates to suggest a packing list and shopping ideas."
                 : "A themed bundle — date night, work week, weekend uniform — without trip details."}
             </p>
           </div>
@@ -612,80 +604,21 @@ export default function CollectionWizard({
             <button type="button" className="btn-ghost" onClick={() => setStep(2)}>
               ← Back
             </button>
-            {mode === "shop" ? (
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={enterShopStep}
-                disabled={enteringShop}
-              >
-                {enteringShop ? "Saving…" : "Next: Shop online"}
-              </button>
-            ) : (
-              <button type="button" className="btn-primary" onClick={() => setStep(4)}>
-                Next: Packing list
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {step === 4 && mode === "shop" && shopDraftId && (
-        <div className="space-y-4">
-          <div className="card p-3 text-xs text-stone-600">
-            <span className="font-medium text-stone-800">{name || "Untitled"}</span>
-            {kind === "trip" && (destination || nights != null) && (
-              <>
-                {" · "}
-                {destination || "?"}
-                {nights != null ? ` · ${nights} night${nights === 1 ? "" : "s"}` : ""}
-              </>
-            )}
-            {activities.length > 0 && (
-              <>
-                {" · "}
-                {activities.slice(0, 3).map(capitalize).join(", ")}
-                {activities.length > 3 ? "…" : ""}
-              </>
-            )}
-          </div>
-
-          <CollectionShop
-            collectionId={shopDraftId}
-            kind={kind}
-            destination={destination || null}
-            hasDates={!!startDate}
-            startDate={startDate || null}
-            endDate={endDate || null}
-            activities={activities}
-            targets={targets}
-          />
-
-          <div className="card flex flex-wrap items-center justify-between gap-2 p-3">
-            <button type="button" className="btn-ghost" onClick={() => setStep(3)}>
-              ← Back
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={enterStep4}
+              disabled={enteringStep4}
+            >
+              {enteringStep4 ? "Saving…" : "Next: Pack & shop"}
             </button>
-            <div className="flex items-center gap-2">
-              <Link href="/collections" className="btn-ghost text-stone-500">
-                Cancel
-              </Link>
-              <Link
-                href={`/collections/${shopDraftId}`}
-                className="btn-primary"
-                onClick={() => router.refresh()}
-              >
-                Done
-              </Link>
-            </div>
           </div>
-
-          {error && <p className="text-sm text-blush-700">{error}</p>}
         </div>
       )}
 
-      {step === 4 && mode === "closet" && (
+      {step === 4 && draftId && (
         <div className="space-y-4">
-          {/* Compact summary so the user knows what they're packing for. */}
+          {/* Compact summary so the user knows what they're planning for. */}
           <div className="card p-3 text-xs text-stone-600">
             <span className="font-medium text-stone-800">{name || "Untitled"}</span>
             {kind === "trip" && (destination || nights != null) && (
@@ -704,8 +637,8 @@ export default function CollectionWizard({
             )}
           </div>
 
-          {/* Action bar at the top so Save is reachable without scrolling
-              past the packing list. Mirrors the bottom bar's controls. */}
+          {/* Top action bar so Save is one tap away without scrolling
+              past every sub-section. Mirrors the sticky bottom bar. */}
           <div className="card flex flex-wrap items-center justify-between gap-2 p-3">
             <button type="button" className="btn-ghost" onClick={() => setStep(3)}>
               ← Back
@@ -719,19 +652,19 @@ export default function CollectionWizard({
                 className="btn-primary"
                 onClick={save}
                 disabled={busy || !canSave}
-                title={!canSave ? "Pick at least one piece" : undefined}
               >
                 {busy ? "Saving…" : "Save collection"}
               </button>
             </div>
           </div>
 
+          {/* Sub-section 1: closet packing list (AI + manual picker). */}
           <div className="card space-y-3 p-4">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <h2 className="font-display text-xl text-stone-800">Packing list</h2>
+                <h2 className="font-display text-xl text-stone-800">🧺 From your closet</h2>
                 <p className="text-sm text-stone-500">
-                  AI picks specific pieces from your closet to match the quantities you set.
+                  AI picks pieces you already own to match the quantities you set. Tap any tile to drop it.
                 </p>
               </div>
               <button
@@ -759,8 +692,8 @@ export default function CollectionWizard({
                 ))}
               </ul>
             ) : selectedItems.length === 0 ? (
-              <p className="px-2 py-6 text-center text-sm text-stone-500">
-                {generated ? "No items picked yet — try regenerating or add pieces manually." : "Tap Generate to start."}
+              <p className="rounded-2xl bg-stone-50 px-3 py-4 text-center text-sm text-stone-500">
+                {generated ? "No items picked yet — try regenerating or add pieces manually below." : "Tap Generate to pull pieces from your closet — or add manually below."}
               </p>
             ) : (
               <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
@@ -802,13 +735,39 @@ export default function CollectionWizard({
                 {pickerOpen ? "Hide manual picker" : "+ Add more pieces"}
               </button>
             </div>
+
+            {pickerOpen && (
+              <div className="rounded-2xl bg-stone-50 p-3">
+                <ItemPicker items={items} selected={selected} onToggle={toggleItem} />
+              </div>
+            )}
           </div>
 
-          {pickerOpen && (
-            <div className="card p-3">
-              <ItemPicker items={items} selected={selected} onToggle={toggleItem} />
-            </div>
-          )}
+          {/* Sub-section 2: paste product links (Amazon, Madewell, etc).
+              Adds + removes persist immediately to
+              /api/collections/[id]/shop-items. State is lifted here so
+              the AI shop panel below can append to the same list. */}
+          <CollectionShopItems
+            collectionId={draftId}
+            items={shopItemsList}
+            setItems={setShopItemsList}
+          />
+
+          {/* Sub-section 3: AI-driven "what should I buy" suggestions.
+              The onItemAdded callback feeds the same lifted state, so
+              tapping "+ Add to shopping list" makes the card appear in
+              the paste-links list immediately. */}
+          <CollectionShop
+            collectionId={draftId}
+            kind={kind}
+            destination={destination || null}
+            hasDates={!!startDate}
+            startDate={startDate || null}
+            endDate={endDate || null}
+            activities={activities}
+            targets={targets}
+            onItemAdded={(item) => setShopItemsList((prev) => [item, ...prev])}
+          />
 
           <div className="card p-4">
             <label className="label">Trip notes (optional)</label>
@@ -825,9 +784,9 @@ export default function CollectionWizard({
       )}
 
       {/* Sticky bottom action bar so Save stays one tap away once the
-          user has scrolled past the top action row into the packing
-          list. Mirrors the controls at the top of step 4. */}
-      {step === 4 && mode === "closet" && (
+          user has scrolled into the packing/shop sections. Mirrors the
+          controls at the top of step 4. */}
+      {step === 4 && draftId && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200 bg-white/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-white/80">
           <div className="mx-auto flex max-w-2xl items-center justify-between gap-2">
             <button type="button" className="btn-ghost" onClick={() => setStep(3)}>
@@ -842,7 +801,6 @@ export default function CollectionWizard({
                 className="btn-primary"
                 onClick={save}
                 disabled={busy || !canSave}
-                title={!canSave ? "Pick at least one piece" : undefined}
               >
                 {busy ? "Saving…" : "Save collection"}
               </button>
@@ -856,14 +814,12 @@ export default function CollectionWizard({
 
 function Stepper({
   step,
-  mode,
   onJump,
 }: {
   step: Step;
-  mode: Mode;
   onJump: (s: Step) => void;
 }) {
-  const steps = mode === "shop" ? SHOP_STEPS : CLOSET_STEPS;
+  const steps = STEPS;
   return (
     <ol className="flex flex-1 items-center gap-2 text-xs">
       {steps.map((s, idx) => {
@@ -891,33 +847,6 @@ function Stepper({
         );
       })}
     </ol>
-  );
-}
-
-function ModeToggle({
-  current,
-  value,
-  label,
-  onPick,
-}: {
-  current: Mode;
-  value: Mode;
-  label: string;
-  onPick: (m: Mode) => void;
-}) {
-  const on = current === value;
-  return (
-    <button
-      type="button"
-      onClick={() => onPick(value)}
-      className={cn(
-        "rounded-full border px-3 py-1.5 text-sm transition",
-        on ? "border-blush-500 bg-blush-50 text-blush-800" : "border-stone-200 text-stone-600 hover:border-stone-300",
-      )}
-      aria-pressed={on}
-    >
-      {label}
-    </button>
   );
 }
 

@@ -38,34 +38,64 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!collection) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = await req.json().catch(() => ({} as Record<string, unknown>));
-  const link = typeof body.link === "string" ? body.link.trim() : "";
-  if (!link) {
-    return NextResponse.json({ error: "Paste a product link." }, { status: 400 });
-  }
-  if (!looksLikeUrl(link)) {
-    return NextResponse.json(
-      { error: "That doesn't look like a link. Paste the full product URL (e.g. https://…)." },
-      { status: 400 },
-    );
+
+  // Two ways to add a shop item:
+  //   1. `link` only — fetch the product page via lookupWishlistProduct
+  //      (Open Graph / JSON-LD direct first, Gemini grounded-search
+  //      fallback for sites that block scraping). The user-pasted-link
+  //      path.
+  //   2. Explicit `name` (+ optional brand/category/color/price/link/
+  //      imageUrl/notes) — skip the fetch and store as-is. Used by the
+  //      "Save to collection" button on the AI shop suggestions panel,
+  //      where Gemini already produced all the structured fields and
+  //      hitting the page again would be wasteful (and the link is
+  //      typically a Google site-search URL, not a real product page).
+  const linkRaw = typeof body.link === "string" ? body.link.trim() : "";
+  const manualName = typeof body.name === "string" ? body.name.trim() : "";
+
+  let s: WishlistLookupSuggestion;
+  let imageUrl: string | undefined;
+  let canonicalLink: string;
+
+  if (manualName) {
+    s = {
+      name: manualName,
+      brand: pickString(body.brand),
+      category: pickString(body.category),
+      color: pickString(body.color),
+      price: pickString(body.price),
+      link: linkRaw || undefined,
+      description: pickString(body.notes),
+      source: linkRaw ? hostOf(linkRaw) : undefined,
+    };
+    imageUrl = pickString(body.imageUrl);
+    canonicalLink = linkRaw;
+  } else {
+    if (!linkRaw) {
+      return NextResponse.json({ error: "Paste a product link." }, { status: 400 });
+    }
+    if (!looksLikeUrl(linkRaw)) {
+      return NextResponse.json(
+        { error: "That doesn't look like a link. Paste the full product URL (e.g. https://…)." },
+        { status: 400 },
+      );
+    }
+    const resolved = await resolveProduct(linkRaw);
+    if (!resolved) {
+      return NextResponse.json(
+        {
+          error:
+            "Couldn't pull that product. The site may block automated reads — try the brand's own product page, or add it manually.",
+        },
+        { status: 502 },
+      );
+    }
+    s = resolved;
+    imageUrl = s.imageUrl;
+    canonicalLink = linkRaw;
   }
 
-  // When AI is configured, reuse the full wishlist lookup pipeline:
-  // direct Open Graph / JSON-LD fetch first (fast, no AI), then a Gemini
-  // grounded-search fallback for sites that block scraping, plus a
-  // category/color classification step. When AI is OFF, fall back to a
-  // bare direct fetch so most retailers still work (just without the
-  // AI-inferred category/color) — matches the app's AI-optional posture.
-  const s = await resolveProduct(link);
-  if (!s) {
-    return NextResponse.json(
-      {
-        error:
-          "Couldn't pull that product. The site may block automated reads — try the brand's own product page, or add it manually.",
-      },
-      { status: 502 },
-    );
-  }
-  const source = s.source ?? hostOf(s.link ?? link);
+  const source = s.source ?? hostOf(s.link ?? canonicalLink);
   const name = (s.name?.trim() || fallbackName(source)).slice(0, 120);
 
   const created = await prisma.collectionShopItem.create({
@@ -76,22 +106,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       category: s.category?.slice(0, 60) ?? null,
       color: s.color?.slice(0, 40) ?? null,
       price: s.price?.slice(0, 60) ?? null,
-      link: (s.link ?? link).slice(0, 2000),
+      link: (s.link ?? canonicalLink).slice(0, 2000),
       source: source?.slice(0, 120) ?? null,
       notes: s.description?.slice(0, 600) ?? null,
     },
   });
 
-  // Best-effort product thumbnail — only the direct-fetch path supplies
-  // an image URL. Any failure leaves imagePath null and the card renders
-  // a placeholder.
+  // Best-effort product thumbnail — direct-fetch and AI-save both
+  // provide an image URL when one's available. Any failure leaves
+  // imagePath null and the card renders a placeholder.
   let imagePath: string | null = null;
-  if (s.imageUrl) {
+  if (imageUrl) {
     imagePath = await saveRemoteImage({
       userId,
       subdir: "collection-shop",
       basename: `${created.id}-img`,
-      imageUrl: s.imageUrl,
+      imageUrl,
     });
     if (imagePath) {
       await prisma.collectionShopItem.update({ where: { id: created.id }, data: { imagePath } });
@@ -138,4 +168,12 @@ function hostOf(url: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+// Narrow an `unknown` request-body field to a non-empty trimmed string,
+// or undefined. Keeps the POST handler's branching readable.
+function pickString(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const t = v.trim();
+  return t || undefined;
 }

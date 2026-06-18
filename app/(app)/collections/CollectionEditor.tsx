@@ -63,6 +63,11 @@ export default function CollectionEditor({
   const [activityDraft, setActivityDraft] = useState("");
 
   const [selected, setSelected] = useState<Set<string>>(new Set(collection.itemIds));
+  // Lifted shop-items state so the AI shop panel and the paste-links
+  // list share one source of truth. Adds/removes still persist
+  // server-side via /api/collections/[id]/shop-items; this is purely
+  // the in-memory mirror.
+  const [shopItemsList, setShopItemsList] = useState(shopItems);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -367,7 +372,11 @@ export default function CollectionEditor({
         </div>
       </section>
 
-      <CollectionShopItems collectionId={collection.id} initialItems={shopItems} />
+      <CollectionShopItems
+        collectionId={collection.id}
+        items={shopItemsList}
+        setItems={setShopItemsList}
+      />
 
       <CollectionShop
         collectionId={collection.id}
@@ -377,6 +386,7 @@ export default function CollectionEditor({
         startDate={startDate || null}
         endDate={endDate || null}
         activities={activities}
+        onItemAdded={(item) => setShopItemsList((prev) => [item, ...prev])}
       />
 
       {error && <p className="text-sm text-blush-700">{error}</p>}

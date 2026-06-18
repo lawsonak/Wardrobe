@@ -25,6 +25,11 @@ export type CollectionRow = {
   startDateLabel: string | null;
   endDateLabel: string | null;
   itemCount: number;
+  /** Count of CollectionShopItem rows — products on the shopping list
+   *  the user is "considering" for this collection. Surfaced in the
+   *  subtitle so a trip planned entirely with shopping links doesn't
+   *  look empty on the list. */
+  shopItemCount: number;
   items: CollectionItem[];
 };
 
@@ -92,9 +97,19 @@ export default function CollectionCard({ collection }: { collection: CollectionR
       {itemCount === 0 ? (
         <Link
           href={`/collections/${collection.id}`}
-          className="tile-bg flex aspect-[3/2] items-center justify-center text-sm text-stone-400"
+          className="tile-bg flex aspect-[3/2] flex-col items-center justify-center gap-1 text-sm text-stone-400"
         >
-          empty — open to add pieces
+          {collection.shopItemCount > 0 ? (
+            <>
+              <span className="text-2xl" aria-hidden>🛍</span>
+              <span>
+                {collection.shopItemCount} shop item
+                {collection.shopItemCount === 1 ? "" : "s"} — open to view
+              </span>
+            </>
+          ) : (
+            "empty — open to add pieces"
+          )}
         </Link>
       ) : (
         <div
@@ -135,6 +150,12 @@ export default function CollectionCard({ collection }: { collection: CollectionR
             {subtitle || "—"}
             <span className="text-stone-300"> · </span>
             {collection.itemCount} piece{collection.itemCount === 1 ? "" : "s"}
+            {collection.shopItemCount > 0 && (
+              <>
+                <span className="text-stone-300"> · </span>
+                🛍 {collection.shopItemCount} to shop
+              </>
+            )}
           </p>
         </Link>
         <button

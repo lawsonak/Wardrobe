@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import { useRouter } from "next/navigation";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
@@ -36,15 +36,25 @@ type QueueRow = {
 // the owned-closet pieces and the global wishlist. Adds + removes persist
 // immediately via their own API calls, so this section is independent of
 // the collection's "Save changes" button.
+//
+// Controlled by the parent: the items array + setter live one level up
+// (CollectionEditor or CollectionWizard) so siblings — like the AI shop
+// panel — can append to the same list when their "+ Add" button fires.
+// Without the lift, the AI panel would save successfully but the new
+// row wouldn't appear here until a full page reload. The setter is a
+// React.Dispatch (not a wrapped callback) so functional updaters like
+// `setItems(prev => [...prev, x])` see the latest state across the
+// sequential pasted-link loop.
 export default function CollectionShopItems({
   collectionId,
-  initialItems,
+  items,
+  setItems,
 }: {
   collectionId: string;
-  initialItems: ShopItem[];
+  items: ShopItem[];
+  setItems: Dispatch<SetStateAction<ShopItem[]>>;
 }) {
   const router = useRouter();
-  const [items, setItems] = useState<ShopItem[]>(initialItems);
   const [draft, setDraft] = useState("");
   const [queue, setQueue] = useState<QueueRow[]>([]);
   const [busy, setBusy] = useState(false);
