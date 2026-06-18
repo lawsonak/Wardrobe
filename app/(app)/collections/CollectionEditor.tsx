@@ -68,6 +68,13 @@ export default function CollectionEditor({
   // server-side via /api/collections/[id]/shop-items; this is purely
   // the in-memory mirror.
   const [shopItemsList, setShopItemsList] = useState(shopItems);
+  // Opening a saved collection should feel like *viewing* a trip, not
+  // landing on a search page. Both heavy edit surfaces — the metadata
+  // form and the closet-wide ItemPicker — collapse by default, so the
+  // user sees a clean "here's my Lisbon trip" overview. Tapping either
+  // toggle flips back to the editing affordances.
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -237,12 +244,53 @@ export default function CollectionEditor({
     router.refresh();
   }
 
+  // Collapsed default view: show the activity chips as small read-only
+  // badges (no toggle behaviour) plus an "Edit details" affordance.
+  // Destination, dates, and name already render in the page header
+  // above this component, so the user always sees their trip basics.
+  const collapsedSummary = (
+    <div className="card flex flex-wrap items-center justify-between gap-2 p-3">
+      <div className="flex flex-wrap items-center gap-1.5 text-xs text-stone-600">
+        {activities.length > 0 ? (
+          activities.map((a) => (
+            <span
+              key={a}
+              className="rounded-full bg-cream-50 px-2 py-0.5 text-stone-700"
+            >
+              {capitalize(a)}
+            </span>
+          ))
+        ) : (
+          <span className="text-stone-400">No activities set</span>
+        )}
+      </div>
+      <button
+        type="button"
+        className="btn-ghost text-xs text-blush-600"
+        onClick={() => setDetailsOpen(true)}
+      >
+        ✏️ Edit details
+      </button>
+    </div>
+  );
+
   return (
     <div className="space-y-5">
+      {!detailsOpen && collapsedSummary}
+      {detailsOpen && (
       <div className="card space-y-3 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <KindToggle current={kind} value="trip" label="✈️ Trip" onPick={setKind} />
-          <KindToggle current={kind} value="general" label="🧺 General set" onPick={setKind} />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <KindToggle current={kind} value="trip" label="✈️ Trip" onPick={setKind} />
+            <KindToggle current={kind} value="general" label="🧺 General set" onPick={setKind} />
+          </div>
+          <button
+            type="button"
+            className="btn-ghost text-xs text-stone-500"
+            onClick={() => setDetailsOpen(false)}
+          >
+            ✕ Done editing
+          </button>
         </div>
 
         <div>
@@ -343,6 +391,7 @@ export default function CollectionEditor({
 
         {aiHint && <p className="text-xs text-stone-500">{aiHint}</p>}
       </div>
+      )}
 
       <section>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -367,8 +416,68 @@ export default function CollectionEditor({
           <p className="mb-2 rounded-2xl bg-blush-50 px-3 py-2 text-sm text-blush-800">💡 {packingNotes}</p>
         )}
 
-        <div className="card p-3">
-          <ItemPicker items={items} selected={selected} onToggle={toggle} />
+        {/* Default view: just the picked items, with per-tile ✕ to drop
+            one. The full closet picker only appears when the user taps
+            "+ Add or remove pieces" — opening a saved trip shouldn't
+            land you in a wardrobe-wide search by default. Matches the
+            wizard's pickerOpen pattern. */}
+        <div className="card space-y-3 p-3">
+          {selected.size === 0 ? (
+            <p className="px-2 py-4 text-center text-sm text-stone-500">
+              No pieces yet.{" "}
+              <button
+                type="button"
+                onClick={() => setPickerOpen(true)}
+                className="text-blush-600 hover:underline"
+              >
+                Add some from your closet.
+              </button>
+            </p>
+          ) : (
+            <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
+              {items
+                .filter((it) => selected.has(it.id))
+                .map((it) => {
+                  const src = it.imageBgRemovedPath
+                    ? `/api/uploads/${it.imageBgRemovedPath}`
+                    : `/api/uploads/${it.imagePath}`;
+                  return (
+                    <li key={it.id}>
+                      <button
+                        type="button"
+                        onClick={() => toggle(it.id)}
+                        className="tile-bg group relative block aspect-square w-full overflow-hidden rounded-2xl ring-1 ring-stone-100"
+                        title="Remove from this collection"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={src}
+                          alt={it.subType ?? it.category}
+                          className="h-full w-full object-contain p-2"
+                        />
+                        <span className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-stone-800/80 text-xs font-semibold text-white opacity-0 transition group-hover:opacity-100">
+                          ×
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+            </ul>
+          )}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              className="btn-ghost text-xs text-blush-600"
+              onClick={() => setPickerOpen((v) => !v)}
+            >
+              {pickerOpen ? "Hide picker" : "+ Add or remove pieces"}
+            </button>
+          </div>
+          {pickerOpen && (
+            <div className="rounded-2xl bg-stone-50 p-3">
+              <ItemPicker items={items} selected={selected} onToggle={toggle} />
+            </div>
+          )}
         </div>
       </section>
 
