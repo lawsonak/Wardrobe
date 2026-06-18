@@ -67,17 +67,24 @@ export default function CollectionShopItems({
   const [draft, setDraft] = useState("");
   const [queue, setQueue] = useState<QueueRow[]>([]);
   const [busy, setBusy] = useState(false);
+  const [creatingFromPhoto, setCreatingFromPhoto] = useState(false);
   // Per-item progress flags. tryOnBusy: which item ids are mid-Gemini.
   // photoBusy: which item ids are mid-upload. showProduct: which item
   // ids the user has flipped back to the original product photo (we
   // default to showing the try-on when one exists, since the user
-  // just generated it).
+  // just generated it). linkEditing: which item ids are currently
+  // showing the inline "add link" input.
   const [tryOnBusy, setTryOnBusy] = useState<Set<string>>(new Set());
   const [photoBusy, setPhotoBusy] = useState<Set<string>>(new Set());
   const [showProduct, setShowProduct] = useState<Set<string>>(new Set());
+  const [linkEditing, setLinkEditing] = useState<Map<string, string>>(new Map());
+  const [linkSaving, setLinkSaving] = useState<Set<string>>(new Set());
   // One hidden file input per card — keyed by item id at click time
   // so we can route the change event back to the right item.
   const fileInputs = useRef<Map<string, HTMLInputElement>>(new Map());
+  // Single hidden input for the "📷 Add by photo" create button, in
+  // contrast to the per-card replace inputs above.
+  const createPhotoInput = useRef<HTMLInputElement | null>(null);
 
   async function pullOne(link: string): Promise<{ ok: boolean; error?: string }> {
     try {
@@ -290,6 +297,92 @@ export default function CollectionShopItems({
     }
   }
 
+  // Create a NEW shop item from a photo (rather than replacing an
+  // existing card's photo). Server's POST route is content-type
+  // dispatched — multipart with `image` means "create from photo,
+  // auto-detect, no link". Same Gemini detection call as photo-replace,
+  // but its per-detection TagSuggestion also fills in category / color
+  // / brand on the new row.
+  async function createFromPhoto(file: File) {
+    setCreatingFromPhoto(true);
+    try {
+      const fd = new FormData();
+      fd.append("image", file);
+      const res = await fetch(`/api/collections/${collectionId}/shop-items`, {
+        method: "POST",
+        body: fd,
+      });
+      const data = (await res.json()) as {
+        item?: ShopItem;
+        detectionUsed?: boolean;
+        error?: string;
+      };
+      if (!res.ok || !data.item) {
+        toast(data.error || "Couldn't save that photo", "error");
+        return;
+      }
+      setItems((prev) => [data.item as ShopItem, ...prev]);
+      haptic("success");
+      toast(
+        data.detectionUsed
+          ? "Saved — AI cropped to the garment and pre-filled the details."
+          : "Saved — add a name and link when you have them.",
+      );
+      router.refresh();
+    } catch {
+      toast("Couldn't reach the server", "error");
+    } finally {
+      setCreatingFromPhoto(false);
+    }
+  }
+
+  function pickCreatePhoto() {
+    createPhotoInput.current?.click();
+  }
+
+  // Inline link editing. Opens a small input under the card's action
+  // row; Save → PATCH with { link }; Cancel just closes.
+  function startEditLink(item: ShopItem) {
+    setLinkEditing((prev) => new Map(prev).set(item.id, item.link ?? ""));
+  }
+  function cancelEditLink(itemId: string) {
+    setLinkEditing((prev) => {
+      const next = new Map(prev);
+      next.delete(itemId);
+      return next;
+    });
+  }
+  async function saveLink(item: ShopItem) {
+    const draft = linkEditing.get(item.id) ?? "";
+    setLinkSaving((prev) => new Set(prev).add(item.id));
+    try {
+      const res = await fetch(
+        `/api/collections/${collectionId}/shop-items/${item.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ link: draft }),
+        },
+      );
+      const data = (await res.json()) as { item?: ShopItem; error?: string };
+      if (!res.ok || !data.item) {
+        toast(data.error || "Couldn't save that link", "error");
+        return;
+      }
+      setItems((prev) => prev.map((i) => (i.id === item.id ? (data.item as ShopItem) : i)));
+      cancelEditLink(item.id);
+      haptic("selection");
+    } catch {
+      toast("Couldn't reach the server", "error");
+    } finally {
+      setLinkSaving((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  }
+
   function toggleImage(item: ShopItem) {
     if (!item.tryOnImagePath) return;
     setShowProduct((prev) => {
@@ -307,8 +400,8 @@ export default function CollectionShopItems({
       <div>
         <h2 className="font-display text-xl text-stone-800">🛍 Shopping list</h2>
         <p className="text-sm text-stone-500">
-          Paste product links (Amazon, Madewell, Sephora, …) — one per line — and we&apos;ll pull
-          the name, price, and photo so you can track what you&apos;re considering for this collection.
+          Track what you&apos;re considering for this collection — paste product links from
+          anywhere, or upload a photo of a piece you saw and the AI will identify it.
         </p>
       </div>
 
@@ -318,17 +411,45 @@ export default function CollectionShopItems({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder={"https://www.madewell.com/...\nhttps://www.amazon.com/dp/..."}
-          disabled={busy}
+          disabled={busy || creatingFromPhoto}
         />
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" className="btn-primary" onClick={pullAll} disabled={busy}>
-            {busy ? "Pulling…" : "Pull items"}
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={pullAll}
+            disabled={busy || creatingFromPhoto}
+          >
+            {busy ? "Pulling…" : "Pull from links"}
           </button>
-          <p className="text-xs text-stone-500">
-            Most retailers work instantly. Some (Amazon especially) may need a second or fall back
-            to AI lookup.
-          </p>
+          <span className="text-xs text-stone-400">or</span>
+          {/* Photo-only create path. The hidden input fires once and
+              clears its own value so re-picking the same file works. */}
+          <input
+            ref={createPhotoInput}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) createFromPhoto(f);
+              e.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={pickCreatePhoto}
+            disabled={busy || creatingFromPhoto}
+          >
+            {creatingFromPhoto ? "Saving…" : "📷 Add by photo"}
+          </button>
         </div>
+        <p className="text-xs text-stone-500">
+          Paste product URLs (one per line) or upload a photo of something you saw — Amazon
+          screenshot, Pinterest pin, anything. AI fills in what it can; you can add the link
+          later from the card.
+        </p>
       </div>
 
       {activeQueue.length > 0 && (
@@ -454,7 +575,7 @@ export default function CollectionShopItems({
                   </p>
 
                   <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 text-xs">
-                    {item.link && (
+                    {item.link ? (
                       <a
                         href={item.link}
                         target="_blank"
@@ -464,6 +585,19 @@ export default function CollectionShopItems({
                       >
                         View ↗
                       </a>
+                    ) : (
+                      // Photo-only card has no link yet; offer to add
+                      // one. Clicking flips this row into the inline
+                      // editor below.
+                      !linkEditing.has(item.id) && (
+                        <button
+                          type="button"
+                          onClick={() => startEditLink(item)}
+                          className="text-blush-600 hover:underline"
+                        >
+                          + Add link
+                        </button>
+                      )
                     )}
                     <button
                       type="button"
@@ -510,6 +644,45 @@ export default function CollectionShopItems({
                       Remove
                     </button>
                   </div>
+
+                  {linkEditing.has(item.id) && (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        saveLink(item);
+                      }}
+                      className="mt-2 flex items-center gap-1.5"
+                    >
+                      <input
+                        type="url"
+                        autoFocus
+                        value={linkEditing.get(item.id) ?? ""}
+                        onChange={(e) =>
+                          setLinkEditing((prev) =>
+                            new Map(prev).set(item.id, e.target.value),
+                          )
+                        }
+                        placeholder="https://…"
+                        className="input flex-1 text-xs"
+                        disabled={linkSaving.has(item.id)}
+                      />
+                      <button
+                        type="submit"
+                        className="btn-primary text-xs"
+                        disabled={linkSaving.has(item.id)}
+                      >
+                        {linkSaving.has(item.id) ? "…" : "Save"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => cancelEditLink(item.id)}
+                        disabled={linkSaving.has(item.id)}
+                        className="btn-ghost text-xs text-stone-500"
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                  )}
                 </div>
               </li>
             );
