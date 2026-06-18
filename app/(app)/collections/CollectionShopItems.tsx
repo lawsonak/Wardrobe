@@ -1,0 +1,275 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { confirmDialog } from "@/components/ConfirmDialog";
+import { toast } from "@/lib/toast";
+import { haptic } from "@/lib/haptics";
+
+export type ShopItem = {
+  id: string;
+  name: string;
+  brand: string | null;
+  category: string | null;
+  color: string | null;
+  price: string | null;
+  link: string | null;
+  imagePath: string | null;
+  source: string | null;
+  notes: string | null;
+  purchased: boolean;
+};
+
+// One pasted link's progress through the import pipeline. Mirrors the
+// bulk-upload queue: links are processed sequentially (one request each)
+// so each server call stays short and the user watches them resolve.
+type QueueRow = {
+  link: string;
+  state: "pending" | "working" | "done" | "error";
+  error?: string;
+};
+
+// A collection's shopping list: paste product links and the server pulls
+// the name / brand / price / image off each page (Open Graph + JSON-LD,
+// with a Gemini grounded-search fallback for sites that block scraping —
+// e.g. Amazon). Saved cards live on the collection, separate from both
+// the owned-closet pieces and the global wishlist. Adds + removes persist
+// immediately via their own API calls, so this section is independent of
+// the collection's "Save changes" button.
+export default function CollectionShopItems({
+  collectionId,
+  initialItems,
+}: {
+  collectionId: string;
+  initialItems: ShopItem[];
+}) {
+  const router = useRouter();
+  const [items, setItems] = useState<ShopItem[]>(initialItems);
+  const [draft, setDraft] = useState("");
+  const [queue, setQueue] = useState<QueueRow[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  async function pullOne(link: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const res = await fetch(`/api/collections/${collectionId}/shop-items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ link }),
+      });
+      const data = (await res.json()) as { item?: ShopItem; error?: string };
+      if (!res.ok || !data.item) {
+        return { ok: false, error: data.error || `Couldn't pull that link (HTTP ${res.status}).` };
+      }
+      setItems((prev) => [data.item as ShopItem, ...prev]);
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Couldn't reach the server." };
+    }
+  }
+
+  async function pullAll() {
+    // De-dupe and clean the pasted lines. One link per line.
+    const links = Array.from(
+      new Set(
+        draft
+          .split(/[\n\r]+/)
+          .map((l) => l.trim())
+          .filter(Boolean),
+      ),
+    );
+    if (links.length === 0) {
+      toast("Paste at least one product link.", "error");
+      return;
+    }
+
+    setBusy(true);
+    setQueue(links.map((link) => ({ link, state: "pending" })));
+    let okCount = 0;
+    const failedLinks: string[] = [];
+    for (let i = 0; i < links.length; i++) {
+      setQueue((prev) => prev.map((r, idx) => (idx === i ? { ...r, state: "working" } : r)));
+      const result = await pullOne(links[i]);
+      setQueue((prev) =>
+        prev.map((r, idx) =>
+          idx === i
+            ? { ...r, state: result.ok ? "done" : "error", error: result.error }
+            : r,
+        ),
+      );
+      if (result.ok) okCount++;
+      else failedLinks.push(links[i]);
+    }
+    setBusy(false);
+    haptic(okCount > 0 ? "success" : "warning");
+    // Re-seed the textarea with only the links that failed so the user
+    // can fix and retry just those; clears entirely when all succeeded.
+    setDraft(failedLinks.join("\n"));
+    if (okCount > 0) {
+      toast(`Pulled ${okCount} item${okCount === 1 ? "" : "s"}`);
+      router.refresh();
+    }
+  }
+
+  async function remove(item: ShopItem) {
+    const ok = await confirmDialog({
+      title: "Remove this item?",
+      body: `"${item.name}" comes off this collection's shopping list.`,
+      confirmText: "Remove",
+      destructive: true,
+    });
+    if (!ok) return;
+    setItems((prev) => prev.filter((i) => i.id !== item.id));
+    try {
+      const res = await fetch(`/api/collections/${collectionId}/shop-items/${item.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      haptic("impact");
+    } catch {
+      // Restore on failure.
+      setItems((prev) => [item, ...prev]);
+      toast("Couldn't remove that item", "error");
+    }
+  }
+
+  async function togglePurchased(item: ShopItem) {
+    const next = !item.purchased;
+    setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, purchased: next } : i)));
+    try {
+      const res = await fetch(`/api/collections/${collectionId}/shop-items/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ purchased: next }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    } catch {
+      setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, purchased: !next } : i)));
+      toast("Couldn't update that item", "error");
+    }
+  }
+
+  const activeQueue = queue.filter((r) => r.state !== "done");
+
+  return (
+    <section className="card space-y-3 p-4">
+      <div>
+        <h2 className="font-display text-xl text-stone-800">🛍 Shopping list</h2>
+        <p className="text-sm text-stone-500">
+          Paste product links (Amazon, Madewell, Sephora, …) — one per line — and we&apos;ll pull
+          the name, price, and photo so you can track what you&apos;re considering for this collection.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <textarea
+          className="input min-h-[72px] font-mono text-xs"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={"https://www.madewell.com/...\nhttps://www.amazon.com/dp/..."}
+          disabled={busy}
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className="btn-primary" onClick={pullAll} disabled={busy}>
+            {busy ? "Pulling…" : "Pull items"}
+          </button>
+          <p className="text-xs text-stone-500">
+            Most retailers work instantly. Some (Amazon especially) may need a second or fall back
+            to AI lookup.
+          </p>
+        </div>
+      </div>
+
+      {activeQueue.length > 0 && (
+        <ul className="space-y-1 text-xs">
+          {activeQueue.map((r, idx) => (
+            <li
+              key={`${r.link}-${idx}`}
+              className="flex items-center gap-2 rounded-xl bg-stone-50 px-3 py-1.5"
+            >
+              <span className="shrink-0">
+                {r.state === "working" ? "⏳" : r.state === "error" ? "⚠️" : "•"}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-stone-600">{r.link}</span>
+              {r.state === "error" && (
+                <span className="shrink-0 text-blush-700">{r.error ?? "Failed"}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {items.length === 0 ? (
+        <p className="rounded-2xl bg-cream-50 px-3 py-3 text-sm text-stone-500">
+          No saved products yet. Paste a link above to start a shopping list for this collection.
+        </p>
+      ) : (
+        <ul className="grid gap-3 sm:grid-cols-2">
+          {items.map((item) => (
+            <li
+              key={item.id}
+              className={
+                "card flex gap-3 p-3 transition " + (item.purchased ? "opacity-60" : "")
+              }
+            >
+              <div className="tile-bg flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl ring-1 ring-stone-100">
+                {item.imagePath ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={`/api/uploads/${item.imagePath}`}
+                    alt={item.name}
+                    className="h-full w-full object-contain p-1"
+                  />
+                ) : (
+                  <span className="text-2xl text-stone-300">🛍</span>
+                )}
+              </div>
+
+              <div className="flex min-w-0 flex-1 flex-col">
+                <p
+                  className={
+                    "text-sm font-medium text-stone-800 " +
+                    (item.purchased ? "line-through" : "")
+                  }
+                >
+                  {item.name}
+                </p>
+                <p className="truncate text-[11px] uppercase tracking-wide text-stone-400">
+                  {[item.brand, item.category, item.color, item.price].filter(Boolean).join(" · ")}
+                </p>
+
+                <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 text-xs">
+                  {item.link && (
+                    <a
+                      href={item.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blush-600 hover:underline"
+                      title={item.source ?? item.link}
+                    >
+                      View ↗
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => togglePurchased(item)}
+                    className="text-stone-500 hover:text-stone-800"
+                  >
+                    {item.purchased ? "↺ Mark unbought" : "✓ Bought"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => remove(item)}
+                    className="ml-auto text-stone-400 hover:text-blush-700"
+                    aria-label={`Remove ${item.name}`}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}

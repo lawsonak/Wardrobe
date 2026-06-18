@@ -35,6 +35,14 @@ export type WishlistLookupSuggestion = {
   link?: string;
   price?: string;
   description?: string;
+  /** Remote product image URL (og:image / JSON-LD). Only populated on
+   *  the direct-fetch path — the grounded-search fallback can't reliably
+   *  pin an image to the right product, so it's left undefined there.
+   *  Callers that want a thumbnail download it themselves. */
+  imageUrl?: string;
+  /** Hostname the product was extracted from, lowercase. Direct-fetch
+   *  path only. */
+  source?: string;
 };
 
 export type WishlistLookupDebug = {
@@ -140,6 +148,8 @@ export async function lookupWishlistProduct(
         description: direct.meta.description,
         category: classified.category,
         color: classified.color,
+        imageUrl: direct.meta.imageUrl,
+        source: direct.meta.source,
       };
       // Prune empty fields so the form-side "only fill empties" guard
       // doesn't see lots of empty strings.

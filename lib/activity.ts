@@ -42,6 +42,7 @@ export type ActivityKind =
   | "collection.create"
   | "collection.update"
   | "collection.delete"
+  | "collection.shopitem.add"
   // Wishlist
   | "wishlist.create"
   | "wishlist.update"

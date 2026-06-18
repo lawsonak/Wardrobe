@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import CollectionEditor, { type CollectionData } from "../CollectionEditor";
 import type { Selectable } from "../ItemPicker";
+import type { ShopItem } from "../CollectionShopItems";
 import { readBackroomParam } from "@/lib/backroom";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +24,10 @@ export default async function CollectionDetailPage({
 
   const collection = await prisma.collection.findFirst({
     where: { id, ownerId: userId },
-    include: { items: { select: { itemId: true } } },
+    include: {
+      items: { select: { itemId: true } },
+      shopItems: { orderBy: [{ purchased: "asc" }, { createdAt: "desc" }] },
+    },
   });
   if (!collection) notFound();
 
@@ -72,6 +76,20 @@ export default async function CollectionDetailPage({
     itemIds: collection.items.map((i) => i.itemId),
   };
 
+  const shopItems: ShopItem[] = collection.shopItems.map((s) => ({
+    id: s.id,
+    name: s.name,
+    brand: s.brand,
+    category: s.category,
+    color: s.color,
+    price: s.price,
+    link: s.link,
+    imagePath: s.imagePath,
+    source: s.source,
+    notes: s.notes,
+    purchased: s.purchased,
+  }));
+
   const subtitle = subtitleFor(collection);
 
   return (
@@ -90,7 +108,12 @@ export default async function CollectionDetailPage({
           🌶
         </Link>
       </div>
-      <CollectionEditor collection={data} items={selectable} includeBackroom={includeBackroom} />
+      <CollectionEditor
+        collection={data}
+        items={selectable}
+        shopItems={shopItems}
+        includeBackroom={includeBackroom}
+      />
     </div>
   );
 }
