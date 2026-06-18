@@ -9,8 +9,6 @@ import { getUserMannequin } from "@/lib/mannequin";
 import MannequinUpload from "@/components/MannequinUpload";
 import ShowOnboardingLink from "@/components/ShowOnboardingLink";
 import ClearActivityButton from "./ClearActivityButton";
-import PhotoOptimizerButton from "@/components/PhotoOptimizerButton";
-import HiResCutoutBackfillButton from "@/components/HiResCutoutBackfillButton";
 import { relativeTime } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
@@ -36,18 +34,7 @@ export default async function SettingsPage() {
   const firstName = firstNameFromUser(session?.user);
   const prefs = await getPrefs();
 
-  const [
-    items,
-    outfits,
-    wishlist,
-    brands,
-    forecast,
-    mannequin,
-    activity,
-    legacyItems,
-    legacyAngles,
-    missingHiResCutouts,
-  ] = await Promise.all([
+  const [items, outfits, wishlist, brands, forecast, mannequin, activity] = await Promise.all([
     prisma.item.count({ where: { ownerId: userId } }),
     prisma.outfit.count({ where: { ownerId: userId } }),
     prisma.wishlistItem.count({ where: { ownerId: userId } }),
@@ -63,25 +50,7 @@ export default async function SettingsPage() {
       take: 50,
       select: { id: true, kind: true, summary: true, createdAt: true },
     }),
-    // "Legacy" photos = uploaded before two-tier storage shipped.
-    // We can't tell at the DB level whether the file is actually
-    // oversized (would need a sharp metadata read per file), so
-    // this is an upper bound: items with no original recorded.
-    // The optimizer itself will skip any that are already small
-    // enough to leave alone.
-    prisma.item.count({ where: { ownerId: userId, imageOriginalPath: null } }),
-    prisma.itemPhoto.count({
-      where: { item: { ownerId: userId }, imageOriginalPath: null },
-    }),
-    // Items missing the full-res bg-removed cutout that powers the
-    // lightbox tap-to-zoom. New uploads get one automatically via the
-    // post-upload worker; this count is the backfill queue for items
-    // that pre-date that worker.
-    prisma.item.count({
-      where: { ownerId: userId, imageBgRemovedOriginalPath: null },
-    }),
   ]);
-  const legacyPhotoCount = legacyItems + legacyAngles;
   const lastActiveAt = activity[0]?.createdAt ?? null;
 
   return (
@@ -202,61 +171,6 @@ export default async function SettingsPage() {
         </a>
       </section>
 
-      <section className="card space-y-4 p-4">
-        <div>
-          <h2 className="font-display text-lg text-stone-800">Photo storage</h2>
-          <p className="mt-1 text-sm text-stone-600">
-            Two-tier storage shipped recently — every new photo gets a small display
-            variant for fast loading and keeps the full-resolution original for
-            tap-to-zoom. Photos uploaded before that, or any that slipped through,
-            are still living as full-size files.
-          </p>
-          {legacyPhotoCount === 0 ? (
-            <p className="mt-3 text-sm text-sage-700">
-              ✓ All your photos are already in the new shape.
-            </p>
-          ) : (
-            <>
-              <p className="mt-3 text-xs text-stone-500">
-                Up to {legacyPhotoCount} photo{legacyPhotoCount === 1 ? "" : "s"} from
-                before this feature shipped. The optimizer scans each one and only
-                touches the ones that actually need it — anything already at the
-                right size is left alone.
-              </p>
-              <div className="mt-3">
-                <PhotoOptimizerButton />
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="border-t border-stone-100 pt-4">
-          <h3 className="font-display text-sm text-stone-700">Hi-res cutouts</h3>
-          <p className="mt-1 text-sm text-stone-600">
-            The lightbox tap-to-zoom prefers a full-resolution background-removed
-            cutout — the cleanest view of just the garment. New uploads get one
-            automatically in the background; anything that pre-dates the worker
-            falls back to the photo with its original background.
-          </p>
-          {missingHiResCutouts === 0 ? (
-            <p className="mt-3 text-sm text-sage-700">
-              ✓ Every item has a hi-res cutout.
-            </p>
-          ) : (
-            <>
-              <p className="mt-3 text-xs text-stone-500">
-                {missingHiResCutouts} item{missingHiResCutouts === 1 ? "" : "s"} still
-                missing one. The worker takes ~5–15 s per photo at full quality,
-                so a big batch can take a while. Runs in the background.
-              </p>
-              <div className="mt-3">
-                <HiResCutoutBackfillButton pendingCount={missingHiResCutouts} />
-              </div>
-            </>
-          )}
-        </div>
-      </section>
-
       <section className="card p-4">
         <h2 className="font-display text-lg text-stone-800">Activity</h2>
         <p className="mt-1 text-sm text-stone-600">
@@ -304,12 +218,11 @@ export default async function SettingsPage() {
       </section>
 
       <h3 className="-mb-2 mt-2 text-xs font-medium uppercase tracking-wider text-stone-400">
-        Tools
+        Help
       </h3>
 
       <section className="card p-4">
-        <h2 className="font-display text-lg text-stone-800">Maintenance</h2>
-        <ul className="mt-2 space-y-2 text-sm">
+        <ul className="space-y-2 text-sm">
           <li>
             <Link href="/settings/about" className="text-blush-600 hover:underline">
               About this app
@@ -317,44 +230,14 @@ export default async function SettingsPage() {
             <span className="text-stone-500"> — full user guide for every feature.</span>
           </li>
           <li>
-            <Link href="/wardrobe/quality" className="text-blush-600 hover:underline">
-              Closet quality
-            </Link>
-            <span className="text-stone-500"> — find missing fields and possible duplicate brands.</span>
-          </li>
-          <li>
-            <Link href="/wardrobe/new?batch=1" className="text-blush-600 hover:underline">
-              Quick add
-            </Link>
-            <span className="text-stone-500"> — snap photos one at a time; the camera reopens after each save.</span>
-          </li>
-          <li>
-            <Link href="/wardrobe/bulk" className="text-blush-600 hover:underline">
-              Import from library
-            </Link>
-            <span className="text-stone-500"> — pick a stack of existing photos at once; AI tags them in the background.</span>
-          </li>
-          <li>
-            <Link href="/collections" className="text-blush-600 hover:underline">
-              Collections
-            </Link>
-            <span className="text-stone-500"> — plan trips with destination + dates and AI-curated packing lists.</span>
-          </li>
-          <li>
-            <Link href="/sets" className="text-blush-600 hover:underline">
-              Matching sets
-            </Link>
-            <span className="text-stone-500"> — link pieces that came together (swimsuit top + bottom, pajamas) without locking them into one outfit.</span>
+            <ShowOnboardingLink />
+            <span className="text-stone-500"> — bring back the dashboard checklist if you dismissed it.</span>
           </li>
           <li>
             <Link href="/admin" className="text-blush-600 hover:underline">
               Maintenance
             </Link>
-            <span className="text-stone-500"> — storage stats, orphaned photo cleanup, AI status.</span>
-          </li>
-          <li>
-            <ShowOnboardingLink />
-            <span className="text-stone-500"> — bring back the dashboard checklist if you dismissed it.</span>
+            <span className="text-stone-500"> — storage stats, photo cleanup, system status. Anything that touches data shape lives there.</span>
           </li>
         </ul>
       </section>
