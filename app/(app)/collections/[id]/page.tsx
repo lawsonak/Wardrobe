@@ -88,6 +88,8 @@ export default async function CollectionDetailPage({
     source: s.source,
     notes: s.notes,
     purchased: s.purchased,
+    tryOnImagePath: s.tryOnImagePath,
+    tryOnGeneratedAt: s.tryOnGeneratedAt ? s.tryOnGeneratedAt.toISOString() : null,
   }));
 
   const subtitle = subtitleFor(collection);
