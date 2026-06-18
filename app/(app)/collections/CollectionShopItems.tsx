@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type Dispatch, type SetStateAction } from "react";
+import { useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useRouter } from "next/navigation";
 import { confirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
@@ -18,6 +18,15 @@ export type ShopItem = {
   source: string | null;
   notes: string | null;
   purchased: boolean;
+  /** AI try-on render of this product on the user's mannequin. Null
+   *  until the user taps "✨ Try on". Persisted server-side so other
+   *  sessions / page reloads see it. */
+  tryOnImagePath: string | null;
+  /** Bumped on each successful render so the <img src> can append a
+   *  cache-buster — the served path uses a hash-based filename but
+   *  the same hash can be overwritten on regenerate, so we lean on
+   *  the timestamp the same way the per-Outfit try-on page does. */
+  tryOnGeneratedAt: string | null;
 };
 
 // One pasted link's progress through the import pipeline. Mirrors the
@@ -58,6 +67,17 @@ export default function CollectionShopItems({
   const [draft, setDraft] = useState("");
   const [queue, setQueue] = useState<QueueRow[]>([]);
   const [busy, setBusy] = useState(false);
+  // Per-item progress flags. tryOnBusy: which item ids are mid-Gemini.
+  // photoBusy: which item ids are mid-upload. showProduct: which item
+  // ids the user has flipped back to the original product photo (we
+  // default to showing the try-on when one exists, since the user
+  // just generated it).
+  const [tryOnBusy, setTryOnBusy] = useState<Set<string>>(new Set());
+  const [photoBusy, setPhotoBusy] = useState<Set<string>>(new Set());
+  const [showProduct, setShowProduct] = useState<Set<string>>(new Set());
+  // One hidden file input per card — keyed by item id at click time
+  // so we can route the change event back to the right item.
+  const fileInputs = useRef<Map<string, HTMLInputElement>>(new Map());
 
   async function pullOne(link: string): Promise<{ ok: boolean; error?: string }> {
     try {
@@ -158,6 +178,128 @@ export default function CollectionShopItems({
     }
   }
 
+  // Multipart photo replace. The server runs the upload through
+  // Gemini's object detection to crop out just the clothing — handy
+  // when the user took an Amazon screenshot with the search bar and
+  // nav chrome around the product photo. Detection-empty / AI-off
+  // both fall through to the raw upload server-side.
+  async function uploadPhoto(item: ShopItem, file: File) {
+    setPhotoBusy((prev) => new Set(prev).add(item.id));
+    try {
+      const fd = new FormData();
+      fd.append("image", file);
+      const res = await fetch(
+        `/api/collections/${collectionId}/shop-items/${item.id}/photo`,
+        { method: "POST", body: fd },
+      );
+      const data = (await res.json()) as {
+        item?: ShopItem;
+        detectionUsed?: boolean;
+        error?: string;
+      };
+      if (!res.ok || !data.item) {
+        toast(data.error || "Couldn't upload that photo", "error");
+        return;
+      }
+      // Server returns the fresh row; merge into local state. Replacing
+      // the photo invalidates the cached try-on render — server already
+      // nulled those columns + unlinked the file.
+      setItems((prev) => prev.map((i) => (i.id === item.id ? data.item as ShopItem : i)));
+      // Drop the "show product" flag so when the user generates a new
+      // try-on, the swap-to-try-on default still works.
+      setShowProduct((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+      haptic("success");
+      toast(
+        data.detectionUsed
+          ? "Photo updated — cropped to the garment."
+          : "Photo updated.",
+      );
+    } catch {
+      toast("Couldn't reach the server", "error");
+    } finally {
+      setPhotoBusy((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  }
+
+  function pickPhoto(item: ShopItem) {
+    const input = fileInputs.current.get(item.id);
+    if (input) input.click();
+  }
+
+  // Server runs the per-shop-item try-on via the same Gemini pipeline
+  // as the per-Outfit try-on, but with one garment as input — sidesteps
+  // the 5-garment cap that a full outfit would hit. Cache-hash matches
+  // mannequin id + image mtime + prompt version, so re-clicks
+  // short-circuit unless something changed. The button always passes
+  // ?force=1 so an explicit click always re-runs (per Outfit pattern).
+  async function tryOn(item: ShopItem) {
+    if (!item.imagePath) {
+      toast("Add a photo first — tap 📷 Replace photo.", "error");
+      return;
+    }
+    setTryOnBusy((prev) => new Set(prev).add(item.id));
+    try {
+      const res = await fetch(
+        `/api/collections/${collectionId}/shop-items/${item.id}/tryon?force=1`,
+        { method: "POST" },
+      );
+      const data = (await res.json()) as {
+        tryOnImagePath?: string;
+        tryOnGeneratedAt?: string | null;
+        error?: string;
+      };
+      if (!res.ok || !data.tryOnImagePath) {
+        toast(data.error || "Try-on failed", "error");
+        return;
+      }
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === item.id
+            ? {
+                ...i,
+                tryOnImagePath: data.tryOnImagePath ?? null,
+                tryOnGeneratedAt: data.tryOnGeneratedAt ?? new Date().toISOString(),
+              }
+            : i,
+        ),
+      );
+      // Default to showing the try-on after a successful render —
+      // they just asked for it.
+      setShowProduct((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+      haptic("success");
+    } catch {
+      toast("Couldn't reach the AI service", "error");
+    } finally {
+      setTryOnBusy((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  }
+
+  function toggleImage(item: ShopItem) {
+    if (!item.tryOnImagePath) return;
+    setShowProduct((prev) => {
+      const next = new Set(prev);
+      if (next.has(item.id)) next.delete(item.id);
+      else next.add(item.id);
+      return next;
+    });
+  }
+
   const activeQueue = queue.filter((r) => r.state !== "done");
 
   return (
@@ -214,70 +356,164 @@ export default function CollectionShopItems({
         </p>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
-          {items.map((item) => (
-            <li
-              key={item.id}
-              className={
-                "card flex gap-3 p-3 transition " + (item.purchased ? "opacity-60" : "")
-              }
-            >
-              <div className="tile-bg flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl ring-1 ring-stone-100">
-                {item.imagePath ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={`/api/uploads/${item.imagePath}`}
-                    alt={item.name}
-                    className="h-full w-full object-contain p-1"
-                  />
-                ) : (
-                  <span className="text-2xl text-stone-300">🛍</span>
-                )}
-              </div>
+          {items.map((item) => {
+            const isTryOnBusy = tryOnBusy.has(item.id);
+            const isPhotoBusy = photoBusy.has(item.id);
+            const showingProduct = showProduct.has(item.id) || !item.tryOnImagePath;
+            const visibleImagePath = showingProduct
+              ? item.imagePath
+              : item.tryOnImagePath;
+            // Cache-buster keyed off generatedAt — the upload route
+            // hash-suffixes filenames so the URL changes on each
+            // photo replace, but the try-on route reuses the same
+            // hashed filename for the same inputs, so we lean on
+            // the timestamp the same way TryOnView does.
+            const cacheBuster = !showingProduct && item.tryOnGeneratedAt
+              ? `?t=${encodeURIComponent(item.tryOnGeneratedAt)}`
+              : "";
 
-              <div className="flex min-w-0 flex-1 flex-col">
-                <p
-                  className={
-                    "text-sm font-medium text-stone-800 " +
-                    (item.purchased ? "line-through" : "")
-                  }
-                >
-                  {item.name}
-                </p>
-                <p className="truncate text-[11px] uppercase tracking-wide text-stone-400">
-                  {[item.brand, item.category, item.color, item.price].filter(Boolean).join(" · ")}
-                </p>
-
-                <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 text-xs">
-                  {item.link && (
-                    <a
-                      href={item.link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blush-600 hover:underline"
-                      title={item.source ?? item.link}
-                    >
-                      View ↗
-                    </a>
+            return (
+              <li
+                key={item.id}
+                className={
+                  "card flex gap-3 p-3 transition " + (item.purchased ? "opacity-60" : "")
+                }
+              >
+                <div className="flex flex-col gap-1">
+                  <button
+                    type="button"
+                    onClick={() => toggleImage(item)}
+                    disabled={!item.tryOnImagePath}
+                    className={
+                      "tile-bg relative flex h-24 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl ring-1 ring-stone-100 " +
+                      (item.tryOnImagePath ? "cursor-pointer hover:ring-blush-300" : "cursor-default")
+                    }
+                    title={
+                      item.tryOnImagePath
+                        ? showingProduct
+                          ? "Show AI try-on"
+                          : "Show product photo"
+                        : undefined
+                    }
+                    aria-label={
+                      showingProduct ? "Product photo" : "AI try-on"
+                    }
+                  >
+                    {visibleImagePath ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={`/api/uploads/${visibleImagePath}${cacheBuster}`}
+                        alt={item.name}
+                        className="h-full w-full object-contain p-1"
+                      />
+                    ) : (
+                      <span className="text-2xl text-stone-300">🛍</span>
+                    )}
+                    {item.tryOnImagePath && !showingProduct && (
+                      <span className="absolute bottom-0.5 left-0.5 rounded-full bg-blush-500 px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                        ✨
+                      </span>
+                    )}
+                  </button>
+                  {item.tryOnImagePath && (
+                    <p className="text-center text-[10px] text-stone-400">
+                      tap to swap
+                    </p>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => togglePurchased(item)}
-                    className="text-stone-500 hover:text-stone-800"
-                  >
-                    {item.purchased ? "↺ Mark unbought" : "✓ Bought"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => remove(item)}
-                    className="ml-auto text-stone-400 hover:text-blush-700"
-                    aria-label={`Remove ${item.name}`}
-                  >
-                    Remove
-                  </button>
                 </div>
-              </div>
-            </li>
-          ))}
+
+                {/* Hidden per-item file input so the camera roll can
+                    open straight from the card without a modal. */}
+                <input
+                  ref={(el) => {
+                    if (el) fileInputs.current.set(item.id, el);
+                    else fileInputs.current.delete(item.id);
+                  }}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) uploadPhoto(item, f);
+                    // Allow re-picking the same file later.
+                    e.target.value = "";
+                  }}
+                />
+
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <p
+                    className={
+                      "text-sm font-medium text-stone-800 " +
+                      (item.purchased ? "line-through" : "")
+                    }
+                  >
+                    {item.name}
+                  </p>
+                  <p className="truncate text-[11px] uppercase tracking-wide text-stone-400">
+                    {[item.brand, item.category, item.color, item.price].filter(Boolean).join(" · ")}
+                  </p>
+
+                  <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 text-xs">
+                    {item.link && (
+                      <a
+                        href={item.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blush-600 hover:underline"
+                        title={item.source ?? item.link}
+                      >
+                        View ↗
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => pickPhoto(item)}
+                      disabled={isPhotoBusy}
+                      className="text-stone-500 hover:text-stone-800 disabled:opacity-50"
+                    >
+                      {isPhotoBusy
+                        ? "Uploading…"
+                        : item.imagePath
+                          ? "📷 Replace photo"
+                          : "📷 Add photo"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => tryOn(item)}
+                      disabled={isTryOnBusy || !item.imagePath}
+                      className="text-blush-600 hover:text-blush-800 disabled:opacity-50"
+                      title={
+                        !item.imagePath
+                          ? "Add a photo first"
+                          : undefined
+                      }
+                    >
+                      {isTryOnBusy
+                        ? "Generating…"
+                        : item.tryOnImagePath
+                          ? "✨ Regenerate try-on"
+                          : "✨ Try on"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => togglePurchased(item)}
+                      className="text-stone-500 hover:text-stone-800"
+                    >
+                      {item.purchased ? "↺ Mark unbought" : "✓ Bought"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => remove(item)}
+                      className="ml-auto text-stone-400 hover:text-blush-700"
+                      aria-label={`Remove ${item.name}`}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

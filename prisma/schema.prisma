@@ -340,6 +340,15 @@ model CollectionShopItem {
   // User-facing "I bought it" flag so the shopping list doubles as a
   // checklist while packing.
   purchased    Boolean    @default(false)
+  // AI try-on of this single product onto the user's mannequin —
+  // composited via the same Gemini 2.5 Flash Image route the per-Outfit
+  // try-on uses, but with only this one garment as input. Hashed by
+  // mannequin id + image mtime + prompt version so re-clicks
+  // short-circuit. Replacing the product photo (or the user's
+  // mannequin) invalidates the cache.
+  tryOnImagePath   String?
+  tryOnHash        String?
+  tryOnGeneratedAt DateTime?
   createdAt    DateTime   @default(now())
 
   @@index([collectionId])
